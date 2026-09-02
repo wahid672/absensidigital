@@ -93,6 +93,18 @@ type AttendanceRecord struct {
 	CreatedAt    string `json:"created_at"`
 }
 
+type AttendanceSummary struct {
+	UID            string `json:"uid"`
+	NISNIP         string `json:"nis_nip"`
+	Nama           string `json:"nama"`
+	Tipe           string `json:"tipe"`
+	Kelas          string `json:"kelas"`
+	TotalHadir     int    `json:"total_hadir"`
+	TotalTepat     int    `json:"total_tepat"`
+	TotalTelat     int    `json:"total_telat"`
+	TotalIzinSakit int    `json:"total_izin_sakit"`
+}
+
 type TapRequest struct {
 	DeviceID  string `json:"device_id"`
 	RFIDTag   string `json:"rfid_uid"`
@@ -755,6 +767,98 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
 	}
+}
+
+// 2b. GET /api/attendance/summary (Laporan Akumulasi / Total Kehadiran Multi-Bulan)
+func handleAttendanceSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method GET yang diizinkan.")
+		return
+	}
+
+	query := r.URL.Query()
+	bulanParam := strings.TrimSpace(query.Get("bulan")) // e.g. "2026-07,2026-08"
+	tipe := strings.ToLower(strings.TrimSpace(query.Get("tipe")))
+	kelas := strings.TrimSpace(query.Get("kelas"))
+
+	var bulanList []string
+	if bulanParam != "" {
+		for _, b := range strings.Split(bulanParam, ",") {
+			b = strings.TrimSpace(b)
+			if b != "" {
+				bulanList = append(bulanList, b)
+			}
+		}
+	}
+	if len(bulanList) == 0 {
+		bulanList = []string{time.Now().Format("2006-01")}
+	}
+
+	var monthPlaceholders []string
+	var monthArgs []interface{}
+	for _, b := range bulanList {
+		monthPlaceholders = append(monthPlaceholders, "?")
+		monthArgs = append(monthArgs, b)
+	}
+
+	inClause := strings.Join(monthPlaceholders, ",")
+
+	sqlQuery := fmt.Sprintf(`
+		SELECT 
+			m.uid,
+			COALESCE(m.nis_nip, '') as nis_nip,
+			m.nama,
+			m.tipe,
+			COALESCE(m.kelas, '') as kelas,
+			COALESCE(SUM(CASE WHEN strftime('%%Y-%%m', a.tanggal) IN (%s) THEN 1 ELSE 0 END), 0) as total_hadir,
+			COALESCE(SUM(CASE WHEN strftime('%%Y-%%m', a.tanggal) IN (%s) AND lower(a.status_masuk) LIKE '%%tepat%%' THEN 1 ELSE 0 END), 0) as total_tepat,
+			COALESCE(SUM(CASE WHEN strftime('%%Y-%%m', a.tanggal) IN (%s) AND lower(a.status_masuk) LIKE '%%telat%%' THEN 1 ELSE 0 END), 0) as total_telat,
+			COALESCE(SUM(CASE WHEN strftime('%%Y-%%m', a.tanggal) IN (%s) AND (lower(a.status_masuk) = 'izin' OR lower(a.status_masuk) = 'sakit') THEN 1 ELSE 0 END), 0) as total_izin_sakit
+		FROM members m
+		LEFT JOIN attendances a ON m.uid = a.uid
+		WHERE 1=1
+	`, inClause, inClause, inClause, inClause)
+
+	var args []interface{}
+	args = append(args, monthArgs...)
+	args = append(args, monthArgs...)
+	args = append(args, monthArgs...)
+	args = append(args, monthArgs...)
+
+	if tipe != "" && tipe != "all" {
+		sqlQuery += " AND lower(m.tipe) = ?"
+		args = append(args, tipe)
+	}
+
+	if kelas != "" && kelas != "all" {
+		sqlQuery += " AND m.kelas = ?"
+		args = append(args, kelas)
+	}
+
+	sqlQuery += " GROUP BY m.id, m.uid, m.nis_nip, m.nama, m.tipe, m.kelas ORDER BY m.tipe DESC, m.kelas ASC, total_hadir DESC, m.nama ASC"
+
+	rows, err := db.Query(sqlQuery, args...)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Query summary absensi gagal: %v", err))
+		return
+	}
+	defer rows.Close()
+
+	list := make([]AttendanceSummary, 0)
+	for rows.Next() {
+		var s AttendanceSummary
+		rows.Scan(&s.UID, &s.NISNIP, &s.Nama, &s.Tipe, &s.Kelas, &s.TotalHadir, &s.TotalTepat, &s.TotalTelat, &s.TotalIzinSakit)
+		list = append(list, s)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "success",
+		"bulan":  bulanList,
+		"tipe":   tipe,
+		"kelas":  kelas,
+		"total":  len(list),
+		"data":   list,
+	})
 }
 
 // 3. POST /api/attendance/tap (Realtime & Backdate Offline Sync dari ESP32)
@@ -1484,6 +1588,7 @@ func main() {
 	// REST API Endpoints
 	mux.HandleFunc("/api/login", handleLogin)
 	mux.HandleFunc("/api/attendance", authMiddleware(handleAttendance))
+	mux.HandleFunc("/api/attendance/summary", authMiddleware(handleAttendanceSummary))
 	mux.HandleFunc("/api/attendance/tap", handleTapAttendance) // Public untuk ESP32
 	mux.HandleFunc("/api/members", authMiddleware(handleMembers))
 	mux.HandleFunc("/api/classes", authMiddleware(handleClasses))
