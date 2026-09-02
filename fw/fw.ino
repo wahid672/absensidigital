@@ -139,6 +139,12 @@ String scanLine2 = "";
 int scanScrollIndex = 0;
 unsigned long lastScanScrollTime = 0;
 
+// Variabel Debounce Scan Cepat Non-Blocking
+unsigned long lastFingerScanTime = 0;
+int lastScannedFingerID = -1;
+unsigned long lastRfidScanTime = 0;
+String lastScannedRfid = "";
+
 // Indeks & State
 int scrollIndex = 0;
 int altState = 0; 
@@ -190,8 +196,8 @@ void setStandbyMode() {
   masterTapCount = 0;
   scanScrollIndex = 0;
   lcd.clear();
-  // LED Bernafas Biru secara terus menerus (0)
-  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_BLUE, 0); 
+  // Sensor ON Terus - LED Biru Solid Standby Siap Baca Cepat
+  finger.LEDcontrol(FINGERPRINT_LED_ON, 0, FINGERPRINT_LED_BLUE, 0); 
 }
 
 void showScannedMessage(String line1, String line2) {
@@ -884,18 +890,43 @@ void kirimPresensiRFID(String tagId) {
 }
 
 void checkFingerprintScan() {
-  if (currentMode != STANDBY) return; 
+  // Hanya abaikan scan jika sedang di menu khusus rekam, hapus, atau adzan
+  if (currentMode == ENROLL_FINGER || currentMode == DELETE_FINGER || currentMode == ADHAN || currentMode == MASTER_TAPPING) return; 
   
-  if (finger.getImage() == FINGERPRINT_OK && finger.image2Tz() == FINGERPRINT_OK) {
-    if (finger.fingerSearch() == FINGERPRINT_OK) {
-      // Kirim dan tampilkan data presensi lengkap
-      kirimPresensiFingerprint(finger.fingerID);
-    } else {
-      digitalWrite(BUZZ, HIGH); delay(50); digitalWrite(BUZZ, LOW); delay(50);
-      digitalWrite(BUZZ, HIGH); delay(50); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3); // Kedip Merah Ditolak
-      showScannedMessage("Jari Ditolak!", "Tidak Dikenal");
+  uint8_t p = finger.getImage();
+  if (p != FINGERPRINT_OK) {
+    // Reset debounce ID jika jari sudah diangkat dari sensor
+    if (p == FINGERPRINT_NOFINGER) {
+      if (millis() - lastFingerScanTime > 1200) {
+        lastScannedFingerID = -1;
+      }
     }
+    return;
+  }
+
+  if (finger.image2Tz() != FINGERPRINT_OK) return;
+
+  if (finger.fingerSearch() == FINGERPRINT_OK) {
+    // Debounce: jika ID jari yang sama masih menempel dalam kurun 1.5 detik, abaikan agar tidak dobel
+    if (finger.fingerID == lastScannedFingerID && (millis() - lastFingerScanTime < 1500)) {
+      return;
+    }
+
+    lastScannedFingerID = finger.fingerID;
+    lastFingerScanTime = millis();
+
+    // Kirim dan tampilkan data presensi lengkap tanpa jeda
+    kirimPresensiFingerprint(finger.fingerID);
+  } else {
+    // Jari tidak dikenal
+    if (millis() - lastFingerScanTime < 1200) return;
+    lastFingerScanTime = millis();
+    lastScannedFingerID = -1;
+
+    digitalWrite(BUZZ, HIGH); delay(40); digitalWrite(BUZZ, LOW); delay(40);
+    digitalWrite(BUZZ, HIGH); delay(40); digitalWrite(BUZZ, LOW);
+    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3); // Kedip Merah Ditolak
+    showScannedMessage("Jari Ditolak!", "Tidak Dikenal");
   }
 }
 
@@ -965,14 +996,21 @@ void checkServerConnection() {
 }
 
 void checkRFID() {
-  if (currentMode != STANDBY && currentMode != MASTER_TAPPING) return;
+  if (currentMode == ENROLL_FINGER || currentMode == DELETE_FINGER || currentMode == ADHAN) return;
   if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) return;
   
   readRFID(mfrc522.uid.uidByte, mfrc522.uid.size);
   mfrc522.PICC_HaltA(); 
+
+  // Debounce kartu yang sama dalam kurun 1.5 detik
+  if (ID_TAG == lastScannedRfid && (millis() - lastRfidScanTime < 1500)) {
+    return;
+  }
+  lastScannedRfid = ID_TAG;
+  lastRfidScanTime = millis();
   
   for(int b = 0; b < 2; b++){
-    digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(50);
+    digitalWrite(BUZZ, HIGH); delay(60); digitalWrite(BUZZ, LOW); delay(30);
   }
   
   // TRIGGER MASTER CARD CEK KONEKSI KE SERVER (UID: 1606092848 / 01606092848)
