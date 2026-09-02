@@ -1220,14 +1220,14 @@ void sendSensorPacket(uint8_t pid, uint8_t *payload, uint16_t length) {
   mySerial.flush();
 }
 
-String extractFingerprintTemplate(uint16_t id) {
+bool extractFingerprintTemplateBytes(uint16_t id, uint8_t* templateBytes) {
   // 1. Bersihkan serial buffer
   while (mySerial.available()) { mySerial.read(); delay(1); }
   delay(10);
 
   // 2. Muat model dari slot memori ke CharBuffer 1 sensor
   if (finger.loadModel(id) != FINGERPRINT_OK) {
-    return "";
+    return false;
   }
 
   delay(20);
@@ -1238,7 +1238,6 @@ String extractFingerprintTemplate(uint16_t id) {
   sendSensorPacket(0x01, cmd, 2);
 
   // 4. Baca paket data 512 bytes
-  uint8_t templateBytes[512] = {0};
   int bytesRead = 0;
   unsigned long startT = millis();
 
@@ -1301,7 +1300,12 @@ String extractFingerprintTemplate(uint16_t id) {
   delay(35);
   while (mySerial.available()) { mySerial.read(); delay(1); }
 
-  if (bytesRead < 512) return "";
+  return (bytesRead >= 512);
+}
+
+String extractFingerprintTemplate(uint16_t id) {
+  uint8_t templateBytes[512] = {0};
+  if (!extractFingerprintTemplateBytes(id, templateBytes)) return "";
 
   // Konversi 512 bytes biner menjadi 1024 karakter HEX
   String hexStr = "";
@@ -1314,16 +1318,7 @@ String extractFingerprintTemplate(uint16_t id) {
   return hexStr;
 }
 
-bool saveFingerprintTemplate(uint16_t id, String hexStr) {
-  if (hexStr.length() < 1024) return false;
-
-  // Konversi Hex String ke 512 bytes biner murni
-  uint8_t templateBytes[512] = {0};
-  for (int i = 0; i < 512; i++) {
-    char byteStr[3] = { hexStr[i * 2], hexStr[i * 2 + 1], 0 };
-    templateBytes[i] = (uint8_t)strtol(byteStr, NULL, 16);
-  }
-
+bool saveFingerprintTemplateBytes(uint16_t id, const uint8_t* templateBytes) {
   while (mySerial.available()) { mySerial.read(); delay(1); }
   delay(15);
 
@@ -1378,7 +1373,7 @@ bool saveFingerprintTemplate(uint16_t id, String hexStr) {
   // 2. Kirim 512 bytes dalam 4 paket data (128 bytes per paket)
   for (int p = 0; p < 4; p++) {
     uint8_t pid = (p == 3) ? 0x08 : 0x02; // Paket 0,1,2: 0x02 (Data), Paket 3: 0x08 (End Data)
-    sendSensorPacket(pid, &templateBytes[p * 128], 128);
+    sendSensorPacket(pid, (uint8_t*)&templateBytes[p * 128], 128);
     delay(20);
   }
   delay(50);
@@ -1401,6 +1396,19 @@ bool saveFingerprintTemplate(uint16_t id, String hexStr) {
     Serial.printf("[SAVE TEMPLATE] GAGAL storeModel ID %d (Err: 0x%02X)\n", id, storeRes);
     return false;
   }
+}
+
+bool saveFingerprintTemplate(uint16_t id, String hexStr) {
+  if (hexStr.length() < 1024) return false;
+
+  // Konversi Hex String ke 512 bytes biner murni
+  uint8_t templateBytes[512] = {0};
+  for (int i = 0; i < 512; i++) {
+    char byteStr[3] = { hexStr[i * 2], hexStr[i * 2 + 1], 0 };
+    templateBytes[i] = (uint8_t)strtol(byteStr, NULL, 16);
+  }
+
+  return saveFingerprintTemplateBytes(id, templateBytes);
 }
 
 // --- FUNGSI PROSES SERIAL UPLOAD & DOWNLOAD ---
@@ -1674,8 +1682,8 @@ void handleWebDeleteAllFinger() {
   webServer.send(303);
 }
 
-// 1. Download Template (Backup Seluruh Template Sensor ke File JSON di Browser)
-void handleWebDownloadJsonTemplates() {
+/// 1. Download Template (Backup Seluruh Template Sensor ke File Biner .bin di Browser)
+void handleWebDownloadBinTemplates() {
   if (!isWebAuthenticated()) {
     webServer.sendHeader("Location", "/login");
     webServer.send(303);
@@ -1683,89 +1691,109 @@ void handleWebDownloadJsonTemplates() {
   }
 
   Serial.println("\n==================================================");
-  Serial.println("[JSON BACKUP] Memulai proses ekspor seluruh template sidik jari...");
+  Serial.println("[BIN BACKUP] Memulai proses ekspor seluruh template ke file BIN...");
   Serial.println("==================================================");
   lcd.clear();
   printCentered("Backup Template", 0);
   printCentered("Membaca Jari...", 1);
   finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
 
-  // Gunakan HTTP Chunked Streaming (hemat RAM dan tidak terpotong)
-  webServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  webServer.sendHeader("Content-Type", "application/json");
-  webServer.sendHeader("Content-Disposition", "attachment; filename=\"fingerprint_backup_" + String(deviceId) + ".json\"");
-  webServer.send(200, "application/json", "");
-
-  String header = "{\"device_id\":\"" + String(deviceId) + "\",\"exported_at\":\"" + getCurrentTimestamp() + "\",\"templates\":[";
-  webServer.sendContent(header);
-
+  // Kumpulkan semua slot yang aktif
+  uint16_t validSlots[MAX_FINGERPRINTS];
   int totalFound = 0;
+
   for (int id = 1; id <= MAX_FINGERPRINTS; id++) {
-    String hexData = extractFingerprintTemplate(id);
-    if (hexData.length() >= 1024) {
-      printCentered("Ekspor ID: " + String(id), 1);
-      String item = (totalFound > 0 ? "," : "") + String("{\"fingerprint_id\":") + String(id) + ",\"template_data\":\"" + hexData + "\"}";
-      webServer.sendContent(item);
-      totalFound++;
-      Serial.printf("[JSON BACKUP] ID %d SUKSES diekstrak! Total: %d\n", id, totalFound);
-      delay(20);
+    if (finger.loadModel(id) == FINGERPRINT_OK) {
+      validSlots[totalFound++] = id;
     }
   }
 
-  String footer = "],\"total\":" + String(totalFound) + "}";
-  webServer.sendContent(footer);
+  webServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  webServer.sendHeader("Content-Type", "application/octet-stream");
+  webServer.sendHeader("Content-Disposition", "attachment; filename=\"fingerprint_backup_" + String(deviceId) + ".bin\"");
+  webServer.send(200, "application/octet-stream", "");
+
+  // 1. Tulis Header File BIN (Magic FPBK 4B + Total Count 2B)
+  uint8_t fileHdr[6] = {
+    'F', 'P', 'B', 'K',
+    (uint8_t)(totalFound & 0xFF),
+    (uint8_t)((totalFound >> 8) & 0xFF)
+  };
+  webServer.sendContent((const char*)fileHdr, 6);
+
+  // 2. Tulis Data Tiap Template (ID 2 Bytes + Data 512 Bytes = 514 Bytes)
+  uint8_t templateBytes[512];
+  for (int i = 0; i < totalFound; i++) {
+    uint16_t id = validSlots[i];
+    printCentered("Ekspor ID: " + String(id), 1);
+    
+    if (extractFingerprintTemplateBytes(id, templateBytes)) {
+      uint8_t idHdr[2] = { (uint8_t)(id & 0xFF), (uint8_t)((id >> 8) & 0xFF) };
+      webServer.sendContent((const char*)idHdr, 2);
+      webServer.sendContent((const char*)templateBytes, 512);
+      Serial.printf("[BIN BACKUP] ID %d SUKSES diekstrak! Total: %d/%d\n", id, i + 1, totalFound);
+    }
+    delay(15);
+  }
+
   webServer.sendContent(""); // Selesai streaming
 
-  Serial.printf("\n[JSON BACKUP] SELESAI! Berhasil mengekspor %d template ke file JSON.\n", totalFound);
+  Serial.printf("\n[BIN BACKUP] SELESAI! Berhasil mengekspor %d template ke file BIN.\n", totalFound);
 
   digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
   finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
   showScannedMessage("Backup Selesai!", String(totalFound) + " Jari Diekspor");
 }
 
-// 2. Upload Template (Restore File JSON ke Sensor)
-void handleWebUploadJsonTemplates() {
+// 2. Upload Template (Restore File BIN ke Sensor)
+void handleWebUploadBinTemplates() {
   if (!isWebAuthenticated()) {
     webServer.send(401, "application/json", "{\"status\":\"error\",\"message\":\"Sesi login telah habis. Silakan login kembali.\"}");
     return;
   }
 
   String body = webServer.arg("plain");
-  if (body.length() == 0) {
-    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Payload data JSON kosong!\"}");
+  size_t dataLen = body.length();
+  const uint8_t* rawData = (const uint8_t*)body.c_str();
+
+  if (dataLen < 6) {
+    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"File BIN kosong atau rusak!\"}");
     return;
   }
 
-  DynamicJsonDocument doc(65536);
-  DeserializationError err = deserializeJson(doc, body);
-  if (err) {
-    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Format file JSON rusak / tidak valid!\"}");
+  // Validasi Magic Header FPBK
+  if (rawData[0] != 'F' || rawData[1] != 'P' || rawData[2] != 'B' || rawData[3] != 'K') {
+    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Format file bukan backup fingerprint (.bin) yang valid (Header mismatch)!\"}");
     return;
   }
 
-  // Langsung masukkan template dari JSON ke sensor (tanpa proses format otomatis)
+  uint16_t totalTemplates = rawData[4] | ((uint16_t)rawData[5] << 8);
+  if (dataLen < (size_t)(6 + totalTemplates * 514)) {
+    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Ukuran file BIN tidak lengkap!\"}");
+    return;
+  }
+
   lcd.clear();
   printCentered("Restore Template", 0);
   printCentered("Menulis Sensor..", 1);
   finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
 
-  JsonArray templates = doc.containsKey("templates") ? doc["templates"].as<JsonArray>() : doc.as<JsonArray>();
-  int totalTemplates = templates.size();
   int successCount = 0;
+  Serial.printf("\n[BIN RESTORE] Memulai penulisan %d template ke sensor...\n", totalTemplates);
 
-  Serial.printf("\n[JSON RESTORE] Memulai penulisan %d template ke sensor...\n", totalTemplates);
+  size_t offset = 6;
+  for (int i = 0; i < totalTemplates; i++) {
+    uint16_t fId = rawData[offset] | ((uint16_t)rawData[offset + 1] << 8);
+    const uint8_t* tmplBytes = &rawData[offset + 2];
+    offset += 514;
 
-  for (JsonObject item : templates) {
-    int fId = item["fingerprint_id"].as<int>();
-    String hexData = item["template_data"].as<String>();
-
-    if (fId > 0 && hexData.length() >= 1024) {
-      Serial.printf("[JSON RESTORE] Menyimpan ID %d... ", fId);
+    if (fId > 0 && fId <= MAX_FINGERPRINTS) {
+      Serial.printf("[BIN RESTORE] Menyimpan ID %d... ", fId);
       printCentered("Simpan ID: " + String(fId), 1);
-      
+
       bool ok = false;
       for (int attempt = 1; attempt <= 3; attempt++) {
-        ok = saveFingerprintTemplate(fId, hexData);
+        ok = saveFingerprintTemplateBytes(fId, tmplBytes);
         if (ok) break;
         Serial.printf("(Retry %d)... ", attempt);
         delay(200);
@@ -1787,7 +1815,7 @@ void handleWebUploadJsonTemplates() {
     fetchMembersLocalCache();
   }
 
-  Serial.printf("[JSON RESTORE] Selesai: %d dari %d template berhasil disimpan ke sensor!\n", successCount, totalTemplates);
+  Serial.printf("[BIN RESTORE] Selesai: %d dari %d template berhasil disimpan ke sensor!\n", successCount, totalTemplates);
 
   digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW); delay(50);
   digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
@@ -1796,7 +1824,7 @@ void handleWebUploadJsonTemplates() {
 
   DynamicJsonDocument resp(512);
   resp["status"] = "success";
-  resp["message"] = "Berhasil! " + String(successCount) + " dari " + String(totalTemplates) + " template sidik jari berhasil di-restore ke sensor.";
+  resp["message"] = "Berhasil! " + String(successCount) + " dari " + String(totalTemplates) + " template sidik jari (.bin) berhasil di-restore ke sensor.";
   resp["count"] = successCount;
 
   String respStr;
@@ -1857,17 +1885,17 @@ void handleWebRoot() {
   html += "<div class='box' style='margin-bottom:16px;border-left-color:#16a34a;'><strong>WAKTU SISTEM</strong><span>" + String(timeBuff) + "</span></div>";
   html += "<h3>Manajemen & Aksi Mesin</h3>";
   html += "<a href='/test-server' class='btn'>Tes Koneksi Server API</a>";
-  html += "<a href='/download-templates' class='btn btn-warning'>Download Template (Backup JSON)</a>";
-  html += "<button type='button' onclick='openUploadModal()' class='btn btn-success'>Upload Template (Restore JSON)</button>";
+  html += "<a href='/download-bin' class='btn btn-warning'>Download Template (Backup File .bin)</a>";
+  html += "<button type='button' onclick='openUploadModal()' class='btn btn-success'>Upload Template (Restore File .bin)</button>";
   html += "<a href='/del-all-finger' class='btn btn-danger' onclick=\"return confirm('PERINGATAN! Seluruh data sidik jari di memori sensor DAN database server akan DIHAPUS PERMANEN. Lanjutkan?');\">Hapus Semua Sidik Jari (Delete All)</a>";
   html += "<a href='/restart' class='btn btn-dark' onclick=\"return confirm('Yakin ingin restart ESP32?');\">Restart Mesin ESP32</a>";
   html += "<div class='footer'>Siakad Ponpes IoT Firmware &copy; 2026</div>";
   html += "</div>";
 
-  // MODAL POPUP UNTUK UPLOAD TEMPLATE JSON
+  // MODAL POPUP UNTUK UPLOAD TEMPLATE BIN
   html += "<div id='uploadModal' class='modal' style='display:none;'>";
   html += "<div class='modal-content'>";
-  html += "<h2>Upload Template JSON</h2>";
+  html += "<h2>Upload Template BIN (.bin)</h2>";
 
   if (totalJari > 0) {
     html += "<div class='alert-box' style='background:#fef2f2;color:#991b1b;border:1px solid #fecaca;'>";
@@ -1879,41 +1907,41 @@ void handleWebRoot() {
   } else {
     html += "<div class='alert-box' style='background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;'>";
     html += "<strong>✅ Memori Bersih (0 Sidik Jari):</strong><br>";
-    html += "Sensor dalam kondisi kosong (0) dan siap menerima template baru dari file JSON.";
+    html += "Sensor dalam kondisi kosong (0) dan siap menerima template baru dari file backup .bin.";
     html += "</div>";
   }
 
   html += "<div style='margin:16px 0;text-align:left;'>";
-  html += "<label style='display:block;font-weight:bold;font-size:12px;margin-bottom:6px;color:#334155;'>Pilih File JSON Template:</label>";
-  html += "<input type='file' id='jsonFileInput' accept='.json,application/json' style='width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:8px;box-sizing:border-box;'>";
+  html += "<label style='display:block;font-weight:bold;font-size:12px;margin-bottom:6px;color:#334155;'>Pilih File Backup (.bin):</label>";
+  html += "<input type='file' id='binFileInput' accept='.bin,application/octet-stream' style='width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:8px;box-sizing:border-box;'>";
   html += "</div>";
   html += "<div id='uploadStatus' style='display:none;margin-bottom:12px;font-size:12px;color:#0284c7;font-weight:bold;'></div>";
   html += "<div style='display:flex;gap:10px;'>";
   html += "<button type='button' class='btn' style='background:#64748b;margin:0;' onclick='closeUploadModal()'>Tutup</button>";
-  html += "<button type='button' id='btnSubmitUpload' class='btn btn-success' style='margin:0;' onclick='submitJsonUpload(" + String(totalJari) + ")'>Mulai Restore</button>";
+  html += "<button type='button' id='btnSubmitUpload' class='btn btn-success' style='margin:0;' onclick='submitBinUpload(" + String(totalJari) + ")'>Mulai Restore</button>";
   html += "</div>";
   html += "</div></div>";
 
-  // JAVASCRIPT UNTUK MODAL & AJAX RESTORE
+  // JAVASCRIPT UNTUK MODAL & AJAX RESTORE BIN
   html += "<script>";
   html += "function openUploadModal(){document.getElementById('uploadModal').style.display='flex';}";
   html += "function closeUploadModal(){document.getElementById('uploadModal').style.display='none';}";
-  html += "async function submitJsonUpload(totalJariNow){";
-  html += "  var f=document.getElementById('jsonFileInput').files;";
-  html += "  if(!f||f.length===0){alert('Silakan pilih file JSON terlebih dahulu!');return;}";
+  html += "async function submitBinUpload(totalJariNow){";
+  html += "  var f=document.getElementById('binFileInput').files;";
+  html += "  if(!f||f.length===0){alert('Silakan pilih file .bin terlebih dahulu!');return;}";
   html += "  if(totalJariNow>0){";
   html += "    if(!confirm('Peringatan: Jumlah sidik jari di sensor masih '+totalJariNow+' (belum 0).\\nSangat disarankan untuk Hapus Semua Sidik Jari terlebih dahulu agar tidak bentrok.\\n\\nTetap lanjutkan upload?'))return;";
   html += "  }";
   html += "  var btn=document.getElementById('btnSubmitUpload');";
   html += "  var st=document.getElementById('uploadStatus');";
   html += "  btn.disabled=true;btn.innerText='Memproses...';";
-  html += "  st.style.display='block';st.innerText='Membaca file JSON & merestore template ke sensor...';";
+  html += "  st.style.display='block';st.innerText='Membaca file BIN & merestore template ke sensor...';";
   html += "  var reader=new FileReader();";
   html += "  reader.onload=async function(e){";
   html += "    try{";
-  html += "      var res=await fetch('/upload-json',{";
+  html += "      var res=await fetch('/upload-bin',{";
   html += "        method:'POST',";
-  html += "        headers:{'Content-Type':'application/json'},";
+  html += "        headers:{'Content-Type':'application/octet-stream'},";
   html += "        body:e.target.result";
   html += "      });";
   html += "      var data=await res.json();";
@@ -1925,7 +1953,7 @@ void handleWebRoot() {
   html += "      st.style.display='none';";
   html += "    }";
   html += "  };";
-  html += "  reader.readAsText(f[0]);";
+  html += "  reader.readAsArrayBuffer(f[0]);";
   html += "}";
   html += "</script>";
 
@@ -1950,11 +1978,11 @@ void setupWebServer() {
     webServer.send(303);
   });
 
-  webServer.on("/download-templates", HTTP_GET, handleWebDownloadJsonTemplates);
-  webServer.on("/upload-json", HTTP_POST, handleWebUploadJsonTemplates);
-
+  webServer.on("/download-bin", HTTP_GET, handleWebDownloadBinTemplates);
+  webServer.on("/download-templates", HTTP_GET, handleWebDownloadBinTemplates);
+  webServer.on("/upload-bin", HTTP_POST, handleWebUploadBinTemplates);
+  webServer.on("/upload-json", HTTP_POST, handleWebUploadBinTemplates);
   webServer.on("/del-all-finger", HTTP_GET, handleWebDeleteAllFinger);
-
   webServer.on("/restart", HTTP_GET, []() {
     if (!isWebAuthenticated()) { webServer.sendHeader("Location", "/login"); webServer.send(303); return; }
     webServer.send(200, "text/html", "<p>Merestart ESP32... Silakan buka kembali dalam 5 detik.</p><script>setTimeout(()=>{window.location.href='/'}, 5000);</script>");
