@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Search, PenSquare, Trash2, Loader2, CreditCard } from 'lucide-react';
+import { UserPlus, Search, PenSquare, Trash2, Loader2, CreditCard, Hash, Contact } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 import ModalMember from '../components/ModalMember';
@@ -67,8 +67,8 @@ export default function MembersView({ tipe = 'siswa', classes = [], positions = 
           </h3>
           <p className="text-xs text-slate-500">
             {isGuru 
-              ? 'Kelola database kartu RFID, jabatan, mata pelajaran, dan kontak guru' 
-              : 'Kelola database kartu RFID, kelas/rombel, dan kontak santri'}
+              ? 'Kelola data NIP, nama, kartu RFID, jabatan/tugas pengampu, dan kontak guru' 
+              : 'Kelola data NIS, nama, kartu RFID, kelas/rombel, dan kontak santri'}
           </p>
         </div>
         <button 
@@ -93,13 +93,13 @@ export default function MembersView({ tipe = 'siswa', classes = [], positions = 
             </span>
           </div>
 
-          <div className="relative w-full sm:w-64">
+          <div className="relative w-full sm:w-72">
             <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input 
               type="text" 
               value={search} 
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={`Cari nama / UID kartu / ${isGuru ? 'jabatan' : 'kelas'}...`} 
+              placeholder={`Cari nama / ${isGuru ? 'NIP' : 'NIS'} / RFID / ${isGuru ? 'jabatan' : 'kelas'}...`} 
               className="w-full pl-9 pr-4 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
@@ -110,8 +110,8 @@ export default function MembersView({ tipe = 'siswa', classes = [], positions = 
             <thead>
               <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] uppercase font-bold tracking-wider text-slate-500">
                 <th className="py-3.5 px-4 text-center w-12">No</th>
-                <th className="py-3.5 px-4">UID Kartu RFID</th>
-                <th className="py-3.5 px-4">Nama Lengkap</th>
+                <th className="py-3.5 px-4 w-36">{isGuru ? 'NIP' : 'NIS'}</th>
+                <th className="py-3.5 px-4">Nama Lengkap & Kartu RFID</th>
                 <th className="py-3.5 px-4">Tipe</th>
                 <th className="py-3.5 px-4">{isGuru ? 'Jabatan / Mapel' : 'Kelas / Rombel'}</th>
                 <th className="py-3.5 px-4">No. WhatsApp</th>
@@ -135,23 +135,34 @@ export default function MembersView({ tipe = 'siswa', classes = [], positions = 
               ) : (
                 members.map((m, idx) => (
                   <tr key={m.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-3 px-4 text-center font-medium text-slate-400 text-xs">{idx + 1}</td>
-                    <td className="py-3 px-4 font-mono text-xs font-bold text-primary-700">
-                      <span className="bg-primary-50 border border-primary-200 px-2 py-0.5 rounded">
-                        {m.uid}
-                      </span>
+                    <td className="py-3.5 px-4 text-center font-medium text-slate-400 text-xs">{idx + 1}</td>
+                    <td className="py-3.5 px-4 font-mono text-xs font-bold text-slate-700">
+                      {m.nis_nip ? (
+                        <span className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
+                          {m.nis_nip}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-normal italic">-</span>
+                      )}
                     </td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">{m.nama}</td>
-                    <td className="py-3 px-4">
+                    <td className="py-3.5 px-4">
+                      <p className="font-semibold text-slate-800 text-sm">{m.nama}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="inline-flex items-center gap-1 font-mono text-[11px] text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-200">
+                          <CreditCard className="w-3 h-3 text-primary-500" /> RFID: {m.uid}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4">
                       <span className={`px-2 py-0.5 rounded text-[11px] font-semibold uppercase ${
                         m.tipe === 'guru' ? 'bg-indigo-50 text-indigo-700' : 'bg-sky-50 text-sky-700'
                       }`}>
                         {m.tipe}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-slate-700 font-medium text-xs">{m.kelas || '-'}</td>
-                    <td className="py-3 px-4 text-slate-600 text-xs font-mono">{m.no_hp || '-'}</td>
-                    <td className="py-3 px-4 text-center">
+                    <td className="py-3.5 px-4 text-slate-700 font-medium text-xs">{m.kelas || '-'}</td>
+                    <td className="py-3.5 px-4 text-slate-600 text-xs font-mono">{m.no_hp || '-'}</td>
+                    <td className="py-3.5 px-4 text-center">
                       <div className="inline-flex items-center gap-1.5">
                         <button 
                           onClick={() => { setEditMember(m); setModalOpen(true); }}

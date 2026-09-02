@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, UserPlus, PenSquare, CreditCard, GraduationCap, Briefcase } from 'lucide-react';
+import { X, UserPlus, PenSquare, CreditCard, GraduationCap, Briefcase, Hash } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 
@@ -17,6 +17,7 @@ export default function ModalMember({
   const [formData, setFormData] = useState({
     id: member?.id || '',
     uid: member?.uid || '',
+    nis_nip: member?.nis_nip || '',
     nama: member?.nama || '',
     tipe: member?.tipe || tipe,
     kelas: member?.kelas || '',
@@ -41,6 +42,7 @@ export default function ModalMember({
       const method = isEdit ? 'PUT' : 'POST';
       const payload = {
         uid: formData.uid.trim(),
+        nis_nip: formData.nis_nip.trim(),
         nama: formData.nama.trim(),
         tipe: tipe,
         kelas: formData.kelas.trim(),
@@ -97,7 +99,7 @@ export default function ModalMember({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
-          {/* Badge Tipe Terkunci */}
+          {/* Badge Kategori Terkunci */}
           <div className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
             <span className="text-xs text-slate-500 font-medium">Kategori Pengguna:</span>
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${
@@ -107,19 +109,19 @@ export default function ModalMember({
             </span>
           </div>
 
+          {/* INPUT NIS / NIP */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              UID Kartu RFID / Tag Fingerprint <span className="text-rose-500">*</span>
+              {isGuru ? 'NIP (Nomor Induk Pegawai / Guru)' : 'NIS (Nomor Induk Santri / Siswa)'}
             </label>
             <div className="relative">
-              <CreditCard className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Hash className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input 
                 type="text" 
-                value={formData.uid} 
-                onChange={(e) => setFormData({ ...formData, uid: e.target.value.toUpperCase() })}
-                required 
-                placeholder="Contoh: A1B2C301" 
-                className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary-500"
+                value={formData.nis_nip} 
+                onChange={(e) => setFormData({ ...formData, nis_nip: e.target.value })}
+                placeholder={isGuru ? 'Contoh: 198507122010011001' : 'Contoh: 20261001'} 
+                className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
           </div>
@@ -138,7 +140,25 @@ export default function ModalMember({
             />
           </div>
 
-          {/* DROPDOWN KELAS / JABATAN SESUAI TIPE */}
+          {/* UID KARTU RFID */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              UID Kartu RFID / Tag Fingerprint <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative">
+              <CreditCard className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input 
+                type="text" 
+                value={formData.uid} 
+                onChange={(e) => setFormData({ ...formData, uid: e.target.value.toUpperCase() })}
+                required 
+                placeholder="Contoh: A1B2C301" 
+                className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+          </div>
+
+          {/* DROPDOWN KELAS / JABATAN */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               {isGuru ? 'Jabatan / Tugas Mengajar' : 'Pilih Kelas / Rombel'} <span className="text-rose-500">*</span>

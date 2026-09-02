@@ -57,6 +57,7 @@ type LoginResponse struct {
 type Member struct {
 	ID        int    `json:"id"`
 	UID       string `json:"uid"`
+	NISNIP    string `json:"nis_nip"` // NIS untuk Santri, NIP untuk Guru
 	Nama      string `json:"nama"`
 	Tipe      string `json:"tipe"`  // "siswa" | "guru"
 	Kelas     string `json:"kelas"` // e.g. "10 IPA 1" atau "Guru Fiqih & Hadits"
@@ -128,6 +129,7 @@ func initDatabase() {
 	CREATE TABLE IF NOT EXISTS members (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		uid TEXT UNIQUE NOT NULL,
+		nis_nip TEXT DEFAULT '',
 		nama TEXT NOT NULL,
 		tipe TEXT NOT NULL,
 		kelas TEXT DEFAULT '',
@@ -179,6 +181,9 @@ func initDatabase() {
 	if _, err := db.Exec(schema); err != nil {
 		log.Fatalf("Gagal inisialisasi schema database: %v", err)
 	}
+
+	// Migrations for existing database
+	db.Exec("ALTER TABLE members ADD COLUMN nis_nip TEXT DEFAULT ''")
 
 	// Default settings
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_nama', 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')")
@@ -245,21 +250,21 @@ func seedDummyData() {
 	log.Println("🌱 Memasukkan seed data dummy santri, guru & absensi...")
 
 	members := []Member{
-		{UID: "A1B2C301", Nama: "Muhammad Rizky Pratama", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234567801"},
-		{UID: "A1B2C302", Nama: "Ustadz Ahmad Fauzi, S.Pd.I", Tipe: "guru", Kelas: "Guru Fiqih & Hadits", NoHP: "081234567802"},
-		{UID: "A1B2C303", Nama: "Aisyah Nurul Hidayah", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234567803"},
-		{UID: "A1B2C304", Nama: "Ustadzah Fatimah Zahra, M.Pd", Tipe: "guru", Kelas: "Guru Bahasa Arab", NoHP: "081234567804"},
-		{UID: "A1B2C305", Nama: "Fajar Dwi Santoso", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234567805"},
-		{UID: "A1B2C306", Nama: "Zaid Bin Haritsah", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234567806"},
-		{UID: "A1B2C307", Nama: "Khadijah Al-Kubra", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234567807"},
-		{UID: "A1B2C308", Nama: "Ustadz Abdullah Yusuf, Lc", Tipe: "guru", Kelas: "Guru Tahfidz & Quran", NoHP: "081234567808"},
-		{UID: "A1B2C309", Nama: "Bilal Bin Rabah", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234567809"},
-		{UID: "A1B2C310", Nama: "Ustadzah Maryam Jameelah", Tipe: "guru", Kelas: "Guru Aqidah Akhlak", NoHP: "081234567810"},
+		{UID: "A1B2C301", NISNIP: "20261001", Nama: "Muhammad Rizky Pratama", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234567801"},
+		{UID: "A1B2C302", NISNIP: "198507122010011001", Nama: "Ustadz Ahmad Fauzi, S.Pd.I", Tipe: "guru", Kelas: "Guru Fiqih & Hadits", NoHP: "081234567802"},
+		{UID: "A1B2C303", NISNIP: "20261002", Nama: "Aisyah Nurul Hidayah", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234567803"},
+		{UID: "A1B2C304", NISNIP: "198803152012012002", Nama: "Ustadzah Fatimah Zahra, M.Pd", Tipe: "guru", Kelas: "Guru Bahasa Arab", NoHP: "081234567804"},
+		{UID: "A1B2C305", NISNIP: "20261003", Nama: "Fajar Dwi Santoso", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234567805"},
+		{UID: "A1B2C306", NISNIP: "20261004", Nama: "Zaid Bin Haritsah", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234567806"},
+		{UID: "A1B2C307", NISNIP: "20261005", Nama: "Khadijah Al-Kubra", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234567807"},
+		{UID: "A1B2C308", NISNIP: "198211052008011003", Nama: "Ustadz Abdullah Yusuf, Lc", Tipe: "guru", Kelas: "Guru Tahfidz & Quran", NoHP: "081234567808"},
+		{UID: "A1B2C309", NISNIP: "20261006", Nama: "Bilal Bin Rabah", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234567809"},
+		{UID: "A1B2C310", NISNIP: "199002202015012004", Nama: "Ustadzah Maryam Jameelah", Tipe: "guru", Kelas: "Guru Aqidah Akhlak", NoHP: "081234567810"},
 	}
 
 	for _, m := range members {
-		db.Exec("INSERT OR IGNORE INTO members (uid, nama, tipe, kelas, no_hp) VALUES (?, ?, ?, ?, ?)",
-			m.UID, m.Nama, m.Tipe, m.Kelas, m.NoHP)
+		db.Exec("INSERT OR IGNORE INTO members (uid, nis_nip, nama, tipe, kelas, no_hp) VALUES (?, ?, ?, ?, ?, ?)",
+			m.UID, m.NISNIP, m.Nama, m.Tipe, m.Kelas, m.NoHP)
 	}
 
 	devices := []DeviceInfo{
@@ -789,8 +794,8 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var member Member
-	err := db.QueryRow("SELECT id, uid, nama, tipe, kelas, no_hp FROM members WHERE uid = ?", req.RFIDTag).
-		Scan(&member.ID, &member.UID, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
+	err := db.QueryRow("SELECT id, uid, nis_nip, nama, tipe, kelas, no_hp FROM members WHERE uid = ?", req.RFIDTag).
+		Scan(&member.ID, &member.UID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
 
 	if err != nil {
 		if autoRegister == "0" || strings.ToLower(autoRegister) == "false" {
@@ -931,7 +936,7 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		tipe := strings.ToLower(r.URL.Query().Get("tipe"))
 		search := strings.ToLower(r.URL.Query().Get("search"))
 
-		query := "SELECT id, uid, nama, tipe, kelas, no_hp, created_at FROM members WHERE 1=1"
+		query := "SELECT id, uid, nis_nip, nama, tipe, kelas, no_hp, created_at FROM members WHERE 1=1"
 		var args []interface{}
 
 		if tipe != "" && tipe != "all" {
@@ -939,8 +944,8 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 			args = append(args, tipe)
 		}
 		if search != "" {
-			query += " AND (lower(nama) LIKE ? OR lower(uid) LIKE ? OR lower(kelas) LIKE ?)"
-			args = append(args, "%"+search+"%", "%"+search+"%", "%"+search+"%")
+			query += " AND (lower(nama) LIKE ? OR lower(uid) LIKE ? OR lower(nis_nip) LIKE ? OR lower(kelas) LIKE ?)"
+			args = append(args, "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 		}
 		query += " ORDER BY id DESC"
 
@@ -954,7 +959,7 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		members := make([]Member, 0)
 		for rows.Next() {
 			var m Member
-			rows.Scan(&m.ID, &m.UID, &m.Nama, &m.Tipe, &m.Kelas, &m.NoHP, &m.CreatedAt)
+			rows.Scan(&m.ID, &m.UID, &m.NISNIP, &m.Nama, &m.Tipe, &m.Kelas, &m.NoHP, &m.CreatedAt)
 			members = append(members, m)
 		}
 
@@ -971,6 +976,7 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		m.UID = strings.TrimSpace(m.UID)
+		m.NISNIP = strings.TrimSpace(m.NISNIP)
 		m.Nama = strings.TrimSpace(m.Nama)
 		m.Tipe = strings.ToLower(strings.TrimSpace(m.Tipe))
 
@@ -982,8 +988,8 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 			m.Tipe = "siswa"
 		}
 
-		res, err := db.Exec("INSERT INTO members (uid, nama, tipe, kelas, no_hp) VALUES (?, ?, ?, ?, ?)",
-			m.UID, m.Nama, m.Tipe, m.Kelas, m.NoHP)
+		res, err := db.Exec("INSERT INTO members (uid, nis_nip, nama, tipe, kelas, no_hp) VALUES (?, ?, ?, ?, ?, ?)",
+			m.UID, m.NISNIP, m.Nama, m.Tipe, m.Kelas, m.NoHP)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "UID Kartu RFID sudah terdaftar.")
 			return
@@ -1008,8 +1014,8 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_, err := db.Exec("UPDATE members SET uid = ?, nama = ?, tipe = ?, kelas = ?, no_hp = ? WHERE id = ?",
-			m.UID, m.Nama, m.Tipe, m.Kelas, m.NoHP, m.ID)
+		_, err := db.Exec("UPDATE members SET uid = ?, nis_nip = ?, nama = ?, tipe = ?, kelas = ?, no_hp = ? WHERE id = ?",
+			m.UID, m.NISNIP, m.Nama, m.Tipe, m.Kelas, m.NoHP, m.ID)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "Gagal memperbarui data member.")
 			return
