@@ -2,9 +2,11 @@ version: '3.8'
 
 services:
   absensi-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/wahid672/absensidigital:latest
+    # Jika ingin build dari source lokal, hilangkan comment pada baris build di bawah:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     container_name: absensi-app
     restart: unless-stopped
     expose:

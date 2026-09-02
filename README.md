@@ -1,80 +1,71 @@
 # SIAKAD Absensi Digital - Fullstack Golang & IoT ESP32
 
-Aplikasi **Fullstack All-in-One** (Backend REST API Golang + Frontend Web Admin SPA) untuk sistem absensi terintegrasi mesin mikrokontroler ESP32 (RFID / Fingerprint). 
+Aplikasi **Fullstack All-in-One** (Backend REST API Golang + Frontend Web Admin SPA) untuk sistem absensi digital terintegrasi mesin mikrokontroler ESP32 (RFID & Fingerprint).
 
-Frontend SPA (HTML5 + Tailwind CSS + Vanilla JS) di-embed langsung ke dalam binary Golang, sehingga **hanya membutuhkan 1 container dan 1 port** saat di-deploy di VPS.
+Docker Image resmi tersedia dan otomatis di-build melalui **GitHub Container Registry (GHCR)**:
+```text
+ghcr.io/wahid672/absensidigital:latest
+```
 
 ---
 
-## 🌟 Fitur Utama
+## 🚀 Fitur Utama
 
-1. **Fullstack Single Binary (All-in-One):**
-   - Web Server, Frontend SPA, dan Backend REST API disajikan langsung oleh satu aplikasi Golang (`main.go`).
-   - Bebas masalah CORS karena frontend dan API berjalan pada domain & port yang sama.
+1. **Fullstack Single Container:**
+   - Web Server, Frontend SPA (HTML5, Tailwind CSS, Vanilla JS), dan REST API disajikan langsung oleh satu binary Golang.
+   - Menggunakan port tunggal (`8080`) dan bebas kendala CORS.
 
-2. **Sistem Autentikasi JWT:**
-   - Standar HS256 JWT Token dengan masa aktif 24 jam.
-   - Endpoint login: `POST /api/login` (Default admin: `admin` / `admin123`).
-   - Token disimpan secara aman di `localStorage` pada browser.
-   - Auto-login saat refresh dan auto-logout saat token expired (HTTP 401).
+2. **Autentikasi JWT (HS256):**
+   - Endpoint login `POST /api/login` (Default admin: `admin` / `admin123`).
+   - Sesi tersimpan di `localStorage`, auto-login, dan auto-logout saat token expired (HTTP 401).
 
-3. **Dashboard & Laporan Absensi:**
-   - Date picker filter (default hari ini).
-   - Filter tipe pengguna: **Semua**, **Siswa**, dan **Guru**.
-   - Kartu statistik: Total Hadir, Tepat Waktu, Terlambat, dan Komposisi Siswa/Guru.
-   - Instant Search (pencarian nama & ID mesin realtime).
-   - Export rekapitulasi data ke format file **CSV / Excel**.
+3. **Dashboard Laporan & Rekapitulasi:**
+   - Filter Tanggal & Tipe Pengguna (**Semua**, **Siswa**, **Guru**).
+   - Metrik Kehadiran: Total Hadir, Tepat Waktu, Terlambat, dan Komposisi Siswa/Guru.
+   - Pencarian Instan (Live search tabel berdasarkan Nama atau ID Mesin).
+   - Fitur **Export CSV / Excel**.
 
 4. **Integrasi Mesin ESP32 IoT:**
-   - Endpoint `POST /api/attendance/tap` untuk menerima data tap kartu RFID / Fingerprint secara realtime dari mikrokontroler ESP32.
+   - Endpoint `POST /api/attendance/tap` untuk mencatat absensi realtime dari perangkat IoT ESP32.
 
 ---
 
-## 📁 Struktur Proyek
+## 🐳 Cara Deploy di VPS (Menggunakan Image GHCR)
 
-```text
-.
-├── main.go                              # Golang Server (REST API, JWT & Static SPA handler)
-├── index.html                           # Single Page Application (Tailwind CSS & Vanilla JS)
-├── go.mod                               # Go Module
-├── absensi_api_postman_collection.json  # Postman Collection REST API & Simulasi ESP32
-├── Dockerfile                           # Multi-stage Docker Build (Golang -> Alpine)
-├── docker-compose.yml                   # Docker Compose (Terkoneksi ke network: caddy_net)
-├── .gitignore                           # Git ignore rules
-└── README.md                            # Panduan & Dokumentasi
+Pengguna di VPS **tidak perlu melakukan build kode sumber atau install Go**. Cukup gunakan file `docker-compose.yml` berikut:
+
+### 1. Buat File `docker-compose.yml`
+
+```yaml
+version: '3.8'
+
+services:
+  absensi-app:
+    image: ghcr.io/wahid672/absensidigital:latest
+    container_name: absensi-app
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - caddy_net
+    environment:
+      - PORT=8080
+      - JWT_SECRET=siakad_esp32_iot_secret_key_2026
+      - ADMIN_USER=admin
+      - ADMIN_PASS=admin123
+      - TZ=Asia/Jakarta
+
+networks:
+  caddy_net:
+    external: true
 ```
 
----
-
-## 🌐 Konfigurasi Caddy Web Server di VPS
-
-Karena web server utama VPS Anda sudah menggunakan Caddy dan berada pada network `caddy_net`, Anda hanya perlu menambahkan 1 blok `reverse_proxy` pada file `Caddyfile` Anda:
-
-```caddy
-absensi.domainanda.com {
-    reverse_proxy absensi-app:8080
-}
-```
-
-Kemudian reload Caddy di VPS:
-```bash
-docker exec -w /etc/caddy caddy caddy reload
-# atau
-caddy reload
-```
-
----
-
-## 🐳 Cara Deploy di VPS (Docker Compose)
-
-Di VPS Anda, jalankan:
+### 2. Jalankan Container
 
 ```bash
-# Build dan jalankan container di background
-docker compose up -d --build
-
-# Cek status container
-docker compose ps
+# Tarik image terbaru dari GHCR dan jalankan di background
+docker compose pull
+docker compose up -d
 
 # Cek log aplikasi
 docker compose logs -f absensi-app
@@ -82,25 +73,57 @@ docker compose logs -f absensi-app
 
 ---
 
+## 🌐 Konfigurasi Caddy Web Server di VPS
+
+Tambahkan konfigurasi reverse proxy pada `Caddyfile` Anda:
+
+```caddy
+absensi.domainanda.com {
+    reverse_proxy absensi-app:8080
+}
+```
+
+Kemudian reload Caddy:
+```bash
+caddy reload
+```
+
+---
+
+## 🤖 Otomatisasi Build CI/CD (GitHub Actions)
+
+Workflow GitHub Actions [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml) telah dikonfigurasi untuk:
+- Otomatis melakukan compile dan build multi-arch (`linux/amd64`, `linux/arm64`).
+- Otomatis mem-push Docker Image ke `ghcr.io/wahid672/absensidigital:latest` setiap kali Anda melakukan `git push` ke branch `main`.
+
+> [!TIP]
+> **Agar Image Dapat Ditarik Publik:**
+> Setelah push pertama selesai:
+> 1. Buka halaman GitHub Anda: `https://github.com/wahid672/absensidigital/packages`.
+> 2. Klik package `absensidigital` -> **Package Settings**.
+> 3. Gulir ke bawah ke bagian **Danger Zone** -> klik **Change visibility** menjadi **Public**.
+
+---
+
 ## 🧪 Pengujian REST API via Postman
 
 1. Buka aplikasi **Postman**.
 2. Klik tombol **Import** lalu pilih file `absensi_api_postman_collection.json`.
-3. Jalankan request:
-   - **`1. Login Admin`** (`POST /api/login`): Otomatis menangkap dan menyimpan token JWT ke variabel `{{jwt_token}}`.
-   - **`2. Get Laporan Absensi`** (`GET /api/attendance?tanggal=2026-09-02&tipe=all`): Mengambil daftar data absensi dengan autentikasi Bearer token.
-   - **`3. Simulasi Tap Mesin ESP32`** (`POST /api/attendance/tap`): Menguji pengiriman absensi dari perangkat IoT.
+3. Request yang tersedia:
+   - **`1. Login Admin`** (`POST /api/login`) -> Otomatis menangkap dan menyimpan token JWT ke `{{jwt_token}}`.
+   - **`2. Get Laporan Absensi`** (`GET /api/attendance?tanggal=2026-09-02&tipe=all`) -> Query dengan Bearer token.
+   - **`3. Simulasi Tap Mesin ESP32`** (`POST /api/attendance/tap`) -> Simulasi pengiriman data tap dari ESP32.
 
 ---
 
-## 📤 Instruksi Push ke GitHub
+## 📤 Langkah Push ke Repository GitHub
 
-Jalankan serangkaian perintah berikut di terminal Anda untuk mengunggah proyek ke GitHub:
+Jalankan perintah berikut di terminal Anda untuk mengunggah proyek dan memicu build GHCR otomatis:
 
 ```bash
 git init
 git add .
-git commit -m "first commit: Fullstack Golang & SPA Absensi Digital ESP32"
+git commit -m "feat: Fullstack Golang & SPA Absensi ESP32 with GHCR automated build"
 git branch -M main
 git remote add origin https://github.com/wahid672/absensidigital.git
 git push -u origin main
