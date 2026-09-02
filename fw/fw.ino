@@ -1323,7 +1323,8 @@ bool saveFingerprintTemplate(uint16_t id, String hexStr) {
     templateBytes[i] = (uint8_t)strtol(byteStr, NULL, 16);
   }
 
-  while (mySerial.available()) mySerial.read();
+  while (mySerial.available()) { mySerial.read(); delay(1); }
+  delay(15);
 
   // 1. Kirim perintah Download ke CharBuffer 1 (Cmd 0x09, Buffer 0x01)
   uint8_t cmd[2] = { 0x09, 0x01 };
@@ -1332,7 +1333,7 @@ bool saveFingerprintTemplate(uint16_t id, String hexStr) {
   // Tunggu Ack
   unsigned long startT = millis();
   bool ackOk = false;
-  while (millis() - startT < 1000) {
+  while (millis() - startT < 1500) {
     if (mySerial.available() >= 12) {
       if (mySerial.read() == 0xEF && mySerial.read() == 0x01) {
         for (int k = 0; k < 4; k++) mySerial.read(); // Address
@@ -1346,8 +1347,14 @@ bool saveFingerprintTemplate(uint16_t id, String hexStr) {
         }
       }
     }
+    delay(2);
   }
-  if (!ackOk) return false;
+  if (!ackOk) {
+    Serial.printf("[SAVE TEMPLATE] GAGAL: Sensor tidak merespon Ack DownChar untuk ID %d\n", id);
+    return false;
+  }
+
+  delay(20);
 
   // 2. Kirim 512 bytes dalam 4 paket data (128 bytes per paket)
   for (int p = 0; p < 4; p++) {
@@ -1355,10 +1362,21 @@ bool saveFingerprintTemplate(uint16_t id, String hexStr) {
     sendSensorPacket(pid, &templateBytes[p * 128], 128);
     delay(25);
   }
-  delay(50);
+  delay(40);
+  while (mySerial.available()) { mySerial.read(); delay(1); }
 
   // 3. Simpan dari CharBuffer 1 ke memori permanen sensor (slot id)
-  return (finger.storeModel(id) == FINGERPRINT_OK);
+  uint8_t storeRes = finger.storeModel(id);
+  delay(40);
+  while (mySerial.available()) { mySerial.read(); delay(1); }
+
+  if (storeRes == FINGERPRINT_OK) {
+    Serial.printf("[SAVE TEMPLATE] ID %d berhasil disimpan ke sensor!\n", id);
+    return true;
+  } else {
+    Serial.printf("[SAVE TEMPLATE] GAGAL storeModel ID %d (Err: 0x%02X)\n", id, storeRes);
+    return false;
+  }
 }
 
 // --- FUNGSI PROSES SERIAL UPLOAD & DOWNLOAD ---
@@ -1729,10 +1747,14 @@ void handleWebUploadJsonTemplates() {
       printCentered("Simpan ID: " + String(fId), 1);
       if (saveFingerprintTemplate(fId, hexData)) {
         successCount++;
-        syncSingleEnroll(fId); // Sinkronkan pendaftaran ID ke server
       }
       delay(30);
     }
+  }
+
+  // Perbarui cache anggota dari server jika WiFi online
+  if (WiFi.status() == WL_CONNECTED) {
+    fetchMembersLocalCache();
   }
 
   Serial.printf("[JSON RESTORE] Selesai: %d dari %d template berhasil disimpan ke sensor!\n", successCount, totalTemplates);
