@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Database, School, CloudDownload, Broom, Trash2, Save, Loader2, MapPin } from 'lucide-react';
+import { Database, School, CloudDownload, Broom, Trash2, Save, Loader2, MapPin, CreditCard, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 
@@ -8,6 +8,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     instansi_nama: settings.instansi_nama || '',
     instansi_alamat: settings.instansi_alamat || '',
     instansi_kota: settings.instansi_kota || 'Kota Santri',
+    auto_register_card: settings.auto_register_card !== undefined ? settings.auto_register_card : '1',
     jam_masuk_batas: settings.jam_masuk_batas || '07:00',
     jam_pulang_batas: settings.jam_pulang_batas || '15:00',
     kepala_nama: settings.kepala_nama || ''
@@ -20,6 +21,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
       instansi_nama: settings.instansi_nama || '',
       instansi_alamat: settings.instansi_alamat || '',
       instansi_kota: settings.instansi_kota || 'Kota Santri',
+      auto_register_card: settings.auto_register_card !== undefined ? settings.auto_register_card : '1',
       jam_masuk_batas: settings.jam_masuk_batas || '07:00',
       jam_pulang_batas: settings.jam_pulang_batas || '15:00',
       kepala_nama: settings.kepala_nama || ''
@@ -39,7 +41,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
         Swal.fire({
           icon: 'success',
           title: 'Berhasil',
-          text: 'Pengaturan dan nama kota berhasil disimpan',
+          text: 'Pengaturan berhasil disimpan ke sistem',
           timer: 1500,
           showConfirmButton: false
         });
@@ -52,6 +54,11 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleToggleAutoRegister = () => {
+    const newVal = formData.auto_register_card === '1' ? '0' : '1';
+    setFormData(prev => ({ ...prev, auto_register_card: newVal }));
   };
 
   const handleSeedDummy = () => {
@@ -128,55 +135,118 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     });
   };
 
+  const isAutoRegisterOn = formData.auto_register_card === '1';
+
   return (
     <section className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-5xl w-full mx-auto">
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <h3 className="text-lg font-bold text-slate-800">Pengaturan Sistem & Profil Instansi</h3>
-        <p className="text-xs text-slate-500">Kelola data contoh (dummy), reset database, nama kota tanda tangan PDF, dan batas jam masuk</p>
+        <h3 className="text-lg font-bold text-slate-800">Pengaturan Sistem & Kebijakan Mesin IoT</h3>
+        <p className="text-xs text-slate-500">Kelola registrasi kartu otomatis, profil instansi, kota dokumen PDF, dan reset database</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
         {/* KARTU 1: MANAJEMEN DATA DUMMY & RESET */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between">
-          <div className="space-y-3">
+        <div className="space-y-6">
+          {/* TOGGLE ON/OFF KARTU BARU */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg">
-                <Database className="w-5 h-5" />
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
+                isAutoRegisterOn ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+              }`}>
+                <CreditCard className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="font-bold text-sm text-slate-800">Manajemen Data Contoh & Reset</h4>
-                <p className="text-xs text-slate-400">Generate atau bersihkan database SQLite</p>
+                <h4 className="font-bold text-sm text-slate-800">Pendaftaran Kartu Baru Otomatis</h4>
+                <p className="text-xs text-slate-400">Respon API saat kartu RFID belum terdaftar di-tap</p>
               </div>
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Gunakan fitur ini untuk memasukkan data contoh santri/guru/kelas/jabatan dan riwayat absensi demo, atau membersihkan data saat sistem siap digunakan produksi di lapangan.
-            </p>
+
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 block">
+                    Status: {isAutoRegisterOn ? 'ON (Izinkan Kartu Baru)' : 'OFF (Tolak Kartu Tidak Dikenal)'}
+                  </span>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {isAutoRegisterOn 
+                      ? 'Kartu yang belum ada di sistem akan otomatis didaftarkan dan absensinya dicatat.' 
+                      : 'Kartu yang belum terdaftar akan ditolak dengan pesan respon "data tidak ditemukan".'}
+                  </p>
+                </div>
+
+                {/* Modern Switch UI */}
+                <button
+                  type="button"
+                  onClick={handleToggleAutoRegister}
+                  className={`relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    isAutoRegisterOn ? 'bg-emerald-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      isAutoRegisterOn ? 'translate-x-6' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200 flex items-center gap-1.5 text-[11px]">
+                {isAutoRegisterOn ? (
+                  <span className="text-emerald-700 flex items-center gap-1 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Mode Mudah: Bagus saat inisialisasi awal pembagian kartu
+                  </span>
+                ) : (
+                  <span className="text-rose-600 flex items-center gap-1 font-medium">
+                    <ShieldAlert className="w-3.5 h-3.5" /> Mode Ketat: Mencegah kartu asing/tak terdaftar masuk absensi
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-2.5 pt-4 border-t border-slate-100">
-            <button 
-              onClick={handleSeedDummy}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow transition-all"
-            >
-              <CloudDownload className="w-4 h-4" />
-              <span>Import / Generate Data Master & Presensi Dummy</span>
-            </button>
+          {/* DUMMY & RESET */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-800">Manajemen Data Contoh & Reset</h4>
+                  <p className="text-xs text-slate-400">Generate atau bersihkan database SQLite</p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Gunakan fitur ini untuk memasukkan data contoh santri/guru/kelas/jabatan dan riwayat absensi demo, atau membersihkan data saat sistem siap digunakan produksi.
+              </p>
+            </div>
 
-            <button 
-              onClick={handleResetAttendance}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold shadow transition-all"
-            >
-              <Broom className="w-4 h-4" />
-              <span>Hapus Seluruh Riwayat Absensi Saja</span>
-            </button>
+            <div className="space-y-2.5 pt-4 border-t border-slate-100">
+              <button 
+                onClick={handleSeedDummy}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow transition-all"
+              >
+                <CloudDownload className="w-4 h-4" />
+                <span>Import / Generate Data Master & Presensi Dummy</span>
+              </button>
 
-            <button 
-              onClick={handleResetAll}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow transition-all"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>Reset Total Database (Absensi, Anggota, Kelas & Posisi)</span>
-            </button>
+              <button 
+                onClick={handleResetAttendance}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold shadow transition-all"
+              >
+                <Broom className="w-4 h-4" />
+                <span>Hapus Seluruh Riwayat Absensi Saja</span>
+              </button>
+
+              <button 
+                onClick={handleResetAll}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow transition-all"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Reset Total Database (Absensi, Anggota, Kelas & Posisi)</span>
+              </button>
+            </div>
           </div>
         </div>
 

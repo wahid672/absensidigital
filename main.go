@@ -184,6 +184,7 @@ func initDatabase() {
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_nama', 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_alamat', 'Jl. Pesantren Digital No. 01')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_kota', 'Kota Santri')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_register_card', '1')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_masuk_batas', '07:00')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_pulang_batas', '15:00')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('kepala_nama', 'KH. Ahmad Zaki, Lc., M.Ag')")
@@ -778,11 +779,44 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		VALUES (?, ?, 'Pintu Masuk', CURRENT_TIMESTAMP) 
 		ON CONFLICT(device_id) DO UPDATE SET last_seen = CURRENT_TIMESTAMP`, req.DeviceID, req.DeviceID)
 
+	tDate, tTime, tHour, tMin := parseDateTime(req.Tanggal, req.Waktu, req.Timestamp)
+	inH, inM, outH, outM := getThresholdTimes()
+
+	var autoRegister string
+	db.QueryRow("SELECT value FROM settings WHERE key = 'auto_register_card'").Scan(&autoRegister)
+	if autoRegister == "" {
+		autoRegister = "1"
+	}
+
 	var member Member
 	err := db.QueryRow("SELECT id, uid, nama, tipe, kelas, no_hp FROM members WHERE uid = ?", req.RFIDTag).
 		Scan(&member.ID, &member.UID, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
 
 	if err != nil {
+		if autoRegister == "0" || strings.ToLower(autoRegister) == "false" {
+			log.Printf("[ESP32 TAP DITOLAK] Kartu tidak terdaftar: %s | Mesin: %s", req.RFIDTag, req.DeviceID)
+
+			broadcastSSE("attendance_tap", map[string]interface{}{
+				"action":           "card_not_registered",
+				"status":           "not_found",
+				"already_recorded": false,
+				"rfid_uid":         req.RFIDTag,
+				"time":             tTime,
+				"message":          fmt.Sprintf("Kartu RFID (%s) tidak terdaftar dalam sistem", req.RFIDTag),
+			})
+
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"status":           "not_found",
+				"action":           "card_not_registered",
+				"message":          "Data kartu tidak ditemukan / belum terdaftar dalam sistem",
+				"already_recorded": false,
+				"rfid_uid":         req.RFIDTag,
+				"data":             nil,
+			})
+			return
+		}
+
+		// Auto Register ON: Otomatis daftarkan kartu baru
 		member = Member{
 			UID:   req.RFIDTag,
 			Nama:  fmt.Sprintf("Kartu Baru (#%s)", req.RFIDTag),
@@ -792,9 +826,6 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		db.Exec("INSERT OR IGNORE INTO members (uid, nama, tipe, kelas) VALUES (?, ?, ?, ?)",
 			member.UID, member.Nama, member.Tipe, member.Kelas)
 	}
-
-	tDate, tTime, tHour, tMin := parseDateTime(req.Tanggal, req.Waktu, req.Timestamp)
-	inH, inM, outH, outM := getThresholdTimes()
 
 	var existing AttendanceRecord
 	checkErr := db.QueryRow(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin 
