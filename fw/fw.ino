@@ -1220,30 +1220,30 @@ void sendSensorPacket(uint8_t pid, uint8_t *payload, uint16_t length) {
 }
 
 String extractFingerprintTemplate(uint16_t id) {
-  // Bersihkan sisa buffer serial sebelum mulai
-  while (mySerial.available()) mySerial.read();
-  delay(20);
+  // 1. Bersihkan serial buffer
+  while (mySerial.available()) { mySerial.read(); delay(1); }
+  delay(10);
 
-  // 1. Muat model dari slot memori ke CharBuffer 1 sensor
+  // 2. Muat model dari slot memori ke CharBuffer 1 sensor
   if (finger.loadModel(id) != FINGERPRINT_OK) {
     return "";
   }
 
   delay(20);
-  while (mySerial.available()) mySerial.read();
+  while (mySerial.available()) { mySerial.read(); delay(1); }
 
-  // 2. Kirim perintah Upload CharBuffer 1 (PID 0x01, Cmd 0x08, Buffer 0x01)
+  // 3. Kirim perintah Upload CharBuffer 1 (PID 0x01, Cmd 0x08, Buffer 0x01)
   uint8_t cmd[2] = { 0x08, 0x01 };
   sendSensorPacket(0x01, cmd, 2);
 
-  // 3. Baca respon & paket data 512 bytes
+  // 4. Baca paket data 512 bytes
   uint8_t templateBytes[512];
   int bytesRead = 0;
   unsigned long startT = millis();
 
-  while (bytesRead < 512 && (millis() - startT < 3000)) {
+  while (bytesRead < 512 && (millis() - startT < 2500)) {
     if (mySerial.available() < 9) {
-      delay(2);
+      delay(1);
       continue;
     }
 
@@ -1278,7 +1278,7 @@ String extractFingerprintTemplate(uint16_t id) {
       uint8_t confirmCode = mySerial.read();
       for (int k = 0; k < payloadLen - 1; k++) mySerial.read();
       mySerial.read(); mySerial.read(); // Checksum
-      if (confirmCode != 0x00) return "";
+      if (confirmCode != 0x00) break;
     } 
     else if (pid == 0x02 || pid == 0x08) {
       // Paket Data
@@ -1296,9 +1296,9 @@ String extractFingerprintTemplate(uint16_t id) {
     }
   }
 
-  // Bersihkan sisa buffer setelah selesai
-  delay(30);
-  while (mySerial.available()) mySerial.read();
+  // Bersihkan sisa buffer dan beri jeda stabilisasi sensor
+  delay(35);
+  while (mySerial.available()) { mySerial.read(); delay(1); }
 
   if (bytesRead < 512) return "";
 
@@ -1386,26 +1386,15 @@ void handleTemplateUpload() {
 
   int totalFound = 0;
   for (int id = 1; id <= MAX_FINGERPRINTS; id++) {
-    // Bersihkan buffer serial dan beri jeda stabilisasi sebelum loadModel
-    while (mySerial.available()) mySerial.read();
-    delay(20);
-
-    uint8_t loadStatus = finger.loadModel(id);
-    if (loadStatus == FINGERPRINT_OK) {
-      Serial.printf("[UPLOAD] Menemukan ID %d di sensor. Mengekstrak template... ", id);
+    String hexData = extractFingerprintTemplate(id);
+    if (hexData.length() >= 1024) {
+      JsonObject item = tmplArray.createNestedObject();
+      item["fingerprint_id"] = id;
+      item["template_data"] = hexData;
+      totalFound++;
+      Serial.printf("[UPLOAD] ID %d SUKSES (1024 Hex) | Total: %d\n", id, totalFound);
       printCentered("Upload ID: " + String(id), 1);
-      
-      String hexData = extractFingerprintTemplate(id);
-      if (hexData.length() >= 1024) {
-        JsonObject item = tmplArray.createNestedObject();
-        item["fingerprint_id"] = id;
-        item["template_data"] = hexData;
-        totalFound++;
-        Serial.println("SUKSES (1024 Hex)");
-      } else {
-        Serial.printf("GAGAL ekstrak (Panjang: %d)\n", hexData.length());
-      }
-      delay(50); // Jeda agar sensor siap untuk iterasi berikutnya
+      delay(20);
     }
   }
 
@@ -1651,42 +1640,41 @@ void handleWebDownloadJsonTemplates() {
     return;
   }
 
-  Serial.println("\n[JSON BACKUP] Memulai proses ekspor seluruh template sidik jari ke file JSON...");
+  Serial.println("\n==================================================");
+  Serial.println("[JSON BACKUP] Memulai proses ekspor seluruh template sidik jari...");
+  Serial.println("==================================================");
   lcd.clear();
   printCentered("Backup Template", 0);
   printCentered("Membaca Jari...", 1);
   finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
 
-  DynamicJsonDocument doc(65536);
-  doc["device_id"] = deviceId;
-  doc["exported_at"] = getCurrentTimestamp();
-  JsonArray tmplArray = doc.createNestedArray("templates");
+  // Gunakan HTTP Chunked Streaming (hemat RAM dan tidak terpotong)
+  webServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  webServer.sendHeader("Content-Type", "application/json");
+  webServer.sendHeader("Content-Disposition", "attachment; filename=\"fingerprint_backup_" + String(deviceId) + ".json\"");
+  webServer.send(200, "application/json", "");
+
+  String header = "{\"device_id\":\"" + String(deviceId) + "\",\"exported_at\":\"" + getCurrentTimestamp() + "\",\"templates\":[";
+  webServer.sendContent(header);
 
   int totalFound = 0;
   for (int id = 1; id <= MAX_FINGERPRINTS; id++) {
-    while (mySerial.available()) mySerial.read();
-    delay(15);
-
-    if (finger.loadModel(id) == FINGERPRINT_OK) {
-      String hexData = extractFingerprintTemplate(id);
-      if (hexData.length() >= 1024) {
-        JsonObject item = tmplArray.createNestedObject();
-        item["fingerprint_id"] = id;
-        item["template_data"] = hexData;
-        totalFound++;
-      }
-      delay(25);
+    String hexData = extractFingerprintTemplate(id);
+    if (hexData.length() >= 1024) {
+      printCentered("Ekspor ID: " + String(id), 1);
+      String item = (totalFound > 0 ? "," : "") + String("{\"fingerprint_id\":") + String(id) + ",\"template_data\":\"" + hexData + "\"}";
+      webServer.sendContent(item);
+      totalFound++;
+      Serial.printf("[JSON BACKUP] ID %d SUKSES diekstrak! Total: %d\n", id, totalFound);
+      delay(20);
     }
   }
 
-  doc["total"] = totalFound;
+  String footer = "],\"total\":" + String(totalFound) + "}";
+  webServer.sendContent(footer);
+  webServer.sendContent(""); // Selesai streaming
 
-  String jsonOutput;
-  serializeJson(doc, jsonOutput);
-
-  webServer.sendHeader("Content-Type", "application/json");
-  webServer.sendHeader("Content-Disposition", "attachment; filename=\"fingerprint_backup_" + String(deviceId) + ".json\"");
-  webServer.send(200, "application/json", jsonOutput);
+  Serial.printf("\n[JSON BACKUP] SELESAI! Berhasil mengekspor %d template ke file JSON.\n", totalFound);
 
   digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
   finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
