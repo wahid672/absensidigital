@@ -536,7 +536,7 @@ void syncDataFingerprint() {
   // Indikator visual LED sensor (Ungu Bernafas)
   finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
 
-  DynamicJsonDocument doc(2048);
+  DynamicJsonDocument doc(4096);
   doc["action"] = "sync";
   doc["device_id"] = deviceId;
   JsonArray activeArray = doc.createNestedArray("active_fingerprints");
@@ -1842,16 +1842,19 @@ void handleWebUploadBinTemplates() {
     const uint8_t* tmplBytes = &rawBuffer[offset + 2];
     offset += 514;
 
+    int pct = ((i + 1) * 100) / totalTemplates;
+    printCentered("Restore " + String(pct) + "%", 0);
+    printCentered("Simpan ID: " + String(fId), 1);
+
     if (fId > 0 && fId <= MAX_FINGERPRINTS) {
-      Serial.printf("[BIN RESTORE] Menyimpan ID %d... ", fId);
-      printCentered("Simpan ID: " + String(fId), 1);
+      Serial.printf("[BIN RESTORE] Menyimpan ID %d (%d%%)... ", fId, pct);
 
       bool ok = false;
       for (int attempt = 1; attempt <= 3; attempt++) {
         ok = saveFingerprintTemplateBytes(fId, tmplBytes);
         if (ok) break;
         Serial.printf("(Retry %d)... ", attempt);
-        delay(200);
+        delay(150);
         while (mySerial.available()) { mySerial.read(); delay(1); }
       }
 
@@ -1861,34 +1864,47 @@ void handleWebUploadBinTemplates() {
       } else {
         Serial.println("GAGAL!");
       }
-      delay(40);
+      delay(30);
     }
   }
 
-  // Sinkronisasi seluruh template ke server database jika online
+  // Sinkronisasi seluruh template ke server database secara instan dari RAM
   bool serverSynced = false;
   if (WiFi.status() == WL_CONNECTED && successCount > 0) {
     Serial.println("\n[SERVER SYNC] Mengirim hasil restore sidik jari ke database server...");
-    printCentered("Sync ke Server..", 1);
+    lcd.clear();
+    printCentered("Sync ke Server", 0);
+    printCentered("Kirim Data...", 1);
 
     DynamicJsonDocument syncDoc(65536);
     syncDoc["action"] = "upload_templates";
     syncDoc["device_id"] = deviceId;
     JsonArray tmplArray = syncDoc.createNestedArray("templates");
 
-    for (int id = 1; id <= MAX_FINGERPRINTS; id++) {
-      String hexData = extractFingerprintTemplate(id);
-      if (hexData.length() >= 1024) {
+    static const char hexChars[] = "0123456789ABCDEF";
+    size_t off = 6;
+    for (int i = 0; i < totalTemplates; i++) {
+      uint16_t fId = rawBuffer[off] | ((uint16_t)rawBuffer[off + 1] << 8);
+      const uint8_t* tmplBytes = &rawBuffer[off + 2];
+      off += 514;
+
+      if (fId > 0 && fId <= MAX_FINGERPRINTS) {
+        String hexData = "";
+        hexData.reserve(1024);
+        for (int b = 0; b < 512; b++) {
+          hexData += hexChars[(tmplBytes[b] >> 4) & 0x0F];
+          hexData += hexChars[tmplBytes[b] & 0x0F];
+        }
+
         JsonObject item = tmplArray.createNestedObject();
-        item["fingerprint_id"] = id;
+        item["fingerprint_id"] = fId;
         item["template_data"] = hexData;
-        delay(10);
       }
     }
 
     HTTPClient http;
     http.begin(serverUrl);
-    http.setTimeout(15000);
+    http.setTimeout(10000);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-API-KEY", apiKey);
 
@@ -1898,11 +1914,14 @@ void handleWebUploadBinTemplates() {
     if (httpCode == 200 || httpCode == 201) {
       serverSynced = true;
       Serial.println("[SERVER SYNC] SUKSES! Seluruh sidik jari tersinkronkan ke database server.");
-      fetchMembersLocalCache(); // Perbarui cache lokal
     } else {
       Serial.printf("[SERVER SYNC] Respon Server (%d): %s\n", httpCode, http.errorToString(httpCode).c_str());
     }
     http.end();
+
+    // Jalankan syncDataFingerprint dengan progres % di LCD
+    syncDataFingerprint();
+    fetchMembersLocalCache();
   }
 
   Serial.printf("[BIN RESTORE] Selesai: %d dari %d template berhasil disimpan ke sensor!\n", successCount, totalTemplates);
