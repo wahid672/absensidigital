@@ -1301,12 +1301,7 @@ String extractFingerprintTemplate(uint16_t id) {
   delay(35);
   while (mySerial.available()) { mySerial.read(); delay(1); }
 
-  if (bytesRead < 256) return "";
-
-  // Jika hanya terbaca 256 bytes, duplikasikan Half 1 ke Half 2 agar menjadi template 512B lengkap
-  if (bytesRead == 256) {
-    memcpy(&templateBytes[256], &templateBytes[0], 256);
-  }
+  if (bytesRead < 512) return "";
 
   // Konversi 512 bytes biner menjadi 1024 karakter HEX
   String hexStr = "";
@@ -1320,25 +1315,13 @@ String extractFingerprintTemplate(uint16_t id) {
 }
 
 bool saveFingerprintTemplate(uint16_t id, String hexStr) {
-  if (hexStr.length() < 512) return false;
+  if (hexStr.length() < 1024) return false;
 
-  // Konversi Hex String ke 512 bytes biner
+  // Konversi Hex String ke 512 bytes biner murni
   uint8_t templateBytes[512] = {0};
-  int maxBytes = hexStr.length() / 2;
-  if (maxBytes > 512) maxBytes = 512;
-
-  for (int i = 0; i < maxBytes; i++) {
+  for (int i = 0; i < 512; i++) {
     char byteStr[3] = { hexStr[i * 2], hexStr[i * 2 + 1], 0 };
     templateBytes[i] = (uint8_t)strtol(byteStr, NULL, 16);
-  }
-
-  // Auto-Repair: Jika Half 2 kosong/rusak dari backup lama, duplikasikan Half 1 ke Half 2
-  int nonZeroH2 = 0;
-  for (int i = 256; i < 512; i++) {
-    if (templateBytes[i] != 0) nonZeroH2++;
-  }
-  if (nonZeroH2 < 50) {
-    memcpy(&templateBytes[256], &templateBytes[0], 256);
   }
 
   while (mySerial.available()) { mySerial.read(); delay(1); }
