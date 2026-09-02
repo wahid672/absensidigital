@@ -251,14 +251,25 @@ CachedMember findMemberOffline(int fingerId, String rfidTag) {
   DeserializationError err = deserializeJson(doc, content);
   if (err) return res;
 
+  auto stripZeros = [](String s) -> String {
+    s.trim();
+    while (s.length() > 1 && s.charAt(0) == '0') {
+      s = s.substring(1);
+    }
+    return s;
+  };
+
+  String cleanSearchRfid = stripZeros(rfidTag);
+
   JsonArray arr = doc["data"].as<JsonArray>();
   for (JsonObject m : arr) {
     int fId = m["fingerprint_id"].as<int>();
     String uId = m["uid"].as<String>();
+    String cleanUId = stripZeros(uId);
 
     bool match = false;
     if (fingerId > 0 && fId == fingerId) match = true;
-    if (rfidTag.length() > 0 && (uId.equalsIgnoreCase(rfidTag))) match = true;
+    if (rfidTag.length() > 0 && (uId.equalsIgnoreCase(rfidTag) || cleanUId.equalsIgnoreCase(cleanSearchRfid))) match = true;
 
     if (match) {
       res.uid = uId;
@@ -846,7 +857,10 @@ void checkFingerprintScan() {
 void readRFID(byte *buffer, byte bufferSize) {
   unsigned long decimal_ID = ((unsigned long)buffer[3] << 24) | ((unsigned long)buffer[2] << 16) | 
                              ((unsigned long)buffer[1] << 8)  | ((unsigned long)buffer[0]);
-  ID_TAG = String(decimal_ID);
+  char tagBuf[16];
+  sprintf(tagBuf, "%010lu", decimal_ID); // Format standar 10 digit desimal (misal: 0104830615)
+  ID_TAG = String(tagBuf);
+  Serial.printf("[RFID SCAN] Raw Dec: %lu -> 10-Digit Tag: %s\n", decimal_ID, ID_TAG.c_str());
 }
 
 // --- FUNGSI CEK STATUS KONEKSI SERVER (TRIGGER KARTU MASTER) ---
@@ -914,14 +928,14 @@ void checkRFID() {
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(50);
   }
   
-  // TRIGGER MASTER CARD CEK KONEKSI KE SERVER (UID: 1606092848)
-  if (ID_TAG == "1606092848") {
+  // TRIGGER MASTER CARD CEK KONEKSI KE SERVER (UID: 1606092848 / 01606092848)
+  if (ID_TAG == "1606092848" || ID_TAG == "01606092848") {
     checkServerConnection();
     return;
   }
   
-  // TRIGGER MASTER CARD (REKAM 1x / HAPUS 5x)
-  if (ID_TAG == "696781609") {
+  // TRIGGER MASTER CARD (REKAM 1x / HAPUS 5x) (UID: 0696781609 / 696781609)
+  if (ID_TAG == "0696781609" || ID_TAG == "696781609") {
     // 1. Debounce 250ms agar tap berturut-turut terbaca mulus dan tidak terabaikan
     if (masterTapCount > 0 && (millis() - lastMasterTapTime < 250)) {
       return; 
@@ -967,8 +981,8 @@ void checkRFID() {
     return;
   }
   
-  // TRIGGER RESTART
-  if (ID_TAG == "2054170372") {
+  // TRIGGER RESTART (UID: 2054170372 / 02054170372)
+  if (ID_TAG == "2054170372" || ID_TAG == "02054170372") {
     finger.LEDcontrol(FINGERPRINT_LED_ON, 0, FINGERPRINT_LED_RED, 0);
     lcd.clear();
     printCentered("SYSTEM RESTART!", 0);

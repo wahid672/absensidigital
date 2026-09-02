@@ -1207,7 +1207,7 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err := db.QueryRow("SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp FROM members WHERE uid = ?", req.RFIDTag).
+		err := db.QueryRow("SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp FROM members WHERE uid = ? OR LTRIM(uid, '0') = LTRIM(?, '0')", req.RFIDTag, req.RFIDTag).
 			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
 
 		if err == nil {
@@ -1371,7 +1371,7 @@ func processSingleTap(deviceID, rfidTag string, fingerprintID int, recordedAt st
 			fingerprintID, fingerprintID, deviceID).
 			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
 	} else if rfidTag != "" {
-		err = db.QueryRow("SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp FROM members WHERE uid = ?", rfidTag).
+		err = db.QueryRow("SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp FROM members WHERE uid = ? OR LTRIM(uid, '0') = LTRIM(?, '0')", rfidTag, rfidTag).
 			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
 	}
 
