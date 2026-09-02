@@ -145,24 +145,32 @@ export default function FingerprintsView({
   // Delete Fingerprint Record
   const handleDelete = (fp) => {
     Swal.fire({
-      title: `Hapus Data Sidik Jari Slot #${fp.fingerprint_id}?`,
-      text: 'Data slot sidik jari ini akan dihapus dari sistem.',
+      title: `Hapus Sidik Jari Slot #${fp.fingerprint_id}?`,
+      html: `Data sidik jari slot <b>#${fp.fingerprint_id}</b> (${fp.member?.nama || 'Belum Terhubung'}) akan dihapus dari server database.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#e11d48',
-      confirmButtonText: 'Ya, Hapus',
+      confirmButtonText: 'Ya, Hapus Sekarang',
       cancelButtonText: 'Batal'
     }).then(async (result) => {
       if (result.isConfirmed) {
         try {
-          const res = await apiFetch(`/api/fingerprints?id=${fp.id}`, { method: 'DELETE' });
+          const res = await apiFetch(`/api/fingerprints?id=${fp.id}&fingerprint_id=${fp.fingerprint_id}&device_id=${encodeURIComponent(fp.device_id || 'PRESENSI-V1')}`, { method: 'DELETE' });
           const data = await res.json();
           if (res.ok) {
-            Swal.fire({ icon: 'success', title: 'Terhapus', text: data.message, timer: 1500, showConfirmButton: false });
+            Swal.fire({ 
+              icon: 'success', 
+              title: 'Sidik Jari Dihapus!', 
+              html: `Data sidik jari slot <b>#${fp.fingerprint_id}</b> telah berhasil dihapus dari server.<br><br><div class="p-3 bg-amber-50 text-amber-800 rounded-xl text-xs text-left border border-amber-200"><strong>⚠️ PENTING: Silakan RESTART Mesin ESP32</strong><br>Agar slot sidik jari ini otomatis terhapus dari memori fisik sensor R503 saat booting sinkronisasi.</div>`,
+              confirmButtonColor: '#0284c7',
+              confirmButtonText: 'Mengerti'
+            });
             fetchFingerprints();
+          } else {
+            Swal.fire('Gagal', data.message || 'Gagal menghapus data.', 'error');
           }
         } catch (e) {
-          Swal.fire('Error', 'Gagal menghapus data.', 'error');
+          Swal.fire('Error', 'Gagal menghubungi server.', 'error');
         }
       }
     });

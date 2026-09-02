@@ -230,6 +230,13 @@ func initDatabase() {
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL
 	);
+
+	CREATE TABLE IF NOT EXISTS pending_deleted_fingerprints (
+		device_id TEXT NOT NULL,
+		fingerprint_id INTEGER NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY(device_id, fingerprint_id)
+	);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		log.Fatalf("Gagal inisialisasi schema database: %v", err)
@@ -1069,28 +1076,58 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// === 4. ACTION: SYNC PADA SAAT BOOTING / WIFI RECONNECT ===
+	// === 4. ACTION: SYNC PADA SAAT BOOTING / RESTART / WIFI RECONNECT ===
 	if action == "sync" {
-		for _, fID := range req.ActiveFingerprints {
-			if fID > 0 {
-				db.Exec(`INSERT OR IGNORE INTO fingerprints (device_id, fingerprint_id, status) VALUES (?, ?, 'unmapped')`,
-					req.DeviceID, fID)
+		// 1. Ambil daftar fingerprint yang ditandai untuk dihapus pada mesin ini
+		rows, err := db.Query("SELECT fingerprint_id FROM pending_deleted_fingerprints WHERE device_id = ?", req.DeviceID)
+		var deleteFingerprints []int
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var dfID int
+				if err := rows.Scan(&dfID); err == nil && dfID > 0 {
+					deleteFingerprints = append(deleteFingerprints, dfID)
+				}
 			}
 		}
 
-		log.Printf("[ESP32 BOOT SYNC] Mesin %s terhubung. %d sidik jari aktif disinkronkan.", req.DeviceID, req.TotalFingerprints)
+		// 2. Bersihkan pending deletions yang telah diproses untuk dikirim ke mesin
+		if len(deleteFingerprints) > 0 {
+			db.Exec("DELETE FROM pending_deleted_fingerprints WHERE device_id = ?", req.DeviceID)
+			log.Printf("[ESP32 BOOT SYNC] Mengirim instruksi hapus slot sensor untuk ID: %v ke mesin %s", deleteFingerprints, req.DeviceID)
+		}
+
+		// Helper map untuk mengecualikan ID yang telah dihapus
+		delMap := make(map[int]bool)
+		for _, dfID := range deleteFingerprints {
+			delMap[dfID] = true
+		}
+
+		// 3. Masukkan fingerprint aktif yang valid ke database
+		var syncedCount int
+		for _, fID := range req.ActiveFingerprints {
+			if fID > 0 && !delMap[fID] {
+				db.Exec(`INSERT OR IGNORE INTO fingerprints (device_id, fingerprint_id, status) VALUES (?, ?, 'unmapped')`,
+					req.DeviceID, fID)
+				syncedCount++
+			}
+		}
+
+		log.Printf("[ESP32 BOOT SYNC] Mesin %s terhubung. %d jari aktif disinkronkan, %d jari diinstruksikan untuk dihapus.",
+			req.DeviceID, syncedCount, len(deleteFingerprints))
 
 		broadcastSSE("device_status", map[string]interface{}{
 			"device_id": req.DeviceID,
 			"status":    "online",
-			"message":   fmt.Sprintf("Mesin %s online dan tersinkronisasi (%d jari terdata)", req.DeviceID, req.TotalFingerprints),
+			"message":   fmt.Sprintf("Mesin %s online dan tersinkronisasi (%d jari terdata)", req.DeviceID, syncedCount),
 		})
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"status":       "success",
-			"message":      "Sinkronisasi sidik jari & server berhasil",
-			"device_id":    req.DeviceID,
-			"total_synced": len(req.ActiveFingerprints),
+			"status":              "success",
+			"message":             "Sinkronisasi sidik jari & server berhasil",
+			"device_id":           req.DeviceID,
+			"total_synced":        syncedCount,
+			"delete_fingerprints": deleteFingerprints,
 		})
 		return
 	}
@@ -1458,16 +1495,45 @@ func handleFingerprints(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		idStr := r.URL.Query().Get("id")
 		id, _ := strconv.Atoi(idStr)
+		fIdStr := r.URL.Query().Get("fingerprint_id")
+		fID, _ := strconv.Atoi(fIdStr)
+		devID := r.URL.Query().Get("device_id")
+		if devID == "" {
+			devID = "PRESENSI-V1"
+		}
+
 		if id > 0 {
-			var fID int
-			db.QueryRow("SELECT fingerprint_id FROM fingerprints WHERE id = ?", id).Scan(&fID)
-			db.Exec("UPDATE members SET fingerprint_id = 0 WHERE fingerprint_id = ?", fID)
+			var fetchedFID int
+			var fetchedDevID string
+			err := db.QueryRow("SELECT fingerprint_id, device_id FROM fingerprints WHERE id = ?", id).Scan(&fetchedFID, &fetchedDevID)
+			if err == nil && fetchedFID > 0 {
+				fID = fetchedFID
+				if fetchedDevID != "" {
+					devID = fetchedDevID
+				}
+			}
 			db.Exec("DELETE FROM fingerprints WHERE id = ?", id)
+		} else if fID > 0 {
+			db.Exec("DELETE FROM fingerprints WHERE device_id = ? AND fingerprint_id = ?", devID, fID)
+		}
+
+		if fID > 0 {
+			db.Exec("UPDATE members SET fingerprint_id = 0 WHERE fingerprint_id = ?", fID)
+			db.Exec("INSERT OR REPLACE INTO pending_deleted_fingerprints (device_id, fingerprint_id) VALUES (?, ?)", devID, fID)
+			log.Printf("[FINGERPRINT DELETED VIA WEB] Slot #%d pada mesin %s ditandai untuk dihapus pada saat restart mesin.", fID, devID)
+
+			broadcastSSE("fingerprint_event", map[string]interface{}{
+				"action":         "deleted",
+				"device_id":      devID,
+				"fingerprint_id": fID,
+				"message":        fmt.Sprintf("Sidik jari slot #%d telah dihapus dari server. Silakan restart mesin ESP32.", fID),
+			})
 		}
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"status":  "success",
-			"message": "Data rekaman sidik jari berhasil dihapus.",
+			"status":         "success",
+			"fingerprint_id": fID,
+			"message":        fmt.Sprintf("Data sidik jari slot #%d berhasil dihapus dari server. Silakan restart perangkat mesin ESP32 agar sidik jari ini otomatis terhapus dari sensor.", fID),
 		})
 
 	default:

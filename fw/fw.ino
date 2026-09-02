@@ -583,9 +583,44 @@ void syncDataFingerprint() {
       String response = http.getString();
       Serial.printf("[SYNC] Respon Server (%d): %s\n", httpCode, response.c_str());
       
+      DynamicJsonDocument resDoc(4096);
+      DeserializationError jsonErr = deserializeJson(resDoc, response);
+      int deletedCount = 0;
+
+      // Cek apakah ada instruksi penghapusan sidik jari dari server
+      if (!jsonErr && resDoc.containsKey("delete_fingerprints")) {
+        JsonArray delArr = resDoc["delete_fingerprints"].as<JsonArray>();
+        for (JsonVariant v : delArr) {
+          int delId = v.as<int>();
+          if (delId > 0 && delId <= MAX_FINGERPRINTS) {
+            Serial.printf("[SYNC DELETE] Menghapus slot sensor ID %d sesuai instruksi database server...\n", delId);
+            lcd.clear();
+            printCentered("Hapus Slot #" + String(delId), 0);
+            printCentered("Sinkron Server", 1);
+            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 2);
+
+            uint8_t p = finger.deleteModel(delId);
+            if (p == FINGERPRINT_OK) {
+              deletedCount++;
+              countFound = (countFound > 0) ? countFound - 1 : 0;
+              Serial.printf("[SYNC DELETE] Slot ID %d BERHASIL dihapus dari sensor.\n", delId);
+            } else {
+              Serial.printf("[SYNC DELETE] Gagal hapus slot ID %d (Err %d)\n", delId, p);
+            }
+            delay(150);
+          }
+        }
+      }
+
       lcd.clear();
-      printCentered("Sync Sukses!", 0);
-      printCentered(String(countFound) + " Jari Terdata", 1);
+      if (deletedCount > 0) {
+        printCentered("Sync & Hapus OK", 0);
+        printCentered(String(countFound) + " Jari Tersimpan", 1);
+        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
+      } else {
+        printCentered("Sync Sukses!", 0);
+        printCentered(String(countFound) + " Jari Terdata", 1);
+      }
       digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
     } else {
       Serial.printf("[SYNC] Gagal kirim ke server: %s\n", http.errorToString(httpCode).c_str());
