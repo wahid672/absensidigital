@@ -1,0 +1,266 @@
+{
+	"info": {
+		"_postman_id": "8f28b2a1-e408-4e89-a2bf-a720dc274941",
+		"name": "Absensi Digital - Golang REST API & ESP32",
+		"description": "Koleksi Postman REST API untuk Sistem Absensi Digital IoT ESP32 & Web Admin SPA.\nMendukung Autentikasi JWT dan query absensi berdasarkan tanggal dan tipe pengguna.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Autentikasi",
+			"item": [
+				{
+					"name": "1. Login Admin (Dapatkan JWT Token)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Test script untuk otomatis menyimpan token JWT ke variabel collection",
+									"var jsonData = pm.response.json();",
+									"",
+									"if (pm.response.code === 200) {",
+									"    var token = jsonData.token || (jsonData.data && jsonData.data.token) || jsonData.jwt || jsonData.access_token;",
+									"    if (token) {",
+									"        pm.collectionVariables.set(\"jwt_token\", token);",
+									"        console.log(\"JWT Token berhasil disimpan:\", token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"admin\",\n    \"password\": \"admin123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"login"
+							]
+						},
+						"description": "Endpoint login untuk mendapatkan JWT Token. Token akan otomatis tersimpan di variable {{jwt_token}} setelah request ini berhasil dieksekusi."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Absensi",
+			"item": [
+				{
+					"name": "2. Get Laporan Absensi (Semua / Filter Tanggal)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/attendance?tanggal=2026-09-02&tipe=all",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"attendance"
+							],
+							"query": [
+								{
+									"key": "tanggal",
+									"value": "2026-09-02",
+									"description": "Format YYYY-MM-DD"
+								},
+								{
+									"key": "tipe",
+									"value": "all",
+									"description": "all | siswa | guru"
+								}
+							]
+						},
+						"description": "Mengambil daftar data absensi berdasarkan tanggal dan tipe pengguna."
+					},
+					"response": []
+				},
+				{
+					"name": "3. Get Laporan Absensi Siswa",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/attendance?tanggal=2026-09-02&tipe=siswa",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"attendance"
+							],
+							"query": [
+								{
+									"key": "tanggal",
+									"value": "2026-09-02"
+								},
+								{
+									"key": "tipe",
+									"value": "siswa"
+								}
+							]
+						},
+						"description": "Mengambil data absensi khusus kategori Siswa."
+					},
+					"response": []
+				},
+				{
+					"name": "4. Get Laporan Absensi Guru",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/attendance?tanggal=2026-09-02&tipe=guru",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"attendance"
+							],
+							"query": [
+								{
+									"key": "tanggal",
+									"value": "2026-09-02"
+								},
+								{
+									"key": "tipe",
+									"value": "guru"
+								}
+							]
+						},
+						"description": "Mengambil data absensi khusus kategori Guru."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Simulasi Mesin ESP32 IoT",
+			"item": [
+				{
+					"name": "5. Simulasi Tap RFID / Fingerprint Mesin ESP32",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"device_id\": \"ESP32-GATE-01\",\n    \"rfid_uid\": \"A1B2C3D4\",\n    \"tipe_scan\": \"masuk\",\n    \"timestamp\": \"2026-09-02T06:55:00+07:00\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/attendance/tap",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"attendance",
+								"tap"
+							]
+						},
+						"description": "Simulasi data yang dikirimkan oleh mikrokontroler ESP32 saat kartu RFID atau Fingerprint disentuhkan."
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "jwt_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

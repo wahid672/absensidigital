@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  absensi-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: absensi-app
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - caddy_net
+    environment:
+      - PORT=8080
+      - JWT_SECRET=siakad_esp32_iot_secret_key_2026
+      - ADMIN_USER=admin
+      - ADMIN_PASS=admin123
+      - TZ=Asia/Jakarta
+
+networks:
+  caddy_net:
+    external: true

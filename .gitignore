@@ -1,0 +1,22 @@
+# Compiled Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+absensi-app
+
+# OS / Editor Files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment Variables
+.env
+.env.local
+
+# Logs
+*.log

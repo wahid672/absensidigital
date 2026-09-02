@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="id" class="h-full bg-slate-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Absensi Digital - IoT ESP32</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                        },
+                        emerald: {
+                            500: '#10b981',
+                            600: '#059669',
+                        },
+                        rose: {
+                            500: '#f43f5e',
+                            600: '#e11d48',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Google Fonts & Font Awesome Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- SweetAlert2 for modern alerts -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        [x-cloak] { display: none !important; }
+        .glassmorphism {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+        }
+        @keyframes pulse-subtle {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .6; }
+        }
+        .animate-pulse-subtle {
+            animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="h-full antialiased text-slate-800 bg-slate-100 flex flex-col min-h-screen">
+
+    <!-- ========================================================================= -->
+    <!-- 1. LOGIN VIEW (Ditampilkan jika belum login / belum ada token)            -->
+    <!-- ========================================================================= -->
+    <section id="login-view" class="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-slate-900 via-primary-900 to-slate-900 relative overflow-hidden">
+        <!-- Background decorative blur circles -->
+        <div class="absolute -top-32 -left-32 w-96 h-96 bg-primary-500/20 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute -bottom-32 -right-32 w-96 h-96 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div class="w-full max-w-md relative z-10">
+            <!-- Brand / Logo Header -->
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary-600 to-primary-500 shadow-lg shadow-primary-500/30 text-white mb-4">
+                    <i class="fa-solid fa-id-card-clip text-3xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-white tracking-tight">SIAKAD Absensi Digital</h1>
+                <p class="text-slate-400 text-sm mt-1">Sistem Pemantauan Absensi IoT ESP32</p>
+            </div>
+
+            <!-- Login Card -->
+            <div class="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-white/20">
+                <div class="mb-6">
+                    <h2 class="text-xl font-bold text-slate-800">Masuk ke Web Admin</h2>
+                    <p class="text-sm text-slate-500 mt-1">Gunakan akun administrator Anda untuk melanjutkan.</p>
+                </div>
+
+                <form id="form-login" class="space-y-5" onsubmit="handleLogin(event)">
+                    <!-- Input Username -->
+                    <div>
+                        <label for="username" class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                            Username
+                        </label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                <i class="fa-solid fa-user"></i>
+                            </div>
+                            <input 
+                                type="text" 
+                                id="username" 
+                                name="username" 
+                                required
+                                placeholder="Masukkan username admin" 
+                                class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all placeholder:text-slate-400"
+                            >
+                        </div>
+                    </div>
+
+                    <!-- Input Password -->
+                    <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label for="password" class="block text-xs font-semibold uppercase tracking-wider text-slate-600">
+                                Password
+                            </label>
+                        </div>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                <i class="fa-solid fa-lock"></i>
+                            </div>
+                            <input 
+                                type="password" 
+                                id="password" 
+                                name="password" 
+                                required
+                                placeholder="••••••••" 
+                                class="w-full pl-10 pr-11 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all placeholder:text-slate-400"
+                            >
+                            <button 
+                                type="button" 
+                                onclick="togglePasswordVisibility()" 
+                                class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+                                title="Lihat password"
+                            >
+                                <i id="eye-icon" class="fa-solid fa-eye text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Server Settings Toggle (Optional for VPS/Custom URL) -->
+                    <div class="pt-1">
+                        <button type="button" onclick="toggleApiConfigModal()" class="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1.5 font-medium">
+                            <i class="fa-solid fa-gear text-xs"></i> Konfigurasi Server API Backend
+                        </button>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button 
+                        type="submit" 
+                        id="btn-login-submit"
+                        class="w-full flex items-center justify-center gap-2 py-3 px-4 bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white font-medium rounded-xl shadow-lg shadow-primary-600/30 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <span id="btn-login-text">Masuk ke Dashboard</span>
+                        <i id="btn-login-spinner" class="fa-solid fa-circle-notch fa-spin hidden"></i>
+                    </button>
+                </form>
+
+                <!-- Footer Info -->
+                <div class="mt-6 pt-6 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-400">
+                    <i class="fa-solid fa-shield-halved text-emerald-500"></i>
+                    <span>Terotentikasi Menggunakan Golang JWT API</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- 2. DASHBOARD VIEW (Ditampilkan setelah berhasil login)                     -->
+    <!-- ========================================================================= -->
+    <div id="dashboard-view" class="hidden flex-1 flex flex-col md:flex-row min-h-screen">
+        
+        <!-- SIDEBAR (Desktop & Mobile Drawer) -->
+        <aside id="sidebar" class="w-full md:w-64 bg-slate-900 text-slate-300 flex-shrink-0 flex flex-col border-r border-slate-800 transition-all z-20">
+            <!-- Sidebar Header -->
+            <div class="h-16 px-6 flex items-center justify-between border-b border-slate-800">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center text-white font-bold shadow-md shadow-primary-600/30">
+                        <i class="fa-solid fa-fingerprint"></i>
+                    </div>
+                    <div>
+                        <span class="font-bold text-white tracking-wide text-sm block">ABSENSI IOT</span>
+                        <span class="text-[10px] text-emerald-400 font-medium block flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Online Mode
+                        </span>
+                    </div>
+                </div>
+                <!-- Mobile toggle close button -->
+                <button class="md:hidden text-slate-400 hover:text-white" onclick="toggleMobileSidebar()">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Sidebar Navigation Menu -->
+            <div class="flex-1 py-6 px-4 space-y-1 overflow-y-auto">
+                <div class="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Menu Utama</div>
+                
+                <a href="#laporan" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary-600/10 text-primary-400 font-medium border border-primary-500/20 transition-all">
+                    <i class="fa-solid fa-clipboard-user text-base w-5 text-center"></i>
+                    <span>Laporan Absensi</span>
+                </a>
+
+                <div class="pt-4 px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Status Perangkat</div>
+                
+                <div class="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/50 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-400 font-medium flex items-center gap-1.5">
+                            <i class="fa-solid fa-microchip text-primary-400"></i> Mesin ESP32
+                        </span>
+                        <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold">Aktif</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400">
+                        Mendukung RFID & Fingerprint Tap Realtime
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar User Profile & Logout -->
+            <div class="p-4 border-t border-slate-800 bg-slate-950/40">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-primary-400">
+                        <i class="fa-solid fa-user-tie"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p id="user-display-name" class="text-xs font-semibold text-white truncate">Administrator</p>
+                        <p class="text-[10px] text-slate-400 truncate">Admin Absensi</p>
+                    </div>
+                </div>
+                <button 
+                    onclick="handleLogout()" 
+                    class="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-medium text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-all"
+                >
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                    <span>Keluar (Logout)</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto">
+            
+            <!-- TOP NAVBAR -->
+            <header class="h-16 bg-white border-b border-slate-200 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-10">
+                <div class="flex items-center gap-3">
+                    <button class="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100" onclick="toggleMobileSidebar()">
+                        <i class="fa-solid fa-bars text-lg"></i>
+                    </button>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-bold text-slate-800">Laporan & Rekapitulasi Absensi</h2>
+                        <p class="text-xs text-slate-500 hidden sm:block">Pemantauan data kehadiran siswa dan guru secara realtime</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <!-- Live Clock -->
+                    <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium">
+                        <i class="fa-regular fa-clock text-primary-600"></i>
+                        <span id="live-clock">00:00:00 WIB</span>
+                    </div>
+
+                    <!-- Server Settings Config -->
+                    <button 
+                        onclick="toggleApiConfigModal()" 
+                        class="p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                        title="Pengaturan URL API Server"
+                    >
+                        <i class="fa-solid fa-gear"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- PAGE BODY -->
+            <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto">
+                
+                <!-- METRIC CARDS -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- Total Hadir -->
+                    <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center text-xl">
+                            <i class="fa-solid fa-users"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-medium text-slate-500">Total Kehadiran</p>
+                            <h3 id="stat-total" class="text-2xl font-bold text-slate-800">0</h3>
+                        </div>
+                    </div>
+
+                    <!-- Tepat Waktu -->
+                    <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl">
+                            <i class="fa-solid fa-circle-check"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-medium text-slate-500">Tepat Waktu</p>
+                            <h3 id="stat-tepat" class="text-2xl font-bold text-emerald-600">0</h3>
+                        </div>
+                    </div>
+
+                    <!-- Terlambat -->
+                    <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl">
+                            <i class="fa-solid fa-clock-rotate-left"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-medium text-slate-500">Terlambat</p>
+                            <h3 id="stat-telat" class="text-2xl font-bold text-rose-600">0</h3>
+                        </div>
+                    </div>
+
+                    <!-- Komposisi (Siswa vs Guru) -->
+                    <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl">
+                            <i class="fa-solid fa-graduation-cap"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-medium text-slate-500">Siswa / Guru</p>
+                            <h3 id="stat-komposisi" class="text-xl font-bold text-slate-800">0 / 0</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FILTER CONTROLS & ACTIONS -->
+                <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                    <form id="form-filter" onsubmit="handleFilterSubmit(event)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 items-end">
+                        
+                        <!-- Filter: Tanggal -->
+                        <div class="lg:col-span-4">
+                            <label for="filter-tanggal" class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                                <i class="fa-regular fa-calendar mr-1 text-primary-600"></i> Tanggal Absensi
+                            </label>
+                            <input 
+                                type="date" 
+                                id="filter-tanggal" 
+                                required
+                                class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                            >
+                        </div>
+
+                        <!-- Filter: Tipe User -->
+                        <div class="lg:col-span-3">
+                            <label for="filter-tipe" class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                                <i class="fa-solid fa-filter mr-1 text-primary-600"></i> Tipe Pengguna
+                            </label>
+                            <select 
+                                id="filter-tipe" 
+                                class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all cursor-pointer"
+                            >
+                                <option value="all">Semua Pengguna</option>
+                                <option value="siswa">Siswa</option>
+                                <option value="guru">Guru</option>
+                            </select>
+                        </div>
+
+                        <!-- Action Button: Tampilkan Data -->
+                        <div class="lg:col-span-3">
+                            <button 
+                                type="submit" 
+                                id="btn-fetch"
+                                class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white font-medium rounded-xl shadow-md shadow-primary-600/20 transition-all"
+                            >
+                                <i id="btn-fetch-icon" class="fa-solid fa-arrows-rotate"></i>
+                                <span id="btn-fetch-text">Tampilkan Data</span>
+                            </button>
+                        </div>
+
+                        <!-- Action Button: Export CSV -->
+                        <div class="lg:col-span-2">
+                            <button 
+                                type="button" 
+                                onclick="exportToCSV()"
+                                class="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-medium rounded-xl border border-slate-300 transition-all text-sm"
+                                title="Download Laporan ke file CSV / Excel"
+                            >
+                                <i class="fa-solid fa-file-csv text-emerald-600 text-base"></i>
+                                <span>Export CSV</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- TABLE SECTION -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    
+                    <!-- Table Header Controls: Search & Count -->
+                    <div class="p-4 sm:px-6 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-slate-800 text-sm sm:text-base">Daftar Rekapitulasi</span>
+                            <span id="badge-total-records" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">0 Data</span>
+                        </div>
+
+                        <!-- Instant Table Search -->
+                        <div class="relative w-full sm:w-64">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                            <input 
+                                type="text" 
+                                id="search-table" 
+                                oninput="handleTableSearch(this.value)"
+                                placeholder="Cari nama / ID mesin..." 
+                                class="w-full pl-9 pr-4 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            >
+                        </div>
+                    </div>
+
+                    <!-- Responsive Table Container -->
+                    <div class="overflow-x-auto min-h-[300px]">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] uppercase font-bold tracking-wider text-slate-500">
+                                    <th class="py-3.5 px-4 text-center w-12">No</th>
+                                    <th class="py-3.5 px-4">Nama Lengkap</th>
+                                    <th class="py-3.5 px-4">Tipe</th>
+                                    <th class="py-3.5 px-4">Waktu Masuk</th>
+                                    <th class="py-3.5 px-4">Status Masuk</th>
+                                    <th class="py-3.5 px-4">Waktu Keluar</th>
+                                    <th class="py-3.5 px-4">Status Keluar</th>
+                                    <th class="py-3.5 px-4">ID Mesin ESP32</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendance-table-body" class="divide-y divide-slate-100 text-sm">
+                                <!-- Data rows will be injected here via JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Table Footer info -->
+                    <div class="p-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs text-slate-500">
+                        <span id="table-info-text">Menampilkan seluruh data absensi</span>
+                        <span class="flex items-center gap-1.5">
+                            <i class="fa-solid fa-circle-info text-primary-500"></i> Data disinkronisasi langsung dari backend Golang
+                        </span>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- 3. MODAL: API SERVER SETTINGS                                             -->
+    <!-- ========================================================================= -->
+    <div id="modal-api-config" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm hidden">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                    <i class="fa-solid fa-server text-primary-600"></i> Pengaturan Backend REST API
+                </h3>
+                <button onclick="toggleApiConfigModal()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3">
+                <p class="text-xs text-slate-500 leading-relaxed">
+                    Atur URL dasar (Base URL) backend Golang. Gunakan <code class="bg-slate-100 px-1.5 py-0.5 rounded text-primary-600 font-mono">http://localhost:8080</code> untuk pengujian lokal, atau alamat IP / Domain VPS Anda untuk produksi.
+                </p>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">API Base URL</label>
+                    <input 
+                        type="text" 
+                        id="input-api-base-url" 
+                        placeholder="http://localhost:8080" 
+                        class="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button 
+                    type="button" 
+                    onclick="resetApiUrlDefault()" 
+                    class="px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-800"
+                >
+                    Reset ke Default
+                </button>
+                <button 
+                    type="button" 
+                    onclick="saveApiConfig()" 
+                    class="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-xl shadow-md transition-all"
+                >
+                    Simpan Konfigurasi
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- JAVASCRIPT: LOGIKA SPA, AUTENTIKASI JWT & FETCH DATA                      -->
+    <!-- ========================================================================= -->
+    <script>
+        /**
+         * Global Application State & Configuration
+         */
+        const STORAGE_KEY_TOKEN = 'absensi_jwt_token';
+        const STORAGE_KEY_USER = 'absensi_user_info';
+        const STORAGE_KEY_API_URL = 'absensi_api_base_url';
+
+        let rawAttendanceData = []; // Menyimpan raw data untuk fitur client-side search & export
+
+        /**
+         * Mengambil Base URL API yang tersimpan di localStorage atau default auto-detect
+         */
+        function getApiBaseUrl() {
+            const saved = localStorage.getItem(STORAGE_KEY_API_URL);
+            if (saved && saved.trim() !== '') {
+                return saved.trim().replace(/\/$/, '');
+            }
+            // Auto detect origin jika di-serve oleh backend yang sama
+            if (window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('file:')) {
+                return window.location.origin;
+            }
+            return 'http://localhost:8080';
+        }
+
+        /**
+         * Mengambil JWT Token dari localStorage
+         */
+        function getAuthToken() {
+            return localStorage.getItem(STORAGE_KEY_TOKEN);
+        }
+
+        /**
+         * Inisialisasi Aplikasi saat Dokumen Siap
+         */
+        document.addEventListener('DOMContentLoaded', () => {
+            initLiveClock();
+            initDefaultDate();
+            checkAuthStatus();
+        });
+
+        /**
+         * Inisialisasi Jam Digital Realtime
+         */
+        function initLiveClock() {
+            const clockEl = document.getElementById('live-clock');
+            if (!clockEl) return;
+            
+            const updateClock = () => {
+                const now = new Date();
+                clockEl.textContent = now.toLocaleTimeString('id-ID', { hour12: false }) + ' WIB';
+            };
+            updateClock();
+            setInterval(updateClock, 1000);
+        }
+
+        /**
+         * Set default input tanggal ke hari ini (Format YYYY-MM-DD)
+         */
+        function initDefaultDate() {
+            const dateInput = document.getElementById('filter-tanggal');
+            if (dateInput) {
+                const today = new Date().toISOString().split('T')[0];
+                dateInput.value = today;
+            }
+        }
+
+        /**
+         * 1. Cek Status Autentikasi Saat Membuka Halaman
+         */
+        function checkAuthStatus() {
+            const token = getAuthToken();
+            const loginView = document.getElementById('login-view');
+            const dashboardView = document.getElementById('dashboard-view');
+
+            if (token) {
+                // Token ditemukan -> Langsung tampilkan Dashboard
+                loginView.classList.add('hidden');
+                dashboardView.classList.remove('hidden');
+
+                // Tampilkan info user jika ada di localStorage
+                try {
+                    const savedUser = JSON.parse(localStorage.getItem(STORAGE_KEY_USER) || '{}');
+                    if (savedUser.name || savedUser.username) {
+                        document.getElementById('user-display-name').textContent = savedUser.name || savedUser.username;
+                    }
+                } catch (e) {
+                    console.error("Gagal membaca info user:", e);
+                }
+
+                // Muat data absensi otomatis untuk hari ini
+                fetchAttendanceData();
+            } else {
+                // Belum login -> Tampilkan Form Login
+                loginView.classList.remove('hidden');
+                dashboardView.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Toggle Visibilitas Password pada Form Login
+         */
+        function togglePasswordVisibility() {
+            const passwordInput = document.getElementById('password');
+            const eyeIcon = document.getElementById('eye-icon');
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                eyeIcon.classList.remove('fa-eye');
+                eyeIcon.classList.add('fa-eye-slash');
+            } else {
+                passwordInput.type = 'password';
+                eyeIcon.classList.remove('fa-eye-slash');
+                eyeIcon.classList.add('fa-eye');
+            }
+        }
+
+        /**
+         * 2. Handle Submit Login Form (POST ke Backend Golang)
+         */
+        async function handleLogin(event) {
+            event.preventDefault();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Form Belum Lengkap',
+                    text: 'Silakan isi username dan password!',
+                    confirmButtonColor: '#0284c7'
+                });
+                return;
+            }
+
+            const btnSubmit = document.getElementById('btn-login-submit');
+            const btnText = document.getElementById('btn-login-text');
+            const btnSpinner = document.getElementById('btn-login-spinner');
+
+            // Set loading state
+            btnSubmit.disabled = true;
+            btnText.textContent = 'Memverifikasi...';
+            btnSpinner.classList.remove('hidden');
+
+            const apiUrl = `${getApiBaseUrl()}/api/login`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok) {
+                    // Berhasil login: Tangkap token JWT (mendukung berbagai struktur json umum backend)
+                    const token = data.token || (data.data && data.data.token) || data.jwt || data.access_token;
+                    
+                    if (!token) {
+                        throw new Error("Respon server tidak memuat token JWT.");
+                    }
+
+                    // Simpan token ke localStorage
+                    localStorage.setItem(STORAGE_KEY_TOKEN, token);
+
+                    // Simpan data user opsional
+                    const userInfo = data.user || (data.data && data.data.user) || { username };
+                    localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(userInfo));
+
+                    // Notifikasi sukses
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Login Berhasil!',
+                        text: 'Selamat datang di Sistem Absensi IoT',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+
+                    // Reset form login
+                    document.getElementById('form-login').reset();
+
+                    // Tampilkan dashboard
+                    checkAuthStatus();
+                } else {
+                    // Penanganan error response HTTP 401/400/500
+                    const errorMsg = data.message || data.error || 'Username atau password tidak valid.';
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Login Gagal',
+                        text: errorMsg,
+                        confirmButtonColor: '#0284c7'
+                    });
+                }
+            } catch (error) {
+                console.error("Error Login:", error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Koneksi Backend Gagal',
+                    html: `Tidak dapat terhubung ke server API pada:<br><b class="font-mono text-xs text-rose-600">${apiUrl}</b><br><br><span class="text-xs text-slate-500">Pastikan Backend Golang sedang aktif dan mengizinkan CORS.</span>`,
+                    confirmButtonColor: '#0284c7'
+                });
+            } finally {
+                // Reset loading state
+                btnSubmit.disabled = false;
+                btnText.textContent = 'Masuk ke Dashboard';
+                btnSpinner.classList.add('hidden');
+            }
+        }
+
+        /**
+         * 3. Handle Logout (Hapus token & switch view)
+         */
+        function handleLogout() {
+            Swal.fire({
+                title: 'Konfirmasi Logout',
+                text: 'Apakah Anda yakin ingin keluar dari sistem?',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#e11d48',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: 'Ya, Keluar',
+                cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    forceLogout('Anda telah berhasil keluar dari sistem.');
+                }
+            });
+        }
+
+        /**
+         * Force Logout (Membersihkan storage dan kembali ke login)
+         */
+        function forceLogout(message = null) {
+            localStorage.removeItem(STORAGE_KEY_TOKEN);
+            localStorage.removeItem(STORAGE_KEY_USER);
+            rawAttendanceData = [];
+            checkAuthStatus();
+            if (message) {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Sesi Berakhir',
+                    text: message,
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            }
+        }
+
+        /**
+         * 4. Handle Filter Submit
+         */
+        function handleFilterSubmit(event) {
+            event.preventDefault();
+            fetchAttendanceData();
+        }
+
+        /**
+         * 5. Fetch Attendance Data dari REST API Golang
+         */
+        async function fetchAttendanceData() {
+            const token = getAuthToken();
+            if (!token) {
+                forceLogout();
+                return;
+            }
+
+            const tanggal = document.getElementById('filter-tanggal').value;
+            const tipe = document.getElementById('filter-tipe').value;
+            const tbody = document.getElementById('attendance-table-body');
+            const btnFetch = document.getElementById('btn-fetch');
+            const btnFetchIcon = document.getElementById('btn-fetch-icon');
+
+            if (!tanggal) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Pilih Tanggal',
+                    text: 'Silakan tentukan tanggal absensi terlebih dahulu!',
+                    confirmButtonColor: '#0284c7'
+                });
+                return;
+            }
+
+            // Tampilkan skeleton loading pada tabel
+            renderTableSkeleton();
+            if (btnFetchIcon) btnFetchIcon.classList.add('fa-spin');
+            if (btnFetch) btnFetch.disabled = true;
+
+            const queryParams = new URLSearchParams({
+                tanggal: tanggal,
+                tipe: tipe
+            });
+
+            const apiUrl = `${getApiBaseUrl()}/api/attendance?${queryParams.toString()}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json'
+                    }
+                });
+
+                // Deteksi Token Expired / Unauthorized (401 / 403)
+                if (response.status === 401 || response.status === 403) {
+                    forceLogout('Sesi login Anda telah habis atau token tidak valid. Silakan login kembali.');
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`Server merespon dengan status HTTP ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                // Normalisasi array data absensi (bisa berupa result.data atau result langsung array)
+                const items = Array.isArray(result) ? result : (Array.isArray(result.data) ? result.data : []);
+                
+                rawAttendanceData = items;
+                renderTableData(rawAttendanceData);
+                updateStatistics(rawAttendanceData);
+
+            } catch (error) {
+                console.error("Error fetching attendance:", error);
+                renderTableError(apiUrl, error.message);
+            } finally {
+                if (btnFetchIcon) btnFetchIcon.classList.remove('fa-spin');
+                if (btnFetch) btnFetch.disabled = false;
+            }
+        }
+
+        /**
+         * 6. Render Data ke Tabel HTML
+         */
+        function renderTableData(dataList) {
+            const tbody = document.getElementById('attendance-table-body');
+            const badgeCount = document.getElementById('badge-total-records');
+            const infoText = document.getElementById('table-info-text');
+
+            badgeCount.textContent = `${dataList.length} Data`;
+            infoText.textContent = `Menampilkan ${dataList.length} data absensi`;
+
+            if (!dataList || dataList.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="py-12 text-center text-slate-400">
+                            <div class="flex flex-col items-center justify-center gap-2">
+                                <i class="fa-solid fa-folder-open text-4xl text-slate-300 mb-1"></i>
+                                <p class="font-medium text-slate-600 text-sm">Tidak ada data absensi ditemukan</p>
+                                <p class="text-xs text-slate-400">Coba ubah filter tanggal atau tipe pengguna di atas.</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            let html = '';
+            dataList.forEach((item, index) => {
+                // Parsing nilai properti dengan fallback penamaan field
+                const nama = item.nama || item.name || item.user_name || '-';
+                const tipe = (item.tipe || item.role || item.user_type || 'siswa').toLowerCase();
+                const waktuMasuk = item.waktu_masuk || item.check_in_time || item.masuk || '-';
+                const statusMasuk = (item.status_masuk || item.check_in_status || '-').toLowerCase();
+                const waktuKeluar = item.waktu_keluar || item.check_out_time || item.keluar || '-';
+                const statusKeluar = (item.status_keluar || item.check_out_status || '-').toLowerCase();
+                const idMesin = item.id_mesin || item.device_id || item.machine_id || 'ESP32-DEV';
+
+                // Badge Tipe
+                const tipeBadge = tipe === 'guru' 
+                    ? `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/60"><i class="fa-solid fa-chalkboard-user mr-1 text-[10px]"></i>Guru</span>`
+                    : `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-200/60"><i class="fa-solid fa-user-graduate mr-1 text-[10px]"></i>Siswa</span>`;
+
+                // Badge Status Masuk
+                let statusMasukBadge = `<span class="text-slate-400 text-xs">-</span>`;
+                if (statusMasuk.includes('tepat') || statusMasuk === 'ontime') {
+                    statusMasukBadge = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"><i class="fa-solid fa-check text-[11px]"></i> Tepat</span>`;
+                } else if (statusMasuk.includes('telat') || statusMasuk.includes('lambat') || statusMasuk === 'late') {
+                    statusMasukBadge = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200"><i class="fa-solid fa-clock-rotate-left text-[11px]"></i> Telat</span>`;
+                } else if (statusMasuk !== '-') {
+                    statusMasukBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700 capitalize">${statusMasuk}</span>`;
+                }
+
+                // Badge Status Keluar
+                let statusKeluarBadge = `<span class="text-slate-400 text-xs">-</span>`;
+                if (statusKeluar.includes('tepat') || statusKeluar === 'ontime' || statusKeluar === 'pulang') {
+                    statusKeluarBadge = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200"><i class="fa-solid fa-door-open text-[11px]"></i> Tepat</span>`;
+                } else if (statusKeluar.includes('cepat') || statusKeluar === 'early') {
+                    statusKeluarBadge = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200"><i class="fa-solid fa-person-running text-[11px]"></i> Cepat</span>`;
+                } else if (statusKeluar !== '-') {
+                    statusKeluarBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700 capitalize">${statusKeluar}</span>`;
+                }
+
+                html += `
+                    <tr class="hover:bg-slate-50/80 transition-colors">
+                        <td class="py-3.5 px-4 text-center font-medium text-slate-400 text-xs">${index + 1}</td>
+                        <td class="py-3.5 px-4 font-semibold text-slate-800">${nama}</td>
+                        <td class="py-3.5 px-4">${tipeBadge}</td>
+                        <td class="py-3.5 px-4 font-mono text-xs text-slate-600">${waktuMasuk}</td>
+                        <td class="py-3.5 px-4">${statusMasukBadge}</td>
+                        <td class="py-3.5 px-4 font-mono text-xs text-slate-600">${waktuKeluar}</td>
+                        <td class="py-3.5 px-4">${statusKeluarBadge}</td>
+                        <td class="py-3.5 px-4">
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[11px] text-slate-600">
+                                <i class="fa-solid fa-microchip text-slate-400"></i> ${idMesin}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = html;
+        }
+
+        /**
+         * Render Skeleton Loading Animation saat proses fetch
+         */
+        function renderTableSkeleton() {
+            const tbody = document.getElementById('attendance-table-body');
+            let skeletonRows = '';
+            for (let i = 0; i < 5; i++) {
+                skeletonRows += `
+                    <tr class="animate-pulse">
+                        <td class="py-4 px-4 text-center"><div class="h-4 w-4 bg-slate-200 rounded mx-auto"></div></td>
+                        <td class="py-4 px-4"><div class="h-4 w-32 bg-slate-200 rounded"></div></td>
+                        <td class="py-4 px-4"><div class="h-5 w-16 bg-slate-200 rounded-full"></div></td>
+                        <td class="py-4 px-4"><div class="h-4 w-16 bg-slate-200 rounded"></div></td>
+                        <td class="py-4 px-4"><div class="h-5 w-20 bg-slate-200 rounded-full"></div></td>
+                        <td class="py-4 px-4"><div class="h-4 w-16 bg-slate-200 rounded"></div></td>
+                        <td class="py-4 px-4"><div class="h-5 w-20 bg-slate-200 rounded-full"></div></td>
+                        <td class="py-4 px-4"><div class="h-5 w-24 bg-slate-200 rounded"></div></td>
+                    </tr>
+                `;
+            }
+            tbody.innerHTML = skeletonRows;
+        }
+
+        /**
+         * Render Tampilan Error jika API Down
+         */
+        function renderTableError(apiUrl, errMsg) {
+            const tbody = document.getElementById('attendance-table-body');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="py-12 text-center">
+                        <div class="max-w-md mx-auto p-5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 space-y-2">
+                            <i class="fa-solid fa-triangle-exclamation text-3xl text-rose-500"></i>
+                            <h4 class="font-bold text-sm">Gagal Mengambil Data dari Backend API</h4>
+                            <p class="text-xs text-rose-600 font-mono break-all">${apiUrl}</p>
+                            <p class="text-xs text-slate-500">${errMsg || 'Periksa apakah server Golang sedang berjalan dan CORS diizinkan.'}</p>
+                            <button onclick="fetchAttendanceData()" class="mt-2 inline-flex items-center gap-1.5 px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow transition-all">
+                                <i class="fa-solid fa-arrows-rotate"></i> Coba Lagi
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        /**
+         * 7. Update Metrik Ringkasan (Cards)
+         */
+        function updateStatistics(items) {
+            const total = items.length;
+            let tepat = 0;
+            let telat = 0;
+            let siswa = 0;
+            let guru = 0;
+
+            items.forEach(item => {
+                const statusMasuk = (item.status_masuk || item.check_in_status || '').toLowerCase();
+                const tipe = (item.tipe || item.role || item.user_type || 'siswa').toLowerCase();
+
+                if (statusMasuk.includes('tepat') || statusMasuk === 'ontime') tepat++;
+                if (statusMasuk.includes('telat') || statusMasuk.includes('lambat') || statusMasuk === 'late') telat++;
+
+                if (tipe === 'guru') guru++;
+                else siswa++;
+            });
+
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-tepat').textContent = tepat;
+            document.getElementById('stat-telat').textContent = telat;
+            document.getElementById('stat-komposisi').textContent = `${siswa} / ${guru}`;
+        }
+
+        /**
+         * 8. Client-Side Instant Search pada Tabel
+         */
+        function handleTableSearch(keyword) {
+            const query = keyword.toLowerCase().trim();
+            if (!query) {
+                renderTableData(rawAttendanceData);
+                return;
+            }
+
+            const filtered = rawAttendanceData.filter(item => {
+                const nama = (item.nama || item.name || '').toLowerCase();
+                const idMesin = (item.id_mesin || item.device_id || '').toLowerCase();
+                const tipe = (item.tipe || item.role || '').toLowerCase();
+                return nama.includes(query) || idMesin.includes(query) || tipe.includes(query);
+            });
+
+            renderTableData(filtered);
+        }
+
+        /**
+         * 9. Export Data Laporan ke File CSV
+         */
+        function exportToCSV() {
+            if (!rawAttendanceData || rawAttendanceData.length === 0) {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Tidak Ada Data',
+                    text: 'Tidak ada data absensi untuk diekspor ke CSV.',
+                    confirmButtonColor: '#0284c7'
+                });
+                return;
+            }
+
+            const tanggal = document.getElementById('filter-tanggal').value || 'rekap';
+            const headers = ['No', 'Nama Lengkap', 'Tipe', 'Waktu Masuk', 'Status Masuk', 'Waktu Keluar', 'Status Keluar', 'ID Mesin'];
+            
+            const rows = rawAttendanceData.map((item, index) => [
+                index + 1,
+                `"${(item.nama || item.name || '-').replace(/"/g, '""')}"`,
+                item.tipe || item.role || 'siswa',
+                item.waktu_masuk || item.check_in_time || '-',
+                item.status_masuk || item.check_in_status || '-',
+                item.waktu_keluar || item.check_out_time || '-',
+                item.status_keluar || item.check_out_status || '-',
+                item.id_mesin || item.device_id || 'ESP32'
+            ]);
+
+            const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', `laporan_absensi_${tanggal}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        /**
+         * 10. Modal Konfigurasi API Base URL
+         */
+        function toggleApiConfigModal() {
+            const modal = document.getElementById('modal-api-config');
+            const inputUrl = document.getElementById('input-api-base-url');
+            if (modal.classList.contains('hidden')) {
+                inputUrl.value = getApiBaseUrl();
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        function saveApiConfig() {
+            const inputUrl = document.getElementById('input-api-base-url');
+            const url = inputUrl.value.trim();
+            if (url) {
+                localStorage.setItem(STORAGE_KEY_API_URL, url);
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Konfigurasi Tersimpan',
+                    text: `API Base URL diset ke: ${url}`,
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+                toggleApiConfigModal();
+                // Jika sedang di dashboard, refresh data
+                if (getAuthToken()) {
+                    fetchAttendanceData();
+                }
+            }
+        }
+
+        function resetApiUrlDefault() {
+            document.getElementById('input-api-base-url').value = DEFAULT_API_BASE_URL;
+        }
+
+        /**
+         * Mobile Sidebar Toggle
+         */
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('hidden');
+        }
+    </script>
+</body>
+</html>
