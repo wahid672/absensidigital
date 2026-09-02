@@ -1,13 +1,13 @@
 # -------------------------------------------------------------
 # Stage 1: Build Golang Fullstack Application
 # -------------------------------------------------------------
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
 # Salin dependensi
-COPY go.mod ./
-RUN go mod download || true
+COPY go.mod go.sum ./
+RUN go mod download
 
 # Salin source code & file frontend index.html
 COPY . .
@@ -28,6 +28,9 @@ WORKDIR /app
 # Salin executable binary dan index.html
 COPY --from=builder /app/absensi-app /app/absensi-app
 COPY --from=builder /app/index.html /app/index.html
+
+# Buat direktori data untuk database SQLite
+RUN mkdir -p /app/data
 
 # Expose port REST API & Web UI
 EXPOSE 8080

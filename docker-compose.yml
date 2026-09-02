@@ -3,18 +3,17 @@ version: '3.8'
 services:
   absensi-app:
     image: ghcr.io/wahid672/absensidigital:latest
-    # Jika ingin build dari source lokal, hilangkan comment pada baris build di bawah:
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
     container_name: absensi-app
     restart: unless-stopped
     expose:
       - "8080"
     networks:
       - caddy_net
+    volumes:
+      - ./data:/app/data
     environment:
       - PORT=8080
+      - DB_PATH=/app/data/absensi.db
       - JWT_SECRET=siakad_esp32_iot_secret_key_2026
       - ADMIN_USER=admin
       - ADMIN_PASS=admin123
