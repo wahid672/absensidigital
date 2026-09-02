@@ -1,9 +1,9 @@
-# 🕌 SIAKAD Absensi Digital - Fullstack Golang & IoT ESP32
+# 🕌 SIAKAD Absensi Digital - Fullstack Golang + React Vite & IoT ESP32
 
 [![Docker Build and Push to GHCR](https://github.com/wahid672/absensidigital/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/wahid672/absensidigital/actions/workflows/docker-publish.yml)
 [![Docker Image](https://img.shields.io/badge/Docker%20Image-GHCR-blue?logo=docker)](https://github.com/wahid672/absensidigital/pkgs/container/absensidigital)
 
-Aplikasi **Fullstack All-in-One** (Backend REST API Golang + Frontend Web Admin Single Page Application) untuk sistem presensi dan absensi digital terintegrasi mesin mikrokontroler **ESP32** (RFID & Fingerprint) dengan database **SQLite** permanen, alur **Realtime SSE**, dukungan **Offline Sync / Backdate**, dan fitur **Cetak Dokumen PDF**.
+Aplikasi **Fullstack All-in-One** (Backend REST API Golang + Frontend React Vite + Tailwind CSS) untuk sistem presensi dan absensi digital terintegrasi mesin mikrokontroler **ESP32** (RFID & Fingerprint) dengan database **SQLite** permanen, alur **Realtime SSE**, dukungan **Offline Sync / Backdate**, dan fitur **Cetak Dokumen PDF**.
 
 Docker Image resmi tersedia dan otomatis di-build melalui **GitHub Container Registry (GHCR)**:
 ```text
@@ -14,8 +14,8 @@ ghcr.io/wahid672/absensidigital:latest
 
 ## 🌟 Fitur Unggulan
 
-### 1. 🚀 Fullstack Single Container (All-in-One)
-- Frontend SPA (HTML5, Tailwind CSS, Vanilla JS) di-embed langsung ke dalam binary Golang menggunakan `//go:embed`.
+### 1. 🚀 Fullstack Single Container (All-in-One: React + Go)
+- Frontend dibangun dengan **React 18, Vite, Tailwind CSS, & Lucide Icons** dan di-embed langsung ke dalam binary Golang menggunakan `//go:embed all:frontend/dist`.
 - Hanya membutuhkan **1 container dan 1 port (`8080`)** saat di-deploy di VPS.
 - Bebas masalah CORS karena frontend dan backend berjalan pada origin yang sama.
 

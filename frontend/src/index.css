@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+/* Highlight row animation on Realtime Tap */
+@keyframes highlight-fade {
+  0% { background-color: #fef08a; transform: scale(1.01); }
+  50% { background-color: #fef9c3; }
+  100% { background-color: transparent; transform: scale(1); }
+}
+
+.row-highlight {
+  animation: highlight-fade 2.5s ease-out;
+}
+
+/* Print Media Styling for Official PDF Export */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt;
+  }
+  #sidebar, header, .no-print, button, form, .modal {
+    display: none !important;
+  }
+  #root, #main-viewport, .print-area {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+  .table-print {
+    width: 100% !important;
+    border: 1px solid #333 !important;
+    border-collapse: collapse !important;
+  }
+  .table-print th, .table-print td {
+    border: 1px solid #444 !important;
+    padding: 6px 8px !important;
+    font-size: 10pt !important;
+    color: black !important;
+  }
+}

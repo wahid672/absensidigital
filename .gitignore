@@ -6,6 +6,16 @@
 *.dylib
 absensi-app
 
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+.npm
+npm-debug.log*
+
+# Database & Uploads
+data/*.db
+data/*.db-journal
+
 # OS / Editor Files
 .DS_Store
 Thumbs.db

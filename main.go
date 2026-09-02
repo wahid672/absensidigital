@@ -4,10 +4,11 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
+	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -19,8 +20,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-//go:embed index.html
-var indexHTML []byte
+//go:embed all:frontend/dist
+var frontendDist embed.FS
 
 // Global Configuration
 var (
@@ -1074,11 +1075,33 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// 8. GET / (Serve Embedded SPA Frontend)
-func handleSPA(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	w.Write(indexHTML)
+// 8. React SPA Static File Handler with Fallback to index.html
+func spaHandler() http.Handler {
+	distFS, err := fs.Sub(frontendDist, "frontend/dist")
+	if err != nil {
+		log.Fatalf("Gagal mengakses frontend/dist: %v", err)
+	}
+	fileServer := http.FileServer(http.FS(distFS))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// Check if file exists in embedded filesystem
+		f, err := distFS.Open(path)
+		if err != nil {
+			// File not found -> Fallback to index.html for React SPA client-side routing
+			r.URL.Path = "/"
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		f.Close()
+
+		fileServer.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, data interface{}) {
@@ -1123,13 +1146,13 @@ func main() {
 	mux.HandleFunc("/api/realtime", handleSSE)
 	mux.HandleFunc("/api/health", handleHealth)
 
-	// SPA Static Frontend
-	mux.HandleFunc("/", handleSPA)
+	// React SPA Static Frontend (Embedded)
+	mux.Handle("/", spaHandler())
 
 	handler := corsMiddleware(mux)
 
 	log.Printf("===============================================================")
-	log.Printf("🚀 SIAKAD Absensi Digital - Fullstack Golang + SQLite + SSE")
+	log.Printf("🚀 SIAKAD Absensi Digital - Fullstack Golang + React Vite + SQLite")
 	log.Printf("📡 Server: http://0.0.0.0:%s", serverPort)
 	log.Printf("🗄️ Database: %s", dbPath)
 	log.Printf("🔐 Admin Login: %s / %s", adminUser, adminPass)
