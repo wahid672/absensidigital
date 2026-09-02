@@ -24,14 +24,14 @@ var indexHTML []byte
 
 // Global Configuration
 var (
-	jwtSecret   = getEnv("JWT_SECRET", "siakad_esp32_iot_secret_key_2026")
-	adminUser   = getEnv("ADMIN_USER", "admin")
-	adminPass   = getEnv("ADMIN_PASS", "admin123")
-	serverPort  = getEnv("PORT", "8080")
-	dbPath      = getEnv("DB_PATH", "data/absensi.db")
-	db          *sql.DB
-	sseClients  = make(map[chan string]bool)
-	sseMutex    sync.Mutex
+	jwtSecret  = getEnv("JWT_SECRET", "siakad_esp32_iot_secret_key_2026")
+	adminUser  = getEnv("ADMIN_USER", "admin")
+	adminPass  = getEnv("ADMIN_PASS", "admin123")
+	serverPort = getEnv("PORT", "8080")
+	dbPath     = getEnv("DB_PATH", "data/absensi.db")
+	db         *sql.DB
+	sseClients = make(map[chan string]bool)
+	sseMutex   sync.Mutex
 )
 
 // Data Models
@@ -57,7 +57,7 @@ type Member struct {
 	ID        int    `json:"id"`
 	UID       string `json:"uid"`
 	Nama      string `json:"nama"`
-	Tipe      string `json:"tipe"` // "siswa" | "guru"
+	Tipe      string `json:"tipe"`  // "siswa" | "guru"
 	Kelas     string `json:"kelas"` // e.g. "10 IPA 1" atau "Guru Fiqih"
 	NoHP      string `json:"no_hp"`
 	CreatedAt string `json:"created_at"`
@@ -71,7 +71,7 @@ type AttendanceRecord struct {
 	Kelas        string `json:"kelas"`
 	Tanggal      string `json:"tanggal"` // YYYY-MM-DD
 	WaktuMasuk   string `json:"waktu_masuk"`
-	StatusMasuk  string `json:"status_masuk"` // "tepat" | "telat" | "-"
+	StatusMasuk  string `json:"status_masuk"` // "tepat" | "telat" | "izin" | "sakit" | "-"
 	WaktuKeluar  string `json:"waktu_keluar"`
 	StatusKeluar string `json:"status_keluar"` // "tepat" | "cepat" | "-"
 	DeviceID     string `json:"id_mesin"`
@@ -96,7 +96,6 @@ type DeviceInfo struct {
 // DATABASE INITIALIZATION & MIGRATIONS (SQLite)
 // -------------------------------------------------------------
 func initDatabase() {
-	// Pastikan folder database ada
 	dir := "data"
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		log.Printf("Warning creating data dir: %v", err)
@@ -108,7 +107,6 @@ func initDatabase() {
 		log.Fatalf("Gagal membuka database SQLite (%s): %v", dbPath, err)
 	}
 
-	// Buat Tabel Database
 	schema := `
 	CREATE TABLE IF NOT EXISTS members (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,12 +140,23 @@ func initDatabase() {
 		lokasi TEXT NOT NULL,
 		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE TABLE IF NOT EXISTS settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		log.Fatalf("Gagal inisialisasi schema database: %v", err)
 	}
 
-	// Seed Data jika tabel members kosong
+	// Default settings
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_nama', 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_alamat', 'Jl. Pesantren Digital No. 01')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_masuk_batas', '07:00')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_pulang_batas', '15:00')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('kepala_nama', 'KH. Ahmad Zaki, Lc., M.Ag')")
+
 	seedInitialData()
 }
 
@@ -157,48 +166,62 @@ func seedInitialData() {
 	if count > 0 {
 		return
 	}
+	seedDummyData()
+}
 
-	log.Println("🌱 Memasukkan seed data awal ke database SQLite...")
+func seedDummyData() {
+	log.Println("🌱 Memasukkan seed data dummy santri, guru & absensi...")
 
 	members := []Member{
-		{UID: "A1B2C301", Nama: "Muhammad Rizky Pratama", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234567890"},
-		{UID: "A1B2C302", Nama: "Ustadz Ahmad Fauzi, S.Pd.I", Tipe: "guru", Kelas: "Guru Fiqih & Hadits", NoHP: "081234567891"},
-		{UID: "A1B2C303", Nama: "Aisyah Nurul Hidayah", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234567892"},
-		{UID: "A1B2C304", Nama: "Ustadzah Fatimah Zahra, M.Pd", Tipe: "guru", Kelas: "Guru Bahasa Arab", NoHP: "081234567893"},
-		{UID: "A1B2C305", Nama: "Fajar Dwi Santoso", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234567894"},
-		{UID: "A1B2C306", Nama: "Zaid Bin Haritsah", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234567895"},
+		{UID: "A1B2C301", Nama: "Muhammad Rizky Pratama", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234567801"},
+		{UID: "A1B2C302", Nama: "Ustadz Ahmad Fauzi, S.Pd.I", Tipe: "guru", Kelas: "Guru Fiqih & Hadits", NoHP: "081234567802"},
+		{UID: "A1B2C303", Nama: "Aisyah Nurul Hidayah", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234567803"},
+		{UID: "A1B2C304", Nama: "Ustadzah Fatimah Zahra, M.Pd", Tipe: "guru", Kelas: "Guru Bahasa Arab", NoHP: "081234567804"},
+		{UID: "A1B2C305", Nama: "Fajar Dwi Santoso", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234567805"},
+		{UID: "A1B2C306", Nama: "Zaid Bin Haritsah", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234567806"},
+		{UID: "A1B2C307", Nama: "Khadijah Al-Kubra", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234567807"},
+		{UID: "A1B2C308", Nama: "Ustadz Abdullah Yusuf, Lc", Tipe: "guru", Kelas: "Guru Tahfidz & Quran", NoHP: "081234567808"},
+		{UID: "A1B2C309", Nama: "Bilal Bin Rabah", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234567809"},
+		{UID: "A1B2C310", Nama: "Ustadzah Maryam Jameelah", Tipe: "guru", Kelas: "Guru Aqidah Akhlak", NoHP: "081234567810"},
 	}
 
 	for _, m := range members {
-		db.Exec("INSERT INTO members (uid, nama, tipe, kelas, no_hp) VALUES (?, ?, ?, ?, ?)",
+		db.Exec("INSERT OR IGNORE INTO members (uid, nama, tipe, kelas, no_hp) VALUES (?, ?, ?, ?, ?)",
 			m.UID, m.Nama, m.Tipe, m.Kelas, m.NoHP)
 	}
 
 	devices := []DeviceInfo{
 		{DeviceID: "ESP32-GATE-01", Nama: "Mesin Gerbang Utama", Lokasi: "Pintu Masuk Utama"},
-		{DeviceID: "ESP32-GATE-02", Nama: "Mesin Gedung Asrama", Lokasi: "Lobby Asrama"},
+		{DeviceID: "ESP32-GATE-02", Nama: "Mesin Gedung Asrama", Lokasi: "Lobby Asrama Santri"},
 	}
 
 	for _, d := range devices {
-		db.Exec("INSERT INTO devices (device_id, nama, lokasi, last_seen) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+		db.Exec("INSERT OR IGNORE INTO devices (device_id, nama, lokasi, last_seen) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
 			d.DeviceID, d.Nama, d.Lokasi)
 	}
 
-	// Seed data absensi hari ini
 	today := time.Now().Format("2006-01-02")
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	twoDaysAgo := time.Now().AddDate(0, 0, -2).Format("2006-01-02")
+
 	db.Exec(`INSERT INTO attendances (uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin) VALUES 
 		('A1B2C301', 'Muhammad Rizky Pratama', 'siswa', '10 IPA 1', ?, '06:45:12', 'tepat', '15:05:30', 'tepat', 'ESP32-GATE-01'),
 		('A1B2C302', 'Ustadz Ahmad Fauzi, S.Pd.I', 'guru', 'Guru Fiqih & Hadits', ?, '06:30:45', 'tepat', '15:30:10', 'tepat', 'ESP32-GATE-01'),
 		('A1B2C303', 'Aisyah Nurul Hidayah', 'siswa', '11 IPS 2', ?, '07:15:20', 'telat', '15:00:15', 'tepat', 'ESP32-GATE-02'),
 		('A1B2C304', 'Ustadzah Fatimah Zahra, M.Pd', 'guru', 'Guru Bahasa Arab', ?, '06:40:10', 'tepat', '-', '-', 'ESP32-GATE-01'),
-		('A1B2C305', 'Fajar Dwi Santoso', 'siswa', '12 IPA 1', ?, '07:08:40', 'telat', '-', '-', 'ESP32-GATE-02')
-	`, today, today, today, today, today)
+		('A1B2C305', 'Fajar Dwi Santoso', 'siswa', '12 IPA 1', ?, '07:08:40', 'telat', '-', '-', 'ESP32-GATE-02'),
+		('A1B2C306', 'Zaid Bin Haritsah', 'siswa', '10 IPA 2', ?, '06:55:00', 'tepat', '15:10:00', 'tepat', 'ESP32-GATE-01'),
+		('A1B2C307', 'Khadijah Al-Kubra', 'siswa', '11 IPA 1', ?, '06:38:15', 'tepat', '15:00:00', 'tepat', 'ESP32-GATE-01'),
+		('A1B2C308', 'Ustadz Abdullah Yusuf, Lc', 'guru', 'Guru Tahfidz & Quran', ?, '06:20:00', 'tepat', '16:00:00', 'tepat', 'ESP32-GATE-01'),
+		('A1B2C301', 'Muhammad Rizky Pratama', 'siswa', '10 IPA 1', ?, '06:42:00', 'tepat', '15:00:00', 'tepat', 'ESP32-GATE-01'),
+		('A1B2C302', 'Ustadz Ahmad Fauzi, S.Pd.I', 'guru', 'Guru Fiqih & Hadits', ?, '06:28:00', 'tepat', '15:30:00', 'tepat', 'ESP32-GATE-01')
+	`, today, today, today, today, today, yesterday, yesterday, yesterday, twoDaysAgo, twoDaysAgo)
 
-	log.Println("✅ Seed data database SQLite berhasil dibuat.")
+	log.Println("✅ Data dummy berhasil di-generate.")
 }
 
 // -------------------------------------------------------------
-// SSE REALTIME BROADCASTING
+// SSE REALTIME STREAMING
 // -------------------------------------------------------------
 func broadcastSSE(eventType string, payload interface{}) {
 	dataBytes, err := json.Marshal(payload)
@@ -215,7 +238,6 @@ func broadcastSSE(eventType string, payload interface{}) {
 		select {
 		case clientChan <- msg:
 		default:
-			// Channel penuh / client lag
 		}
 	}
 }
@@ -244,7 +266,6 @@ func handleSSE(w http.ResponseWriter, r *http.Request) {
 		sseMutex.Unlock()
 	}()
 
-	// Kirim pesan koneksi pertama
 	fmt.Fprintf(w, "event: connected\ndata: {\"status\":\"connected\",\"time\":\"%s\"}\n\n", time.Now().Format(time.RFC3339))
 	flusher.Flush()
 
@@ -261,7 +282,7 @@ func handleSSE(w http.ResponseWriter, r *http.Request) {
 }
 
 // -------------------------------------------------------------
-// JWT UTILITIES (HS256 Standard)
+// JWT UTILITIES
 // -------------------------------------------------------------
 type JWTHeader struct {
 	Alg string `json:"alg"`
@@ -279,7 +300,7 @@ func generateJWT(username, role string) (string, error) {
 	payload := JWTPayload{
 		Username: username,
 		Role:     role,
-		Exp:      time.Now().Add(72 * time.Hour).Unix(), // 3 Hari
+		Exp:      time.Now().Add(72 * time.Hour).Unix(),
 	}
 
 	headerJSON, _ := json.Marshal(header)
@@ -322,7 +343,7 @@ func validateJWT(tokenString string) (*JWTPayload, error) {
 	}
 
 	if time.Now().Unix() > payload.Exp {
-		return nil, fmt.Errorf("token JWT telah kadaluarsa (expired)")
+		return nil, fmt.Errorf("token JWT telah kadaluarsa")
 	}
 
 	return &payload, nil
@@ -395,7 +416,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	token, err := generateJWT(req.Username, "admin")
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Gagal meng-generate token JWT.")
+		writeJSONError(w, http.StatusInternalServerError, "Gagal generate token JWT.")
 		return
 	}
 
@@ -413,68 +434,167 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// 2. GET /api/attendance?tanggal=YYYY-MM-DD&tipe=all|siswa|guru&bulan=YYYY-MM
-func handleGetAttendance(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method GET yang diizinkan.")
-		return
-	}
+// 2. CRUD ATTENDANCE (/api/attendance)
+func handleAttendance(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		// Read / Query
+		query := r.URL.Query()
+		tanggal := query.Get("tanggal")
+		bulan := query.Get("bulan")
+		tipe := strings.ToLower(query.Get("tipe"))
+		if tipe == "" {
+			tipe = "all"
+		}
 
-	query := r.URL.Query()
-	tanggal := query.Get("tanggal")
-	bulan := query.Get("bulan")
-	tipe := strings.ToLower(query.Get("tipe"))
-	if tipe == "" {
-		tipe = "all"
-	}
+		var rows *sql.Rows
+		var err error
 
-	var rows *sql.Rows
-	var err error
-
-	// Query bulanan untuk Cetak Rekap Bulanan
-	if bulan != "" {
-		if tipe == "all" {
-			rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
-				FROM attendances WHERE strftime('%Y-%m', tanggal) = ? ORDER BY tanggal DESC, waktu_masuk DESC`, bulan)
+		if bulan != "" {
+			if tipe == "all" {
+				rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
+					FROM attendances WHERE strftime('%Y-%m', tanggal) = ? ORDER BY tanggal DESC, waktu_masuk DESC`, bulan)
+			} else {
+				rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
+					FROM attendances WHERE strftime('%Y-%m', tanggal) = ? AND lower(tipe) = ? ORDER BY tanggal DESC, waktu_masuk DESC`, bulan, tipe)
+			}
 		} else {
-			rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
-				FROM attendances WHERE strftime('%Y-%m', tanggal) = ? AND lower(tipe) = ? ORDER BY tanggal DESC, waktu_masuk DESC`, bulan, tipe)
+			if tanggal == "" {
+				tanggal = time.Now().Format("2006-01-02")
+			}
+			if tipe == "all" {
+				rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
+					FROM attendances WHERE tanggal = ? ORDER BY waktu_masuk DESC, id DESC`, tanggal)
+			} else {
+				rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
+					FROM attendances WHERE tanggal = ? AND lower(tipe) = ? ORDER BY waktu_masuk DESC, id DESC`, tanggal, tipe)
+			}
 		}
-	} else {
-		// Query harian
-		if tanggal == "" {
-			tanggal = time.Now().Format("2006-01-02")
-		}
-		if tipe == "all" {
-			rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
-				FROM attendances WHERE tanggal = ? ORDER BY waktu_masuk DESC, id DESC`, tanggal)
-		} else {
-			rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
-				FROM attendances WHERE tanggal = ? AND lower(tipe) = ? ORDER BY waktu_masuk DESC, id DESC`, tanggal, tipe)
-		}
-	}
 
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Query database gagal: %v", err))
-		return
-	}
-	defer rows.Close()
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Query database gagal: %v", err))
+			return
+		}
+		defer rows.Close()
 
-	list := make([]AttendanceRecord, 0)
-	for rows.Next() {
+		list := make([]AttendanceRecord, 0)
+		for rows.Next() {
+			var a AttendanceRecord
+			rows.Scan(&a.ID, &a.UID, &a.Nama, &a.Tipe, &a.Kelas, &a.Tanggal, &a.WaktuMasuk, &a.StatusMasuk, &a.WaktuKeluar, &a.StatusKeluar, &a.DeviceID, &a.CreatedAt)
+			list = append(list, a)
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"tanggal": tanggal,
+			"bulan":   bulan,
+			"tipe":    tipe,
+			"total":   len(list),
+			"data":    list,
+		})
+
+	case http.MethodPost:
+		// Create Manual Attendance Record
 		var a AttendanceRecord
-		rows.Scan(&a.ID, &a.UID, &a.Nama, &a.Tipe, &a.Kelas, &a.Tanggal, &a.WaktuMasuk, &a.StatusMasuk, &a.WaktuKeluar, &a.StatusKeluar, &a.DeviceID, &a.CreatedAt)
-		list = append(list, a)
-	}
+		if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+			return
+		}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":  "success",
-		"tanggal": tanggal,
-		"bulan":   bulan,
-		"tipe":    tipe,
-		"total":   len(list),
-		"data":    list,
-	})
+		if a.Nama == "" {
+			writeJSONError(w, http.StatusBadRequest, "Nama lengkap wajib diisi.")
+			return
+		}
+		if a.Tanggal == "" {
+			a.Tanggal = time.Now().Format("2006-01-02")
+		}
+		if a.WaktuMasuk == "" {
+			a.WaktuMasuk = time.Now().Format("15:04:05")
+		}
+		if a.StatusMasuk == "" {
+			a.StatusMasuk = "tepat"
+		}
+		if a.WaktuKeluar == "" {
+			a.WaktuKeluar = "-"
+		}
+		if a.StatusKeluar == "" {
+			a.StatusKeluar = "-"
+		}
+		if a.DeviceID == "" {
+			a.DeviceID = "MANUAL"
+		}
+		if a.Tipe == "" {
+			a.Tipe = "siswa"
+		}
+
+		res, err := db.Exec(`INSERT INTO attendances (uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin) 
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			a.UID, a.Nama, a.Tipe, a.Kelas, a.Tanggal, a.WaktuMasuk, a.StatusMasuk, a.WaktuKeluar, a.StatusKeluar, a.DeviceID)
+
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Gagal menyimpan absensi: %v", err))
+			return
+		}
+
+		lastID, _ := res.LastInsertId()
+		a.ID = int(lastID)
+
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"status":  "success",
+			"message": "Data absensi berhasil ditambahkan secara manual",
+			"data":    a,
+		})
+
+	case http.MethodPut:
+		// Update Attendance Record
+		var a AttendanceRecord
+		if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+			return
+		}
+
+		if a.ID == 0 {
+			writeJSONError(w, http.StatusBadRequest, "ID Absensi wajib disertakan.")
+			return
+		}
+
+		_, err := db.Exec(`UPDATE attendances SET uid = ?, nama = ?, tipe = ?, kelas = ?, tanggal = ?, waktu_masuk = ?, status_masuk = ?, waktu_keluar = ?, status_keluar = ?, id_mesin = ? WHERE id = ?`,
+			a.UID, a.Nama, a.Tipe, a.Kelas, a.Tanggal, a.WaktuMasuk, a.StatusMasuk, a.WaktuKeluar, a.StatusKeluar, a.DeviceID, a.ID)
+
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Gagal memperbarui absensi: %v", err))
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": "Data absensi berhasil diperbarui",
+			"data":    a,
+		})
+
+	case http.MethodDelete:
+		// Delete Attendance Record
+		idStr := r.URL.Query().Get("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil || id <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "Parameter id tidak valid.")
+			return
+		}
+
+		_, err = db.Exec("DELETE FROM attendances WHERE id = ?", id)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Gagal menghapus data absensi.")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": "Data absensi berhasil dihapus",
+		})
+
+	default:
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
+	}
 }
 
 // 3. POST /api/attendance/tap (Realtime ESP32 RFID / Fingerprint Tap)
@@ -500,18 +620,15 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		req.DeviceID = "ESP32-GATE-01"
 	}
 
-	// Update device last_seen
 	db.Exec(`INSERT INTO devices (device_id, nama, lokasi, last_seen) 
 		VALUES (?, ?, 'Pintu Masuk', CURRENT_TIMESTAMP) 
 		ON CONFLICT(device_id) DO UPDATE SET last_seen = CURRENT_TIMESTAMP`, req.DeviceID, req.DeviceID)
 
-	// Cari member berdasarkan UID
 	var member Member
 	err := db.QueryRow("SELECT id, uid, nama, tipe, kelas, no_hp FROM members WHERE uid = ?", req.RFIDTag).
 		Scan(&member.ID, &member.UID, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
 
 	if err != nil {
-		// Jika kartu belum terdaftar, buat otomatis member tamu/baru
 		member = Member{
 			UID:   req.RFIDTag,
 			Nama:  fmt.Sprintf("Kartu Baru (#%s)", req.RFIDTag),
@@ -526,7 +643,6 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 	today := now.Format("2006-01-02")
 	currentTime := now.Format("15:04:05")
 
-	// Cek apakah sudah ada absensi hari ini untuk UID ini
 	var existing AttendanceRecord
 	checkErr := db.QueryRow(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin 
 		FROM attendances WHERE uid = ? AND tanggal = ? ORDER BY id DESC LIMIT 1`, req.RFIDTag, today).
@@ -537,7 +653,6 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 	var actionMessage string
 
 	if checkErr == sql.ErrNoRows {
-		// Belum absen masuk hari ini -> Catat ABSEN MASUK
 		statusMasuk := "tepat"
 		if now.Hour() > 7 || (now.Hour() == 7 && now.Minute() > 0) {
 			statusMasuk = "telat"
@@ -567,7 +682,6 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		}
 		actionMessage = fmt.Sprintf("Absen Masuk Berhasil (%s - %s)", member.Nama, statusMasuk)
 	} else {
-		// Sudah ada absen masuk -> Catat ABSEN KELUAR / PULANG
 		statusKeluar := "tepat"
 		if now.Hour() < 15 {
 			statusKeluar = "cepat"
@@ -580,12 +694,9 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		record.WaktuKeluar = currentTime
 		record.StatusKeluar = statusKeluar
 		record.DeviceID = req.DeviceID
-		actionMessage = fmt.Sprintf("Absen Keluar/Pulang Berhasil (%s - %s)", member.Nama, statusKeluar)
+		actionMessage = fmt.Sprintf("Absen Keluar Berhasil (%s - %s)", member.Nama, statusKeluar)
 	}
 
-	log.Printf("[REALTIME TAP] %s | %s | %s | %s", actionMessage, record.Nama, req.DeviceID, currentTime)
-
-	// Broadcast ke semua client Web Admin via SSE Realtime!
 	broadcastSSE("attendance_tap", map[string]interface{}{
 		"action":  actionMessage,
 		"record":  record,
@@ -604,7 +715,6 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 func handleMembers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		// List members
 		tipe := strings.ToLower(r.URL.Query().Get("tipe"))
 		search := strings.ToLower(r.URL.Query().Get("search"))
 
@@ -642,7 +752,6 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPost:
-		// Create member
 		var m Member
 		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -663,7 +772,7 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		res, err := db.Exec("INSERT INTO members (uid, nama, tipe, kelas, no_hp) VALUES (?, ?, ?, ?, ?)",
 			m.UID, m.Nama, m.Tipe, m.Kelas, m.NoHP)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "UID Kartu RFID sudah terdaftar pada pengguna lain.")
+			writeJSONError(w, http.StatusBadRequest, "UID Kartu RFID sudah terdaftar.")
 			return
 		}
 
@@ -676,7 +785,6 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPut:
-		// Update member
 		var m Member
 		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -701,7 +809,6 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodDelete:
-		// Delete member
 		idStr := r.URL.Query().Get("id")
 		id, err := strconv.Atoi(idStr)
 		if err != nil || id <= 0 {
@@ -725,7 +832,101 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// 5. GET /api/devices
+// 5. SETTINGS & DUMMY DATA MANAGEMENT (/api/settings)
+func handleSettings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		rows, err := db.Query("SELECT key, value FROM settings")
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Gagal membaca pengaturan.")
+			return
+		}
+		defer rows.Close()
+
+		settings := make(map[string]string)
+		for rows.Next() {
+			var k, v string
+			rows.Scan(&k, &v)
+			settings[k] = v
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status": "success",
+			"data":   settings,
+		})
+
+	case http.MethodPost:
+		var payload map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+			return
+		}
+
+		for k, v := range payload {
+			db.Exec("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?", k, v, v)
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": "Pengaturan berhasil disimpan",
+		})
+
+	default:
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
+	}
+}
+
+// Reset Attendance Data Only (Hapus Seluruh Data Absensi)
+func handleResetAttendance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	_, err := db.Exec("DELETE FROM attendances")
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal mereset data absensi.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": "Seluruh riwayat data absensi berhasil dikosongkan.",
+	})
+}
+
+// Reset Total (Hapus Absensi + Data Anggota)
+func handleResetAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	db.Exec("DELETE FROM attendances")
+	db.Exec("DELETE FROM members")
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": "Database berhasil di-reset total (Absensi dan Anggota telah dikosongkan).",
+	})
+}
+
+// Seed Dummy Data (Generate data contoh)
+func handleSeedDummy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	seedDummyData()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": "Data dummy santri, guru, dan riwayat absensi berhasil di-generate.",
+	})
+}
+
+// 6. GET /api/devices
 func handleDevices(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query("SELECT id, device_id, nama, lokasi, last_seen FROM devices ORDER BY last_seen DESC")
 	if err != nil {
@@ -747,24 +948,23 @@ func handleDevices(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// 6. GET /api/health
+// 7. GET /api/health
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":    "ok",
 		"database":  "sqlite3",
 		"timestamp": time.Now().Format(time.RFC3339),
-		"app":       "SIAKAD Absensi Digital IoT ESP32 (SQLite + SSE Realtime)",
+		"app":       "SIAKAD Absensi Digital IoT ESP32 (CRUD Absensi + Settings)",
 	})
 }
 
-// 7. GET / (Serve Embedded SPA Frontend)
+// 8. GET / (Serve Embedded SPA Frontend)
 func handleSPA(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write(indexHTML)
 }
 
-// Helpers
 func writeJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -789,7 +989,6 @@ func getEnv(key, fallback string) string {
 // MAIN ENTRYPOINT
 // -------------------------------------------------------------
 func main() {
-	// Inisialisasi Database SQLite
 	initDatabase()
 	defer db.Close()
 
@@ -797,14 +996,18 @@ func main() {
 
 	// REST API Endpoints
 	mux.HandleFunc("/api/login", handleLogin)
-	mux.HandleFunc("/api/attendance", authMiddleware(handleGetAttendance))
-	mux.HandleFunc("/api/attendance/tap", handleTapAttendance) // Public untuk ESP32
-	mux.HandleFunc("/api/members", authMiddleware(handleMembers))
+	mux.HandleFunc("/api/attendance", authMiddleware(handleAttendance)) // GET, POST, PUT, DELETE
+	mux.HandleFunc("/api/attendance/tap", handleTapAttendance)           // Public untuk ESP32
+	mux.HandleFunc("/api/members", authMiddleware(handleMembers))       // GET, POST, PUT, DELETE
 	mux.HandleFunc("/api/devices", authMiddleware(handleDevices))
-	mux.HandleFunc("/api/realtime", handleSSE) // SSE Live Stream
+	mux.HandleFunc("/api/settings", authMiddleware(handleSettings))
+	mux.HandleFunc("/api/settings/reset-attendance", authMiddleware(handleResetAttendance))
+	mux.HandleFunc("/api/settings/reset-all", authMiddleware(handleResetAll))
+	mux.HandleFunc("/api/settings/seed-dummy", authMiddleware(handleSeedDummy))
+	mux.HandleFunc("/api/realtime", handleSSE)
 	mux.HandleFunc("/api/health", handleHealth)
 
-	// SPA Static Frontend (Served directly from embedded index.html)
+	// SPA Static Frontend
 	mux.HandleFunc("/", handleSPA)
 
 	handler := corsMiddleware(mux)
