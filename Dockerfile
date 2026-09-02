@@ -1,7 +1,10 @@
 # -------------------------------------------------------------
 # Stage 1: Build Golang Fullstack Application
 # -------------------------------------------------------------
-FROM golang:1.24-alpine AS builder
+FROM golang:alpine AS builder
+
+# Izinkan download toolchain jika diperlukan
+ENV GOTOOLCHAIN=auto
 
 WORKDIR /app
 
