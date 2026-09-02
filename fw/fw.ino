@@ -1238,7 +1238,7 @@ String extractFingerprintTemplate(uint16_t id) {
   sendSensorPacket(0x01, cmd, 2);
 
   // 4. Baca paket data 512 bytes
-  uint8_t templateBytes[512];
+  uint8_t templateBytes[512] = {0};
   int bytesRead = 0;
   unsigned long startT = millis();
 
@@ -1290,7 +1290,7 @@ String extractFingerprintTemplate(uint16_t id) {
         }
       }
       mySerial.read(); mySerial.read(); // Checksum
-      if (pid == 0x08 && bytesRead >= 512) break;
+      if (pid == 0x08) break; // Paket 0x08 adalah penanda akhir transfer data sensor
     } 
     else {
       for (int k = 0; k < payloadLen + 2; k++) mySerial.read();
@@ -1301,7 +1301,12 @@ String extractFingerprintTemplate(uint16_t id) {
   delay(35);
   while (mySerial.available()) { mySerial.read(); delay(1); }
 
-  if (bytesRead < 512) return "";
+  if (bytesRead < 256) return "";
+
+  // Jika hanya terbaca 256 bytes, duplikasikan Half 1 ke Half 2 agar menjadi template 512B lengkap
+  if (bytesRead == 256) {
+    memcpy(&templateBytes[256], &templateBytes[0], 256);
+  }
 
   // Konversi 512 bytes biner menjadi 1024 karakter HEX
   String hexStr = "";
@@ -1315,13 +1320,25 @@ String extractFingerprintTemplate(uint16_t id) {
 }
 
 bool saveFingerprintTemplate(uint16_t id, String hexStr) {
-  if (hexStr.length() < 1024) return false;
+  if (hexStr.length() < 512) return false;
 
   // Konversi Hex String ke 512 bytes biner
-  uint8_t templateBytes[512];
-  for (int i = 0; i < 512; i++) {
+  uint8_t templateBytes[512] = {0};
+  int maxBytes = hexStr.length() / 2;
+  if (maxBytes > 512) maxBytes = 512;
+
+  for (int i = 0; i < maxBytes; i++) {
     char byteStr[3] = { hexStr[i * 2], hexStr[i * 2 + 1], 0 };
     templateBytes[i] = (uint8_t)strtol(byteStr, NULL, 16);
+  }
+
+  // Auto-Repair: Jika Half 2 kosong/rusak dari backup lama, duplikasikan Half 1 ke Half 2
+  int nonZeroH2 = 0;
+  for (int i = 256; i < 512; i++) {
+    if (templateBytes[i] != 0) nonZeroH2++;
+  }
+  if (nonZeroH2 < 50) {
+    memcpy(&templateBytes[256], &templateBytes[0], 256);
   }
 
   while (mySerial.available()) { mySerial.read(); delay(1); }
@@ -2088,6 +2105,7 @@ void setup() {
   mySerial.begin(57600, SERIAL_8N1, 16, 17);
   finger.begin(57600);
   if (finger.verifyPassword()) {
+    finger.setPacketSize(FINGERPRINT_PACKET_SIZE_128); // Standardisasi 128 bytes paket
     // LED Awal
     finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_BLUE, 0); 
   } else {
