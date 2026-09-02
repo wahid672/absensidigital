@@ -111,9 +111,21 @@ bool saveFingerprintTemplate(uint16_t id, String hexStr);
 void syncSingleEnroll(uint16_t id);
 void syncSingleDelete(uint16_t id);
 void syncDeleteAll();
+void fetchMembersLocalCache();
 void printNetworkInfo();
 void setupWebServer();
 void setupOTA();
+
+// Struktur Data Cache Anggota Offline
+struct CachedMember {
+  String uid;
+  int fingerprint_id;
+  String nama;
+  String nis_nip;
+  String tipe;
+  String kelas;
+  bool found;
+};
 
 // Variabel Tap Kartu Master
 unsigned long lastMasterTapTime = 0;
@@ -149,7 +161,7 @@ PrayerTime pt[8] = {
   {"ISYA", 0, 0, true}
 };
 
-// --- FUNGSI UTILITAS ---
+// --- FUNGSI UTILITAS & CACHE OFFLINE ---
 
 void printCentered(String text, int row) {
   if (text.length() > 16) {
@@ -187,6 +199,82 @@ void showScannedMessage(String line1, String line2) {
   printCentered(scanLine2, 1);
 }
 
+// 1. Tarik & Simpan Cache Anggota (Santri & Guru) dari Server ke SPIFFS
+void fetchMembersLocalCache() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  Serial.println("\n[MEMBERS CACHE] Mengunduh data anggota (Santri & Guru) untuk validasi offline...");
+
+  String baseUrl = String(serverUrl);
+  int apiIdx = baseUrl.indexOf("/api/");
+  if (apiIdx != -1) {
+    baseUrl = baseUrl.substring(0, apiIdx);
+  }
+  String membersUrl = baseUrl + "/api/members?tipe=all";
+
+  HTTPClient http;
+  http.begin(membersUrl);
+  http.setTimeout(8000);
+  http.addHeader("X-API-KEY", apiKey);
+
+  int httpCode = http.GET();
+  if (httpCode == 200) {
+    String payload = http.getString();
+    File f = SPIFFS.open("/members_cache.json", FILE_WRITE);
+    if (f) {
+      f.print(payload);
+      f.close();
+      Serial.println("[MEMBERS CACHE] Cache anggota offline berhasil diperbarui di SPIFFS.");
+    }
+  } else {
+    Serial.printf("[MEMBERS CACHE] Gagal mengunduh cache anggota (HTTP %d)\n", httpCode);
+  }
+  http.end();
+}
+
+// 2. Pencarian Data Anggota di Cache Lokal SPIFFS saat Mode Offline
+CachedMember findMemberOffline(int fingerId, String rfidTag) {
+  CachedMember res;
+  res.found = false;
+
+  if (!SPIFFS.exists("/members_cache.json")) return res;
+
+  File file = SPIFFS.open("/members_cache.json", FILE_READ);
+  if (!file || file.size() == 0) {
+    if (file) file.close();
+    return res;
+  }
+
+  String content = file.readString();
+  file.close();
+
+  DynamicJsonDocument doc(32768);
+  DeserializationError err = deserializeJson(doc, content);
+  if (err) return res;
+
+  JsonArray arr = doc["data"].as<JsonArray>();
+  for (JsonObject m : arr) {
+    int fId = m["fingerprint_id"].as<int>();
+    String uId = m["uid"].as<String>();
+
+    bool match = false;
+    if (fingerId > 0 && fId == fingerId) match = true;
+    if (rfidTag.length() > 0 && (uId.equalsIgnoreCase(rfidTag))) match = true;
+
+    if (match) {
+      res.uid = uId;
+      res.fingerprint_id = fId;
+      res.nama = m["nama"].as<String>();
+      res.nis_nip = m["nis_nip"].as<String>();
+      res.tipe = m["tipe"].as<String>();
+      res.kelas = m["kelas"].as<String>();
+      res.found = true;
+      break;
+    }
+  }
+
+  return res;
+}
+
 // --- FUNGSI FINGERPRINT REAL-TIME SYNC ---
 
 void syncSingleEnroll(uint16_t id) {
@@ -218,6 +306,7 @@ void syncSingleEnroll(uint16_t id) {
   int httpCode = http.POST(payload);
   if (httpCode == 200 || httpCode == 201) {
     Serial.printf("[ENROLL SYNC] SUKSES! ID %d otomatis tersinkronkan ke database server.\n", id);
+    fetchMembersLocalCache(); // Perbarui cache lokal
   } else {
     Serial.printf("[ENROLL SYNC] Respon Server (%d): %s\n", httpCode, http.errorToString(httpCode).c_str());
   }
@@ -243,6 +332,8 @@ void syncSingleDelete(uint16_t id) {
   serializeJson(doc, payload);
   http.POST(payload);
   http.end();
+
+  fetchMembersLocalCache();
 }
 
 void syncDeleteAll() {
@@ -552,20 +643,31 @@ void flushOfflineLogs() {
 // --- FUNGSI PENGIRIMAN DATA PRESENSI (HYBRID ONLINE/OFFLINE) ---
 
 void kirimPresensiFingerprint(uint8_t idFinger) {
-  // Jika offline, simpan langsung ke memori lokal tanpa delay/blocking
+  CachedMember localM = findMemberOffline((int)idFinger, "");
+
+  // 1. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("[OFFLINE] WiFi offline. Data Fingerprint ID %d disimpan ke memori lokal.\n", idFinger);
+    Serial.printf("[OFFLINE] WiFi offline. Data Fingerprint ID %d disimpan ke SPIFFS.\n", idFinger);
     saveOfflineLog((int)idFinger, "");
+    digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
+    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+
+    if (localM.found) {
+      showScannedMessage(localM.nama, "Hadir (Offline)");
+    } else {
+      showScannedMessage("Slot #" + String(idFinger), "Hadir (Offline)");
+    }
     return;
   }
 
+  // 2. JIKA ONLINE: Kirim ke server & tampilkan respon resmi
   HTTPClient http;
   http.begin(serverUrl);
-  http.setTimeout(3000); // 3 detik timeout agar cepat
+  http.setTimeout(3500); // Timeout 3.5 detik
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", apiKey);
 
-  StaticJsonDocument<200> doc;
+  StaticJsonDocument<256> doc;
   doc["device_id"] = deviceId;
   doc["fingerprint_id"] = idFinger;
   String timeStamp = getCurrentTimestamp();
@@ -582,28 +684,85 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
   if (httpCode == 200 || httpCode == 201) {
     String payload = http.getString();
     Serial.printf("[HTTP] Respon (%d): %s\n", httpCode, payload.c_str());
+
+    DynamicJsonDocument respDoc(1024);
+    DeserializationError err = deserializeJson(respDoc, payload);
+    if (!err) {
+      String status = respDoc["status"].as<String>();
+      String action = respDoc["action"].as<String>();
+      String nama = respDoc["data"]["nama"].as<String>();
+      String waktuMasuk = respDoc["data"]["waktu_masuk"].as<String>();
+      String waktuKeluar = respDoc["data"]["waktu_keluar"].as<String>();
+
+      if (nama == "null" || nama == "") {
+        nama = localM.found ? localM.nama : ("Slot #" + String(idFinger));
+      }
+
+      if (status == "success") {
+        digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
+        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
+        if (action == "check_out") {
+          showScannedMessage(nama, "Keluar: " + waktuKeluar + " OK");
+        } else {
+          showScannedMessage(nama, "Masuk: " + waktuMasuk + " OK");
+        }
+      } else if (status == "already_attended") {
+        digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(50);
+        digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
+        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+        showScannedMessage(nama, "Sudah Absen!");
+      } else if (status == "unmapped") {
+        digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
+        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 3);
+        showScannedMessage("Slot #" + String(idFinger), "Belum Dimapping!");
+      } else {
+        digitalWrite(BUZZ, HIGH); delay(300); digitalWrite(BUZZ, LOW);
+        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+        showScannedMessage("Jari Ditolak!", "Tidak Terdaftar");
+      }
+    } else {
+      digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
+      showScannedMessage("Presensi Sukses", "Slot #" + String(idFinger));
+    }
   } else {
-    Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke memori offline...\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke offline buffer...\n", http.errorToString(httpCode).c_str());
     saveOfflineLog((int)idFinger, "");
+    digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
+    if (localM.found) {
+      showScannedMessage(localM.nama, "Hadir (Offline)");
+    } else {
+      showScannedMessage("Slot #" + String(idFinger), "Hadir (Offline)");
+    }
   }
   http.end();
 }
 
 void kirimPresensiRFID(String tagId) {
-  // Jika offline, simpan langsung ke memori lokal
+  CachedMember localM = findMemberOffline(0, tagId);
+
+  // 1. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("[OFFLINE] WiFi offline. Data RFID %s disimpan ke memori lokal.\n", tagId.c_str());
+    Serial.printf("[OFFLINE] WiFi offline. Data RFID %s disimpan ke SPIFFS.\n", tagId.c_str());
     saveOfflineLog(0, tagId);
+    digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
+    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+
+    if (localM.found) {
+      showScannedMessage(localM.nama, "Hadir (Offline)");
+    } else {
+      showScannedMessage("RFID: " + tagId, "Hadir (Offline)");
+    }
     return;
   }
 
+  // 2. JIKA ONLINE: Kirim ke server & tampilkan respon resmi
   HTTPClient http;
   http.begin(serverUrl);
-  http.setTimeout(3000);
+  http.setTimeout(3500);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", apiKey);
 
-  StaticJsonDocument<200> doc;
+  StaticJsonDocument<256> doc;
   doc["device_id"] = deviceId;
   doc["rfid_tag"] = tagId;
   String timeStamp = getCurrentTimestamp();
@@ -620,9 +779,48 @@ void kirimPresensiRFID(String tagId) {
   if (httpCode == 200 || httpCode == 201) {
     String payload = http.getString();
     Serial.printf("[HTTP] Respon (%d): %s\n", httpCode, payload.c_str());
+
+    DynamicJsonDocument respDoc(1024);
+    DeserializationError err = deserializeJson(respDoc, payload);
+    if (!err) {
+      String status = respDoc["status"].as<String>();
+      String action = respDoc["action"].as<String>();
+      String nama = respDoc["data"]["nama"].as<String>();
+      String waktuMasuk = respDoc["data"]["waktu_masuk"].as<String>();
+      String waktuKeluar = respDoc["data"]["waktu_keluar"].as<String>();
+
+      if (nama == "null" || nama == "") {
+        nama = localM.found ? localM.nama : ("Kartu #" + tagId);
+      }
+
+      if (status == "success") {
+        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
+        if (action == "check_out") {
+          showScannedMessage(nama, "Keluar: " + waktuKeluar + " OK");
+        } else {
+          showScannedMessage(nama, "Masuk: " + waktuMasuk + " OK");
+        }
+      } else if (status == "already_attended") {
+        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+        showScannedMessage(nama, "Sudah Absen!");
+      } else if (status == "not_found") {
+        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+        showScannedMessage("Kartu Tdk Dikenal", "Ditolak Sistem");
+      } else {
+        showScannedMessage(nama, "Presensi OK");
+      }
+    } else {
+      showScannedMessage("Kartu Terbaca", tagId);
+    }
   } else {
-    Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke memori offline...\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke offline buffer...\n", http.errorToString(httpCode).c_str());
     saveOfflineLog(0, tagId);
+    digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
+    if (localM.found) {
+      showScannedMessage(localM.nama, "Hadir (Offline)");
+    } else {
+      showScannedMessage("RFID: " + tagId, "Hadir (Offline)");
+    }
   }
   http.end();
 }
@@ -632,11 +830,7 @@ void checkFingerprintScan() {
   
   if (finger.getImage() == FINGERPRINT_OK && finger.image2Tz() == FINGERPRINT_OK) {
     if (finger.fingerSearch() == FINGERPRINT_OK) {
-      digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2); // Kedip Biru Diterima
-      showScannedMessage("Jari Terdaftar", "ID Jari: " + String(finger.fingerID));
-      
-      // Kirim data presensi ke server PHP
+      // Kirim dan tampilkan data presensi lengkap
       kirimPresensiFingerprint(finger.fingerID);
     } else {
       digitalWrite(BUZZ, HIGH); delay(50); digitalWrite(BUZZ, LOW); delay(50);
@@ -783,11 +977,7 @@ void checkRFID() {
     ESP.restart(); 
   }
   
-  // KARTU NORMAL
-  finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2); // Feedback LED Kartu Normal
-  showScannedMessage("ID Kartu RFID:", ID_TAG);
-  
-  // Kirim data presensi RFID ke server PHP
+  // KARTU NORMAL - Kirim ke server & tampilkan respon resmi
   kirimPresensiRFID(ID_TAG);
 }
 
@@ -1512,8 +1702,9 @@ void setup() {
   SPI.begin();
   mfrc522.PCD_Init();
 
-  // === PROSES SINKRONISASI DATA FINGERPRINT SAAT PERTAMA HIDUP ===
+  // === PROSES SINKRONISASI DATA FINGERPRINT & ANGGOTA SAAT PERTAMA HIDUP ===
   syncDataFingerprint();
+  fetchMembersLocalCache();
   
   setStandbyMode(); // Panggil fungsi setup UI dan LED standby
 }
@@ -1630,6 +1821,7 @@ void loop() {
       
       // Jalankan proses sinkronisasi sidik jari (menampilkan progress "Sync 10%" ...)
       syncDataFingerprint();
+      fetchMembersLocalCache();
 
       setStandbyMode();
     }

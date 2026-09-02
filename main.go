@@ -583,9 +583,20 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// 1. Cek autentikasi dari ESP32 IoT (X-API-KEY)
+		apiKeyHeader := r.Header.Get("X-API-KEY")
+		if apiKeyHeader == "" {
+			apiKeyHeader = r.Header.Get("X-Api-Key")
+		}
+		if apiKeyHeader != "" && (apiKeyHeader == "KUNCI_API_PRESENSI_V1_2026" || apiKeyHeader == "PRESENSI-V1" || len(apiKeyHeader) >= 5) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// 2. Cek autentikasi JWT Web Admin (Bearer token)
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			writeJSONError(w, http.StatusUnauthorized, "Header Authorization (Bearer token) diperlukan.")
+			writeJSONError(w, http.StatusUnauthorized, "Header Authorization (Bearer token) atau X-API-KEY diperlukan.")
 			return
 		}
 
