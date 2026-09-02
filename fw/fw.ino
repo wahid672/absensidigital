@@ -136,6 +136,8 @@ int masterTapCount = 0;
 // Variabel UI Dinamis saat status SCANNED
 String scanLine1 = "";
 String scanLine2 = "";
+int scanScrollIndex = 0;
+unsigned long lastScanScrollTime = 0;
 
 // Indeks & State
 int scrollIndex = 0;
@@ -186,6 +188,7 @@ void printCentered(String text, int row) {
 void setStandbyMode() {
   currentMode = STANDBY;
   masterTapCount = 0;
+  scanScrollIndex = 0;
   lcd.clear();
   // LED Bernafas Biru secara terus menerus (0)
   finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_BLUE, 0); 
@@ -196,9 +199,51 @@ void showScannedMessage(String line1, String line2) {
   scannedStartTime = millis(); 
   scanLine1 = line1;
   scanLine2 = line2;
+  scanScrollIndex = 0;
+  lastScanScrollTime = millis();
+
   lcd.clear();
-  printCentered(scanLine1, 0);
+  if (scanLine1.length() <= 16) {
+    printCentered(scanLine1, 0);
+  } else {
+    // Tampilkan 16 karakter pertama
+    lcd.setCursor(0, 0);
+    lcd.print(scanLine1.substring(0, 16));
+  }
   printCentered(scanLine2, 1);
+}
+
+// Menangani Tampilan & Auto-Scroll Baris 1 saat Respon Presensi Muncul
+void handleScannedUI() {
+  unsigned long elapsed = millis() - scannedStartTime;
+  
+  // Hitung durasi dinamis: berikan waktu cukup jika nama panjang agar scroll terbaca utuh
+  unsigned long duration = 5000;
+  if (scanLine1.length() > 16) {
+    duration = 1000 + ((scanLine1.length() - 16) * 300) + 2000; // jeda awal 1s + waktu scroll + jeda akhir 2s
+    if (duration > 8500) duration = 8500; // Maksimal 8.5 detik
+  }
+
+  if (elapsed >= duration) {
+    setStandbyMode(); // Kembali standby
+    return;
+  }
+
+  // Jika nama lebih dari 16 karakter, lakukan auto-scroll perlahan di baris 0
+  if (scanLine1.length() > 16) {
+    // Beri jeda 800ms di awal sebelum mulai scroll, lalu geser per 280ms
+    if (elapsed > 800 && (millis() - lastScanScrollTime >= 280)) {
+      lastScanScrollTime = millis();
+      int maxScroll = scanLine1.length() - 16;
+      if (scanScrollIndex <= maxScroll) {
+        String sub = scanLine1.substring(scanScrollIndex, scanScrollIndex + 16);
+        while (sub.length() < 16) sub += " ";
+        lcd.setCursor(0, 0);
+        lcd.print(sub);
+        scanScrollIndex++;
+      }
+    }
+  }
 }
 
 // 1. Tarik & Simpan Cache Anggota (Santri & Guru) dari Server ke SPIFFS
@@ -2012,9 +2057,7 @@ void loop() {
     }
   }
   else if (currentMode == SCANNED) {
-    if (millis() - scannedStartTime >= 5000) {
-      setStandbyMode(); // Kembali biru nafas setelah 5 detik
-    }
+    handleScannedUI();
   } 
   else {
     handleStandbyUI();
