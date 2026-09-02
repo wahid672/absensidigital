@@ -1830,9 +1830,44 @@ void handleWebUploadBinTemplates() {
     }
   }
 
-  // Perbarui cache anggota dari server jika WiFi online
-  if (WiFi.status() == WL_CONNECTED) {
-    fetchMembersLocalCache();
+  // Sinkronisasi seluruh template ke server database jika online
+  bool serverSynced = false;
+  if (WiFi.status() == WL_CONNECTED && successCount > 0) {
+    Serial.println("\n[SERVER SYNC] Mengirim hasil restore sidik jari ke database server...");
+    printCentered("Sync ke Server..", 1);
+
+    DynamicJsonDocument syncDoc(65536);
+    syncDoc["action"] = "upload_templates";
+    syncDoc["device_id"] = deviceId;
+    JsonArray tmplArray = syncDoc.createNestedArray("templates");
+
+    for (int id = 1; id <= MAX_FINGERPRINTS; id++) {
+      String hexData = extractFingerprintTemplate(id);
+      if (hexData.length() >= 1024) {
+        JsonObject item = tmplArray.createNestedObject();
+        item["fingerprint_id"] = id;
+        item["template_data"] = hexData;
+        delay(10);
+      }
+    }
+
+    HTTPClient http;
+    http.begin(serverUrl);
+    http.setTimeout(15000);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("X-API-KEY", apiKey);
+
+    String payload;
+    serializeJson(syncDoc, payload);
+    int httpCode = http.POST(payload);
+    if (httpCode == 200 || httpCode == 201) {
+      serverSynced = true;
+      Serial.println("[SERVER SYNC] SUKSES! Seluruh sidik jari tersinkronkan ke database server.");
+      fetchMembersLocalCache(); // Perbarui cache lokal
+    } else {
+      Serial.printf("[SERVER SYNC] Respon Server (%d): %s\n", httpCode, http.errorToString(httpCode).c_str());
+    }
+    http.end();
   }
 
   Serial.printf("[BIN RESTORE] Selesai: %d dari %d template berhasil disimpan ke sensor!\n", successCount, totalTemplates);
@@ -1844,8 +1879,13 @@ void handleWebUploadBinTemplates() {
 
   DynamicJsonDocument resp(512);
   resp["status"] = "success";
-  resp["message"] = "Berhasil! " + String(successCount) + " dari " + String(totalTemplates) + " template sidik jari (.bin) berhasil di-restore ke sensor.";
+  if (serverSynced) {
+    resp["message"] = "Berhasil! " + String(successCount) + " template sidik jari berhasil di-restore ke sensor dan otomatis tersinkronkan ke database server.";
+  } else {
+    resp["message"] = "Berhasil! " + String(successCount) + " dari " + String(totalTemplates) + " template sidik jari (.bin) berhasil di-restore ke sensor.";
+  }
   resp["count"] = successCount;
+  resp["server_synced"] = serverSynced;
 
   String respStr;
   serializeJson(resp, respStr);
