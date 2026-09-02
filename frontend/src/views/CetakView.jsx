@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Printer, School } from 'lucide-react';
+import { Printer, School, Filter, Building } from 'lucide-react';
 import { apiFetch } from '../api';
 
-export default function CetakView({ settings = {} }) {
+export default function CetakView({ settings = {}, classes = [], positions = [] }) {
   const today = new Date().toISOString().split('T')[0];
   const currentMonth = today.substring(0, 7);
 
@@ -10,6 +10,7 @@ export default function CetakView({ settings = {} }) {
   const [tanggal, setTanggal] = useState(today);
   const [bulan, setBulan] = useState(currentMonth);
   const [tipe, setTipe] = useState('all');
+  const [selectedKelas, setSelectedKelas] = useState('');
 
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -21,6 +22,9 @@ export default function CetakView({ settings = {} }) {
       url += `&bulan=${bulan}`;
     } else {
       url += `&tanggal=${tanggal}`;
+    }
+    if (selectedKelas) {
+      url += `&kelas=${encodeURIComponent(selectedKelas)}`;
     }
 
     try {
@@ -36,27 +40,29 @@ export default function CetakView({ settings = {} }) {
 
   useEffect(() => {
     loadData();
-  }, [mode, tanggal, bulan, tipe]);
+  }, [mode, tanggal, bulan, tipe, selectedKelas]);
+
+  const kotaInstansi = settings.instansi_kota || 'Kota Santri';
 
   return (
     <section className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-5xl w-full mx-auto">
       {/* FILTER CONTROL (Hidden on print) */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm no-print space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div>
             <h3 className="font-bold text-slate-800 text-base">Cetak Rekap Laporan Absensi (PDF / Print)</h3>
-            <p className="text-xs text-slate-500">Pilih periode dan format laporan yang akan dicetak atau diunduh sebagai PDF</p>
+            <p className="text-xs text-slate-500">Filter berdasarkan tanggal/bulan, tipe pengguna, serta kelas atau jabatan</p>
           </div>
           <button 
             onClick={() => window.print()}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-lg shadow-emerald-600/20 transition-all"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-lg shadow-emerald-600/20 transition-all self-start sm:self-auto"
           >
             <Printer className="w-4 h-4" />
             <span>Cetak / Simpan ke PDF</span>
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Mode Laporan</label>
             <select 
@@ -95,12 +101,30 @@ export default function CetakView({ settings = {} }) {
             <label className="block text-xs font-semibold text-slate-600 mb-1">Kategori Pengguna</label>
             <select 
               value={tipe} 
-              onChange={(e) => setTipe(e.target.value)}
+              onChange={(e) => { setTipe(e.target.value); setSelectedKelas(''); }}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               <option value="all">Semua (Santri & Guru)</option>
               <option value="siswa">Khusus Santri / Siswa</option>
               <option value="guru">Khusus Guru / Ustadz</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              {tipe === 'guru' ? 'Filter Jabatan' : 'Filter Kelas'}
+            </label>
+            <select 
+              value={selectedKelas} 
+              onChange={(e) => setSelectedKelas(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">-- Semua {tipe === 'guru' ? 'Jabatan' : 'Kelas'} --</option>
+              {tipe === 'guru' ? (
+                positions.map(p => <option key={p.id} value={p.nama}>{p.nama}</option>)
+              ) : (
+                classes.map(c => <option key={c.id} value={c.nama}>{c.nama}</option>)
+              )}
             </select>
           </div>
         </div>
@@ -113,13 +137,13 @@ export default function CetakView({ settings = {} }) {
             <School className="w-8 h-8 text-slate-900" />
             <div>
               <h1 className="text-xl font-bold tracking-wide uppercase text-slate-900">
-                {settings.instansi_nama || 'YAYASAN PONDOK PESANTREN DIGITAL'}
+                {settings.instansi_nama || 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL'}
               </h1>
               <p className="text-xs text-slate-600">Sistem Presensi & Kehadiran Otomatis Berbasis IoT ESP32</p>
             </div>
           </div>
           <p className="text-[11px] text-slate-500 italic">
-            Alamat: {settings.instansi_alamat || 'Jl. Pesantren Digital No. 01'}
+            Alamat: {settings.instansi_alamat || 'Jl. Pesantren Digital No. 01'} • Wilayah: {kotaInstansi}
           </p>
         </div>
 
@@ -128,6 +152,7 @@ export default function CetakView({ settings = {} }) {
             <p className="font-bold text-sm text-slate-900">REKAPITULASI LAPORAN KEHADIRAN</p>
             <p className="text-slate-600">
               Periode: {mode === 'bulanan' ? `Rekapitulasi Bulan ${bulan}` : `Tanggal ${tanggal}`}
+              {selectedKelas && <span className="font-bold"> • Filter: {selectedKelas}</span>}
             </p>
           </div>
           <div className="text-right mt-2 sm:mt-0">
@@ -154,7 +179,7 @@ export default function CetakView({ settings = {} }) {
             {data.length === 0 ? (
               <tr>
                 <td colSpan="9" className="py-6 text-center text-slate-400">
-                  Tidak ada data absensi untuk periode ini.
+                  Tidak ada data absensi untuk periode/kategori ini.
                 </td>
               </tr>
             ) : (
@@ -175,6 +200,7 @@ export default function CetakView({ settings = {} }) {
           </tbody>
         </table>
 
+        {/* LEMBAR TANDA TANGAN DENGAN KOTA DINAMIS */}
         <div className="grid grid-cols-2 gap-8 text-xs text-slate-800 pt-6">
           <div className="text-center">
             <p>Mengetahui,</p>
@@ -182,7 +208,7 @@ export default function CetakView({ settings = {} }) {
             <p className="font-bold underline">( {settings.kepala_nama || 'KH. Ahmad Zaki, Lc., M.Ag'} )</p>
           </div>
           <div className="text-center">
-            <p>Kota Santri, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+            <p>{kotaInstansi}, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
             <p className="font-semibold mb-16">Petugas Administrator Presensi</p>
             <p className="font-bold underline">( Administrator Absensi )</p>
           </div>

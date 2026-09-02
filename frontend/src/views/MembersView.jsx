@@ -4,7 +4,7 @@ import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 import ModalMember from '../components/ModalMember';
 
-export default function MembersView({ tipe = 'siswa', onMembersUpdated }) {
+export default function MembersView({ tipe = 'siswa', classes = [], positions = [], onMembersUpdated }) {
   const isGuru = tipe === 'guru';
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState('');
@@ -33,7 +33,7 @@ export default function MembersView({ tipe = 'siswa', onMembersUpdated }) {
 
   const handleDelete = (id, nama) => {
     Swal.fire({
-      title: 'Hapus Anggota?',
+      title: `Hapus Data ${isGuru ? 'Guru' : 'Santri'}?`,
       html: `Apakah Anda yakin ingin menghapus <b>${nama}</b> dari sistem?`,
       icon: 'warning',
       showCancelButton: true,
@@ -63,13 +63,19 @@ export default function MembersView({ tipe = 'siswa', onMembersUpdated }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         <div>
           <h3 className="text-lg font-bold text-slate-800">
-            Manajemen Data {isGuru ? 'Guru & Ustadz' : 'Santri & Siswa'}
+            Manajemen Data {isGuru ? 'Guru & Asatidz' : 'Santri & Siswa'}
           </h3>
-          <p className="text-xs text-slate-500">Kelola informasi nama, UID kartu RFID / Fingerprint, kelas, dan kontak</p>
+          <p className="text-xs text-slate-500">
+            {isGuru 
+              ? 'Kelola database kartu RFID, jabatan, mata pelajaran, dan kontak guru' 
+              : 'Kelola database kartu RFID, kelas/rombel, dan kontak santri'}
+          </p>
         </div>
         <button 
           onClick={() => { setEditMember(null); setModalOpen(true); }}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-xl shadow-md transition-all"
+          className={`inline-flex items-center gap-2 px-4 py-2.5 text-white text-xs font-semibold rounded-xl shadow-md transition-all ${
+            isGuru ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-primary-600 hover:bg-primary-700'
+          }`}
         >
           <UserPlus className="w-4 h-4" />
           <span>Tambah Data {isGuru ? 'Guru' : 'Santri'}</span>
@@ -79,9 +85,11 @@ export default function MembersView({ tipe = 'siswa', onMembersUpdated }) {
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-4 sm:px-6 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-800 text-sm">Total Terdaftar:</span>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary-50 text-primary-700 border border-primary-200">
-              {members.length} Anggota
+            <span className="font-bold text-slate-800 text-sm">Total {isGuru ? 'Guru' : 'Santri'}:</span>
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+              isGuru ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-primary-50 text-primary-700 border-primary-200'
+            }`}>
+              {members.length} Orang
             </span>
           </div>
 
@@ -91,7 +99,7 @@ export default function MembersView({ tipe = 'siswa', onMembersUpdated }) {
               type="text" 
               value={search} 
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari nama / UID kartu / kelas..." 
+              placeholder={`Cari nama / UID kartu / ${isGuru ? 'jabatan' : 'kelas'}...`} 
               className="w-full pl-9 pr-4 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
@@ -105,7 +113,7 @@ export default function MembersView({ tipe = 'siswa', onMembersUpdated }) {
                 <th className="py-3.5 px-4">UID Kartu RFID</th>
                 <th className="py-3.5 px-4">Nama Lengkap</th>
                 <th className="py-3.5 px-4">Tipe</th>
-                <th className="py-3.5 px-4">Kelas / Jabatan</th>
+                <th className="py-3.5 px-4">{isGuru ? 'Jabatan / Mapel' : 'Kelas / Rombel'}</th>
                 <th className="py-3.5 px-4">No. WhatsApp</th>
                 <th className="py-3.5 px-4 text-center w-28">Aksi</th>
               </tr>
@@ -121,7 +129,7 @@ export default function MembersView({ tipe = 'siswa', onMembersUpdated }) {
               ) : members.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="py-8 text-center text-slate-400 text-xs">
-                    Belum ada data anggota. Silakan tambah baru.
+                    Belum ada data {isGuru ? 'guru' : 'santri'}. Silakan klik Tambah Data.
                   </td>
                 </tr>
               ) : (
@@ -141,7 +149,7 @@ export default function MembersView({ tipe = 'siswa', onMembersUpdated }) {
                         {m.tipe}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-slate-600 text-xs">{m.kelas || '-'}</td>
+                    <td className="py-3 px-4 text-slate-700 font-medium text-xs">{m.kelas || '-'}</td>
                     <td className="py-3 px-4 text-slate-600 text-xs font-mono">{m.no_hp || '-'}</td>
                     <td className="py-3 px-4 text-center">
                       <div className="inline-flex items-center gap-1.5">
@@ -172,7 +180,9 @@ export default function MembersView({ tipe = 'siswa', onMembersUpdated }) {
       {modalOpen && (
         <ModalMember 
           member={editMember}
-          defaultType={tipe}
+          tipe={tipe}
+          classes={classes}
+          positions={positions}
           onClose={() => setModalOpen(false)}
           onSuccess={fetchMembers}
         />

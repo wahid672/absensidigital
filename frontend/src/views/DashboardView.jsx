@@ -13,30 +13,40 @@ import {
   Trash2, 
   Cpu, 
   FolderOpen,
-  Zap
+  Zap,
+  TrendingUp,
+  PieChart,
+  Calendar,
+  AlertCircle,
+  Building
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 import ModalAttendance from '../components/ModalAttendance';
 
-export default function LaporanView({ members = [], realtimeEvent = null }) {
+export default function DashboardView({ members = [], classes = [], positions = [], realtimeEvent = null }) {
   const today = new Date().toISOString().split('T')[0];
   const [tanggal, setTanggal] = useState(today);
   const [tipe, setTipe] = useState('all');
+  const [selectedKelas, setSelectedKelas] = useState('');
   const [search, setSearch] = useState('');
   
   const [data, setData] = useState([]);
+  const [dashboardStats, setDashboardStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [highlightId, setHighlightId] = useState(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState(null);
 
-  // Fetch Attendance
+  // Fetch Attendance Records
   const fetchData = async () => {
     setLoading(true);
+    let url = `/api/attendance?tanggal=${tanggal}&tipe=${tipe}`;
+    if (selectedKelas) url += `&kelas=${encodeURIComponent(selectedKelas)}`;
+
     try {
-      const res = await apiFetch(`/api/attendance?tanggal=${tanggal}&tipe=${tipe}`);
+      const res = await apiFetch(url);
       const result = await res.json();
       setData(result.data || []);
     } catch (err) {
@@ -46,9 +56,24 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
     }
   };
 
+  // Fetch Dashboard Stats (7-Day Trend & Counts)
+  const fetchStats = async () => {
+    try {
+      const res = await apiFetch('/api/stats/dashboard');
+      const result = await res.json();
+      setDashboardStats(result);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchData();
-  }, [tanggal, tipe]);
+  }, [tanggal, tipe, selectedKelas]);
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
 
   // Handle Realtime Tap Event
   useEffect(() => {
@@ -67,6 +92,7 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
         });
         setHighlightId(rec.id);
         setTimeout(() => setHighlightId(null), 3000);
+        fetchStats();
       }
     }
   }, [realtimeEvent]);
@@ -89,6 +115,7 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
           if (res.ok) {
             Swal.fire({ icon: 'success', title: 'Terhapus', text: json.message, timer: 1500, showConfirmButton: false });
             fetchData();
+            fetchStats();
           } else {
             Swal.fire('Gagal', json.message, 'error');
           }
@@ -105,7 +132,7 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
       Swal.fire('Info', 'Tidak ada data untuk diekspor.', 'info');
       return;
     }
-    const headers = ['No', 'Nama', 'Tipe', 'Kelas', 'Waktu Masuk', 'Status Masuk', 'Waktu Keluar', 'Status Keluar', 'Mesin'];
+    const headers = ['No', 'Nama', 'Tipe', 'Kelas / Jabatan', 'Waktu Masuk', 'Status Masuk', 'Waktu Keluar', 'Status Keluar', 'Mesin'];
     const rows = filteredData.map((item, i) => [
       i + 1,
       `"${item.nama}"`,
@@ -127,9 +154,13 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
     document.body.removeChild(link);
   };
 
-  // Calculations
+  // Metric counts
   const tepatCount = data.filter(i => (i.status_masuk || '').toLowerCase().includes('tepat')).length;
   const telatCount = data.filter(i => (i.status_masuk || '').toLowerCase().includes('telat')).length;
+  const izinSakitCount = data.filter(i => {
+    const s = (i.status_masuk || '').toLowerCase();
+    return s === 'izin' || s === 'sakit';
+  }).length;
   const siswaCount = data.filter(i => (i.tipe || '').toLowerCase() === 'siswa').length;
   const guruCount = data.filter(i => (i.tipe || '').toLowerCase() === 'guru').length;
 
@@ -139,52 +170,209 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
     (i.kelas || '').toLowerCase().includes(search.toLowerCase().trim())
   );
 
+  // Maximum count for chart scaling
+  const trendDays = dashboardStats?.trend_7_days || [];
+  const maxTrendTotal = Math.max(...trendDays.map(d => d.total), 10);
+
   return (
     <section className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto">
-      {/* STAT CARDS */}
+      {/* 1. TOP METRIC CARDS */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center text-xl">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+          <div className="w-12 h-12 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center text-xl flex-shrink-0">
             <Users className="w-6 h-6" />
           </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500">Total Kehadiran</p>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-slate-500 truncate">Total Hadir Hari Ini</p>
             <h3 className="text-2xl font-bold text-slate-800">{data.length}</h3>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl flex-shrink-0">
             <CheckCircle2 className="w-6 h-6" />
           </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500">Tepat Waktu</p>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-slate-500 truncate">Tepat Waktu</p>
             <h3 className="text-2xl font-bold text-emerald-600">{tepatCount}</h3>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+          <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl flex-shrink-0">
             <History className="w-6 h-6" />
           </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500">Terlambat</p>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-slate-500 truncate">Terlambat</p>
             <h3 className="text-2xl font-bold text-rose-600">{telatCount}</h3>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl flex-shrink-0">
             <GraduationCap className="w-6 h-6" />
           </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500">Siswa / Guru</p>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-slate-500 truncate">Siswa / Guru</p>
             <h3 className="text-xl font-bold text-slate-800">{siswaCount} / {guruCount}</h3>
           </div>
         </div>
       </div>
 
-      {/* FILTER & ACTIONS */}
+      {/* 2. GRAFIK TREN 7 HARI & DISTRIBUSI STATUS (MODERN CHARTS) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* GRAFIK 1: TREN KEHADIRAN 7 HARI TERAKHIR */}
+        <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-800">Tren Kehadiran 7 Hari Terakhir</h4>
+                  <p className="text-xs text-slate-400">Statistik jumlah tap harian santri dan guru</p>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 flex items-center gap-1">
+                <Calendar className="w-3 h-3" /> 7 Hari
+              </span>
+            </div>
+
+            {/* Custom Bar Chart Visualizer */}
+            <div className="pt-6 pb-2">
+              <div className="h-44 flex items-end justify-between gap-2 sm:gap-4 px-2">
+                {trendDays.map((d, idx) => {
+                  const barHeightPct = Math.max(Math.round((d.total / maxTrendTotal) * 100), 8);
+                  const isToday = d.tanggal === today;
+
+                  return (
+                    <div key={idx} className="flex-1 flex flex-col items-center gap-2 group relative">
+                      {/* Tooltip on hover */}
+                      <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 text-white text-[10px] py-1 px-2 rounded shadow-lg pointer-events-none whitespace-nowrap z-10">
+                        {d.total} Hadir ({d.tepat} Tepat, {d.telat} Telat)
+                      </div>
+
+                      {/* Bar Container */}
+                      <div className="w-full max-w-[38px] bg-slate-100 rounded-t-xl h-full flex items-end p-1">
+                        <div 
+                          style={{ height: `${barHeightPct}%` }}
+                          className={`w-full rounded-t-lg transition-all duration-500 flex flex-col justify-end overflow-hidden ${
+                            isToday ? 'bg-gradient-to-t from-primary-600 to-sky-400' : 'bg-gradient-to-t from-slate-600 to-slate-400'
+                          }`}
+                        >
+                          <div className="text-[10px] font-bold text-white text-center pb-1">
+                            {d.total > 0 ? d.total : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Day Label */}
+                      <div className="text-center">
+                        <span className={`text-[11px] block font-semibold ${isToday ? 'text-primary-600 font-bold' : 'text-slate-600'}`}>
+                          {d.hari}
+                        </span>
+                        <span className="text-[9px] text-slate-400 block font-mono">
+                          {d.tanggal.substring(5)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <div className="flex items-center gap-4">
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-primary-600"></span> Hari Ini</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-slate-500"></span> Hari Sebelumnya</span>
+            </div>
+            <span className="text-[11px] text-slate-400 italic">Otomatis sinkron dengan database SQLite</span>
+          </div>
+        </div>
+
+        {/* GRAFIK 2: KOMPOSISI & STATUS HARI INI */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <PieChart className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-800">Distribusi Kehadiran</h4>
+                  <p className="text-xs text-slate-400">Rincian ketepatan waktu hari ini</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Progress Breakdown Bars */}
+            <div className="py-5 space-y-4">
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold mb-1">
+                  <span className="text-emerald-700 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Tepat Waktu
+                  </span>
+                  <span className="text-slate-700">{tepatCount} orang ({data.length ? Math.round((tepatCount/data.length)*100) : 0}%)</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                  <div 
+                    style={{ width: `${data.length ? (tepatCount/data.length)*100 : 0}%` }}
+                    className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                  ></div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold mb-1">
+                  <span className="text-rose-700 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500"></span> Terlambat
+                  </span>
+                  <span className="text-slate-700">{telatCount} orang ({data.length ? Math.round((telatCount/data.length)*100) : 0}%)</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                  <div 
+                    style={{ width: `${data.length ? (telatCount/data.length)*100 : 0}%` }}
+                    className="bg-rose-500 h-full rounded-full transition-all duration-500"
+                  ></div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold mb-1">
+                  <span className="text-amber-700 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span> Izin / Sakit
+                  </span>
+                  <span className="text-slate-700">{izinSakitCount} orang ({data.length ? Math.round((izinSakitCount/data.length)*100) : 0}%)</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                  <div 
+                    style={{ width: `${data.length ? (izinSakitCount/data.length)*100 : 0}%` }}
+                    className="bg-amber-500 h-full rounded-full transition-all duration-500"
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Master Stats Footer */}
+          <div className="pt-4 border-t border-slate-100 grid grid-cols-2 gap-2 text-center text-xs">
+            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+              <span className="text-slate-400 block text-[10px]">Master Kelas</span>
+              <span className="font-bold text-slate-800 text-sm">{dashboardStats?.counts?.kelas || classes.length} Kelas</span>
+            </div>
+            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+              <span className="text-slate-400 block text-[10px]">Master Jabatan</span>
+              <span className="font-bold text-slate-800 text-sm">{dashboardStats?.counts?.jabatan || positions.length} Posisi</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* 3. FILTER CONTROLS & TABLE REKAPITULASI */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
@@ -210,8 +398,8 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-12 gap-3 items-end">
-          <div className="lg:col-span-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
+          <div className="lg:col-span-4">
             <label className="block text-xs font-semibold text-slate-600 mb-1">Tanggal Absensi</label>
             <input 
               type="date" 
@@ -222,11 +410,11 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
             />
           </div>
 
-          <div className="lg:col-span-4">
+          <div className="lg:col-span-3">
             <label className="block text-xs font-semibold text-slate-600 mb-1">Tipe Pengguna</label>
             <select 
               value={tipe} 
-              onChange={(e) => setTipe(e.target.value)}
+              onChange={(e) => { setTipe(e.target.value); setSelectedKelas(''); }}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
             >
               <option value="all">Semua Pengguna</option>
@@ -236,13 +424,31 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
           </div>
 
           <div className="lg:col-span-3">
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              {tipe === 'guru' ? 'Filter Jabatan' : 'Filter Kelas'}
+            </label>
+            <select 
+              value={selectedKelas} 
+              onChange={(e) => setSelectedKelas(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
+            >
+              <option value="">-- Semua {tipe === 'guru' ? 'Jabatan' : 'Kelas'} --</option>
+              {tipe === 'guru' ? (
+                positions.map(p => <option key={p.id} value={p.nama}>{p.nama}</option>)
+              ) : (
+                classes.map(c => <option key={c.id} value={c.nama}>{c.nama}</option>)
+              )}
+            </select>
+          </div>
+
+          <div className="lg:col-span-2">
             <button 
               onClick={fetchData}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl shadow-md shadow-primary-600/20 transition-all text-xs disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl shadow-md shadow-primary-600/20 transition-all text-xs disabled:opacity-50"
             >
               <RotateCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Tampilkan Data</span>
+              <span>Tampilkan</span>
             </button>
           </div>
         </div>
@@ -277,6 +483,7 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
                 <th className="py-3.5 px-4 text-center w-12">No</th>
                 <th className="py-3.5 px-4">Nama Lengkap</th>
                 <th className="py-3.5 px-4">Tipe</th>
+                <th className="py-3.5 px-4">Kelas / Jabatan</th>
                 <th className="py-3.5 px-4">Waktu Masuk</th>
                 <th className="py-3.5 px-4">Status Masuk</th>
                 <th className="py-3.5 px-4">Waktu Keluar</th>
@@ -292,6 +499,7 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
                     <td className="py-4 px-4 text-center"><div className="h-4 w-4 bg-slate-200 rounded mx-auto"></div></td>
                     <td className="py-4 px-4"><div className="h-4 w-32 bg-slate-200 rounded"></div></td>
                     <td className="py-4 px-4"><div className="h-5 w-16 bg-slate-200 rounded-full"></div></td>
+                    <td className="py-4 px-4"><div className="h-4 w-20 bg-slate-200 rounded"></div></td>
                     <td className="py-4 px-4"><div className="h-4 w-16 bg-slate-200 rounded"></div></td>
                     <td className="py-4 px-4"><div className="h-5 w-20 bg-slate-200 rounded-full"></div></td>
                     <td className="py-4 px-4"><div className="h-4 w-16 bg-slate-200 rounded"></div></td>
@@ -302,7 +510,7 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
                 ))
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="py-12 text-center text-slate-400">
+                  <td colSpan="10" className="py-12 text-center text-slate-400">
                     <FolderOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                     <p className="font-medium text-slate-600 text-sm">Tidak ada data absensi ditemukan</p>
                   </td>
@@ -322,7 +530,6 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
                       <td className="py-3.5 px-4 text-center font-medium text-slate-400 text-xs">{index + 1}</td>
                       <td className="py-3.5 px-4">
                         <p className="font-semibold text-slate-800">{item.nama}</p>
-                        <p className="text-[11px] text-slate-400">{item.kelas || '-'}</p>
                       </td>
                       <td className="py-3.5 px-4">
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
@@ -330,6 +537,9 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
                         }`}>
                           {isGuru ? 'Guru' : 'Siswa'}
                         </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-xs font-medium text-slate-600">
+                        {item.kelas || '-'}
                       </td>
                       <td className="py-3.5 px-4 font-mono text-xs text-slate-600">{item.waktu_masuk || '-'}</td>
                       <td className="py-3.5 px-4">
@@ -407,9 +617,11 @@ export default function LaporanView({ members = [], realtimeEvent = null }) {
         <ModalAttendance 
           item={editItem}
           members={members}
+          classes={classes}
+          positions={positions}
           defaultDate={tanggal}
           onClose={() => setModalOpen(false)}
-          onSuccess={fetchData}
+          onSuccess={() => { fetchData(); fetchStats(); }}
         />
       )}
     </section>

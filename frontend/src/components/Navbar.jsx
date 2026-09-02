@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, Clock, Radio } from 'lucide-react';
+import { Menu, Clock } from 'lucide-react';
 
 export default function Navbar({ currentTab, onOpenMobileSidebar }) {
   const [timeStr, setTimeStr] = useState('00:00:00 WIB');
@@ -15,14 +15,16 @@ export default function Navbar({ currentTab, onOpenMobileSidebar }) {
   }, []);
 
   const titles = {
-    laporan: { title: 'Laporan & Rekapitulasi Absensi', desc: 'Pemantauan data kehadiran santri dan guru secara realtime' },
+    dashboard: { title: 'Dashboard & Statistik Presensi', desc: 'Pemantauan data kehadiran santri, guru, dan grafik secara realtime' },
     santri: { title: 'Data Santri / Siswa', desc: 'Kelola database kartu RFID dan data siswa' },
-    guru: { title: 'Data Guru / Asatidz', desc: 'Kelola database kartu RFID dan staf pengajar' },
-    cetak: { title: 'Cetak Rekap Laporan', desc: 'Pratinjau cetak dan ekspor laporan ke format PDF resmi' },
-    pengaturan: { title: 'Pengaturan Sistem', desc: 'Kelola data contoh dummy, reset database, dan konfigurasi instansi' }
+    guru: { title: 'Data Guru / Asatidz', desc: 'Kelola database kartu RFID, jabatan, dan staf pengajar' },
+    kelas: { title: 'Master Data Kelas & Rombel', desc: 'Kelola daftar kelas dan jenjang tingkatan untuk santri/siswa' },
+    jabatan: { title: 'Master Data Jabatan & Mapel', desc: 'Kelola daftar jabatan, mata pelajaran, dan tugas pengampu guru' },
+    cetak: { title: 'Cetak Rekap Laporan PDF', desc: 'Pratinjau cetak dan ekspor laporan ke format PDF resmi' },
+    pengaturan: { title: 'Pengaturan Sistem & Instansi', desc: 'Kelola data contoh dummy, reset database, dan konfigurasi instansi' }
   };
 
-  const info = titles[currentTab] || titles.laporan;
+  const info = titles[currentTab] || titles.dashboard;
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-10 no-print">

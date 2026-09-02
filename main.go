@@ -59,9 +59,22 @@ type Member struct {
 	UID       string `json:"uid"`
 	Nama      string `json:"nama"`
 	Tipe      string `json:"tipe"`  // "siswa" | "guru"
-	Kelas     string `json:"kelas"` // e.g. "10 IPA 1" atau "Guru Fiqih"
+	Kelas     string `json:"kelas"` // e.g. "10 IPA 1" atau "Guru Fiqih & Hadits"
 	NoHP      string `json:"no_hp"`
 	CreatedAt string `json:"created_at"`
+}
+
+type ClassRoom struct {
+	ID         int    `json:"id"`
+	Nama       string `json:"nama"`
+	Tingkat    string `json:"tingkat"`
+	Keterangan string `json:"keterangan"`
+}
+
+type Position struct {
+	ID         int    `json:"id"`
+	Nama       string `json:"nama"`
+	Keterangan string `json:"keterangan"`
 }
 
 type AttendanceRecord struct {
@@ -83,7 +96,7 @@ type TapRequest struct {
 	DeviceID  string `json:"device_id"`
 	RFIDTag   string `json:"rfid_uid"`
 	TipeScan  string `json:"tipe_scan"` // "auto", "masuk", "keluar"
-	Timestamp string `json:"timestamp"` // e.g. "2026-09-02T06:45:30+07:00" (untuk sync offline ESP32)
+	Timestamp string `json:"timestamp"` // e.g. "2026-09-02T06:45:30+07:00"
 	Tanggal   string `json:"tanggal"`   // e.g. "2026-09-02"
 	Waktu     string `json:"waktu"`     // e.g. "06:45:30"
 }
@@ -122,6 +135,19 @@ func initDatabase() {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS classes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		nama TEXT UNIQUE NOT NULL,
+		tingkat TEXT DEFAULT '',
+		keterangan TEXT DEFAULT ''
+	);
+
+	CREATE TABLE IF NOT EXISTS positions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		nama TEXT UNIQUE NOT NULL,
+		keterangan TEXT DEFAULT ''
+	);
+
 	CREATE TABLE IF NOT EXISTS attendances (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		uid TEXT NOT NULL,
@@ -157,6 +183,7 @@ func initDatabase() {
 	// Default settings
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_nama', 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_alamat', 'Jl. Pesantren Digital No. 01')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_kota', 'Kota Santri')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_masuk_batas', '07:00')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_pulang_batas', '15:00')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('kepala_nama', 'KH. Ahmad Zaki, Lc., M.Ag')")
@@ -165,6 +192,46 @@ func initDatabase() {
 }
 
 func seedInitialData() {
+	// Seed Classes
+	var classCount int
+	db.QueryRow("SELECT COUNT(*) FROM classes").Scan(&classCount)
+	if classCount == 0 {
+		classes := []ClassRoom{
+			{Nama: "10 IPA 1", Tingkat: "10", Keterangan: "Kelas 10 Peminatan IPA 1"},
+			{Nama: "10 IPA 2", Tingkat: "10", Keterangan: "Kelas 10 Peminatan IPA 2"},
+			{Nama: "10 IPS 1", Tingkat: "10", Keterangan: "Kelas 10 Peminatan IPS 1"},
+			{Nama: "11 IPA 1", Tingkat: "11", Keterangan: "Kelas 11 Peminatan IPA 1"},
+			{Nama: "11 IPS 1", Tingkat: "11", Keterangan: "Kelas 11 Peminatan IPS 1"},
+			{Nama: "11 IPS 2", Tingkat: "11", Keterangan: "Kelas 11 Peminatan IPS 2"},
+			{Nama: "12 IPA 1", Tingkat: "12", Keterangan: "Kelas 12 Peminatan IPA 1"},
+			{Nama: "12 IPS 1", Tingkat: "12", Keterangan: "Kelas 12 Peminatan IPS 1"},
+			{Nama: "Tahfidz A", Tingkat: "Program Khusus", Keterangan: "Halaqah Tahfidzul Quran A"},
+			{Nama: "Tahfidz B", Tingkat: "Program Khusus", Keterangan: "Halaqah Tahfidzul Quran B"},
+		}
+		for _, c := range classes {
+			db.Exec("INSERT OR IGNORE INTO classes (nama, tingkat, keterangan) VALUES (?, ?, ?)", c.Nama, c.Tingkat, c.Keterangan)
+		}
+	}
+
+	// Seed Positions
+	var posCount int
+	db.QueryRow("SELECT COUNT(*) FROM positions").Scan(&posCount)
+	if posCount == 0 {
+		positions := []Position{
+			{Nama: "Guru Fiqih & Hadits", Keterangan: "Pengampu Pelajaran Fiqih & Hadits"},
+			{Nama: "Guru Bahasa Arab", Keterangan: "Pengampu Pelajaran Bahasa Arab & Nahwu"},
+			{Nama: "Guru Tahfidz & Quran", Keterangan: "Pembimbing Tahfidz Al-Qur'an"},
+			{Nama: "Guru Aqidah Akhlak", Keterangan: "Pengampu Pelajaran Aqidah Akhlak"},
+			{Nama: "Guru Matematika & Sains", Keterangan: "Pengampu Bidang Eksak"},
+			{Nama: "Guru Bahasa Inggris", Keterangan: "Pengampu Pelajaran Bahasa Inggris"},
+			{Nama: "Wali Asrama & Pengasuhan", Keterangan: "Koordinator Pengasuhan Santri"},
+			{Nama: "Kepala Madrasah / Kurikulum", Keterangan: "Kepala Bidang Akademik"},
+		}
+		for _, p := range positions {
+			db.Exec("INSERT OR IGNORE INTO positions (nama, keterangan) VALUES (?, ?)", p.Nama, p.Keterangan)
+		}
+	}
+
 	var count int
 	db.QueryRow("SELECT COUNT(*) FROM members").Scan(&count)
 	if count > 0 {
@@ -528,34 +595,38 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 		tanggal := query.Get("tanggal")
 		bulan := query.Get("bulan")
 		tipe := strings.ToLower(query.Get("tipe"))
+		kelas := strings.TrimSpace(query.Get("kelas"))
 		if tipe == "" {
 			tipe = "all"
 		}
 
-		var rows *sql.Rows
-		var err error
+		sqlQuery := "SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at FROM attendances WHERE 1=1"
+		var args []interface{}
 
 		if bulan != "" {
-			if tipe == "all" {
-				rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
-					FROM attendances WHERE strftime('%Y-%m', tanggal) = ? ORDER BY tanggal DESC, waktu_masuk DESC`, bulan)
-			} else {
-				rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
-					FROM attendances WHERE strftime('%Y-%m', tanggal) = ? AND lower(tipe) = ? ORDER BY tanggal DESC, waktu_masuk DESC`, bulan, tipe)
-			}
+			sqlQuery += " AND strftime('%Y-%m', tanggal) = ?"
+			args = append(args, bulan)
 		} else {
 			if tanggal == "" {
 				tanggal = time.Now().Format("2006-01-02")
 			}
-			if tipe == "all" {
-				rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
-					FROM attendances WHERE tanggal = ? ORDER BY waktu_masuk DESC, id DESC`, tanggal)
-			} else {
-				rows, err = db.Query(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin, created_at 
-					FROM attendances WHERE tanggal = ? AND lower(tipe) = ? ORDER BY waktu_masuk DESC, id DESC`, tanggal, tipe)
-			}
+			sqlQuery += " AND tanggal = ?"
+			args = append(args, tanggal)
 		}
 
+		if tipe != "" && tipe != "all" {
+			sqlQuery += " AND lower(tipe) = ?"
+			args = append(args, tipe)
+		}
+
+		if kelas != "" && kelas != "all" {
+			sqlQuery += " AND kelas = ?"
+			args = append(args, kelas)
+		}
+
+		sqlQuery += " ORDER BY tanggal DESC, waktu_masuk DESC, id DESC"
+
+		rows, err := db.Query(sqlQuery, args...)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Query database gagal: %v", err))
 			return
@@ -574,6 +645,7 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 			"tanggal": tanggal,
 			"bulan":   bulan,
 			"tipe":    tipe,
+			"kelas":   kelas,
 			"total":   len(list),
 			"data":    list,
 		})
@@ -702,12 +774,10 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		req.DeviceID = "ESP32-GATE-01"
 	}
 
-	// Update timestamp device
 	db.Exec(`INSERT INTO devices (device_id, nama, lokasi, last_seen) 
 		VALUES (?, ?, 'Pintu Masuk', CURRENT_TIMESTAMP) 
 		ON CONFLICT(device_id) DO UPDATE SET last_seen = CURRENT_TIMESTAMP`, req.DeviceID, req.DeviceID)
 
-	// Cari member berdasarkan UID
 	var member Member
 	err := db.QueryRow("SELECT id, uid, nama, tipe, kelas, no_hp FROM members WHERE uid = ?", req.RFIDTag).
 		Scan(&member.ID, &member.UID, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
@@ -723,11 +793,9 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 			member.UID, member.Nama, member.Tipe, member.Kelas)
 	}
 
-	// Parsing Tanggal & Jam (Mendukung Backdate / Sync Data Offline dari ESP32)
 	tDate, tTime, tHour, tMin := parseDateTime(req.Tanggal, req.Waktu, req.Timestamp)
 	inH, inM, outH, outM := getThresholdTimes()
 
-	// Cek apakah sudah ada catatan absensi pada tanggal tersebut
 	var existing AttendanceRecord
 	checkErr := db.QueryRow(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin 
 		FROM attendances WHERE uid = ? AND tanggal = ? ORDER BY id DESC LIMIT 1`, req.RFIDTag, tDate).
@@ -742,7 +810,6 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 	var alreadyRecorded = false
 
 	if checkErr == sql.ErrNoRows {
-		// KASUS 1: BELUM PERNAH ABSEN PADA TANGGAL INI -> CATAT ABSEN MASUK
 		statusMasuk := "tepat"
 		if tHour > inH || (tHour == inH && tMin > inM) {
 			statusMasuk = "telat"
@@ -774,16 +841,13 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		actionMessage = fmt.Sprintf("Absen Masuk Berhasil (%s - %s)", member.Nama, statusMasuk)
 
 	} else if existing.WaktuKeluar == "-" || existing.WaktuKeluar == "" {
-		// KASUS 2: SUDAH ABSEN MASUK, BELUM ABSEN KELUAR
 		if req.TipeScan == "masuk" {
-			// Permintaan eksplisit tap masuk, namun sudah masuk
 			statusResult = "already_attended"
 			actionType = "already_check_in"
 			alreadyRecorded = true
 			record = existing
 			actionMessage = fmt.Sprintf("%s sudah melakukan absen masuk pada jam %s", member.Nama, existing.WaktuMasuk)
 		} else {
-			// Catat Absen Keluar
 			statusKeluar := "tepat"
 			if tHour < outH || (tHour == outH && tMin < outM) {
 				statusKeluar = "cepat"
@@ -801,7 +865,6 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		}
 
 	} else {
-		// KASUS 3: SUDAH LENGKAP ABSEN MASUK DAN KELUAR PADA TANGGAL INI
 		statusResult = "already_attended"
 		actionType = "already_completed"
 		alreadyRecorded = true
@@ -812,7 +875,6 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[ESP32 TAP] %s | Tgl: %s %s | Mesin: %s", actionMessage, tDate, tTime, req.DeviceID)
 
-	// Broadcast SSE Live
 	broadcastSSE("attendance_tap", map[string]interface{}{
 		"action":           actionType,
 		"status":           statusResult,
@@ -952,7 +1014,255 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// 5. SETTINGS & DUMMY DATA MANAGEMENT (/api/settings)
+// 5. CRUD MASTER KELAS (/api/classes)
+func handleClasses(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		rows, err := db.Query("SELECT id, nama, tingkat, keterangan FROM classes ORDER BY tingkat ASC, nama ASC")
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Gagal memuat data kelas.")
+			return
+		}
+		defer rows.Close()
+
+		list := make([]ClassRoom, 0)
+		for rows.Next() {
+			var c ClassRoom
+			rows.Scan(&c.ID, &c.Nama, &c.Tingkat, &c.Keterangan)
+			list = append(list, c)
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status": "success",
+			"total":  len(list),
+			"data":   list,
+		})
+
+	case http.MethodPost:
+		var c ClassRoom
+		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+			return
+		}
+		c.Nama = strings.TrimSpace(c.Nama)
+		if c.Nama == "" {
+			writeJSONError(w, http.StatusBadRequest, "Nama kelas wajib diisi.")
+			return
+		}
+
+		res, err := db.Exec("INSERT INTO classes (nama, tingkat, keterangan) VALUES (?, ?, ?)", c.Nama, c.Tingkat, c.Keterangan)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Nama kelas sudah ada.")
+			return
+		}
+		id, _ := res.LastInsertId()
+		c.ID = int(id)
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"status":  "success",
+			"message": "Kelas baru berhasil ditambahkan",
+			"data":    c,
+		})
+
+	case http.MethodPut:
+		var c ClassRoom
+		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+			return
+		}
+		if c.ID == 0 || strings.TrimSpace(c.Nama) == "" {
+			writeJSONError(w, http.StatusBadRequest, "ID dan Nama kelas wajib diisi.")
+			return
+		}
+
+		_, err := db.Exec("UPDATE classes SET nama = ?, tingkat = ?, keterangan = ? WHERE id = ?", c.Nama, c.Tingkat, c.Keterangan, c.ID)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Gagal memperbarui kelas.")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": "Data kelas berhasil diperbarui",
+			"data":    c,
+		})
+
+	case http.MethodDelete:
+		idStr := r.URL.Query().Get("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil || id <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "Parameter id tidak valid.")
+			return
+		}
+		_, err = db.Exec("DELETE FROM classes WHERE id = ?", id)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Gagal menghapus kelas.")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": "Data kelas berhasil dihapus",
+		})
+
+	default:
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
+	}
+}
+
+// 6. CRUD MASTER JABATAN (/api/positions)
+func handlePositions(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		rows, err := db.Query("SELECT id, nama, keterangan FROM positions ORDER BY nama ASC")
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Gagal memuat data jabatan.")
+			return
+		}
+		defer rows.Close()
+
+		list := make([]Position, 0)
+		for rows.Next() {
+			var p Position
+			rows.Scan(&p.ID, &p.Nama, &p.Keterangan)
+			list = append(list, p)
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status": "success",
+			"total":  len(list),
+			"data":   list,
+		})
+
+	case http.MethodPost:
+		var p Position
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+			return
+		}
+		p.Nama = strings.TrimSpace(p.Nama)
+		if p.Nama == "" {
+			writeJSONError(w, http.StatusBadRequest, "Nama jabatan wajib diisi.")
+			return
+		}
+
+		res, err := db.Exec("INSERT INTO positions (nama, keterangan) VALUES (?, ?)", p.Nama, p.Keterangan)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Nama jabatan sudah ada.")
+			return
+		}
+		id, _ := res.LastInsertId()
+		p.ID = int(id)
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"status":  "success",
+			"message": "Jabatan baru berhasil ditambahkan",
+			"data":    p,
+		})
+
+	case http.MethodPut:
+		var p Position
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+			return
+		}
+		if p.ID == 0 || strings.TrimSpace(p.Nama) == "" {
+			writeJSONError(w, http.StatusBadRequest, "ID dan Nama jabatan wajib diisi.")
+			return
+		}
+
+		_, err := db.Exec("UPDATE positions SET nama = ?, keterangan = ? WHERE id = ?", p.Nama, p.Keterangan, p.ID)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Gagal memperbarui jabatan.")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": "Data jabatan berhasil diperbarui",
+			"data":    p,
+		})
+
+	case http.MethodDelete:
+		idStr := r.URL.Query().Get("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil || id <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "Parameter id tidak valid.")
+			return
+		}
+		_, err = db.Exec("DELETE FROM positions WHERE id = ?", id)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Gagal menghapus jabatan.")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": "Data jabatan berhasil dihapus",
+		})
+
+	default:
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
+	}
+}
+
+// 7. GET /api/stats/dashboard (Data Grafik Trend 7 Hari & Komposisi)
+func handleDashboardStats(w http.ResponseWriter, r *http.Request) {
+	today := time.Now()
+
+	type DayTrend struct {
+		Tanggal   string `json:"tanggal"`
+		Hari      string `json:"hari"`
+		Total     int    `json:"total"`
+		Tepat     int    `json:"tepat"`
+		Telat     int    `json:"telat"`
+		IzinSakit int    `json:"izin_sakit"`
+	}
+
+	dayNames := map[time.Weekday]string{
+		time.Sunday:    "Minggu",
+		time.Monday:    "Senin",
+		time.Tuesday:   "Selasa",
+		time.Wednesday: "Rabu",
+		time.Thursday:  "Kamis",
+		time.Friday:    "Jumat",
+		time.Saturday:  "Sabtu",
+	}
+
+	trendList := make([]DayTrend, 0)
+	for i := 6; i >= 0; i-- {
+		t := today.AddDate(0, 0, -i)
+		tStr := t.Format("2006-01-02")
+		hStr := dayNames[t.Weekday()]
+
+		var total, tepat, telat, izinSakit int
+		db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ?", tStr).Scan(&total)
+		db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND status_masuk LIKE '%tepat%'", tStr).Scan(&tepat)
+		db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND status_masuk LIKE '%telat%'", tStr).Scan(&telat)
+		db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND (status_masuk = 'izin' OR status_masuk = 'sakit')", tStr).Scan(&izinSakit)
+
+		trendList = append(trendList, DayTrend{
+			Tanggal:   tStr,
+			Hari:      hStr,
+			Total:     total,
+			Tepat:     tepat,
+			Telat:     telat,
+			IzinSakit: izinSakit,
+		})
+	}
+
+	// Total Master Counts
+	var totalSiswa, totalGuru, totalKelas, totalJabatan int
+	db.QueryRow("SELECT COUNT(*) FROM members WHERE lower(tipe) = 'siswa'").Scan(&totalSiswa)
+	db.QueryRow("SELECT COUNT(*) FROM members WHERE lower(tipe) = 'guru'").Scan(&totalGuru)
+	db.QueryRow("SELECT COUNT(*) FROM classes").Scan(&totalKelas)
+	db.QueryRow("SELECT COUNT(*) FROM positions").Scan(&totalJabatan)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":       "success",
+		"trend_7_days": trendList,
+		"counts": map[string]int{
+			"siswa":   totalSiswa,
+			"guru":    totalGuru,
+			"kelas":   totalKelas,
+			"jabatan": totalJabatan,
+		},
+	})
+}
+
+// 8. SETTINGS & DUMMY DATA MANAGEMENT (/api/settings)
 func handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -1022,10 +1332,12 @@ func handleResetAll(w http.ResponseWriter, r *http.Request) {
 
 	db.Exec("DELETE FROM attendances")
 	db.Exec("DELETE FROM members")
+	db.Exec("DELETE FROM classes")
+	db.Exec("DELETE FROM positions")
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "success",
-		"message": "Database berhasil di-reset total (Absensi dan Anggota telah dikosongkan).",
+		"message": "Database berhasil di-reset total (Absensi, Anggota, Kelas, dan Jabatan telah dikosongkan).",
 	})
 }
 
@@ -1035,15 +1347,16 @@ func handleSeedDummy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	seedInitialData()
 	seedDummyData()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "success",
-		"message": "Data dummy santri, guru, dan riwayat absensi berhasil di-generate.",
+		"message": "Data dummy santri, guru, kelas, jabatan, dan riwayat absensi berhasil di-generate.",
 	})
 }
 
-// 6. GET /api/devices
+// 9. GET /api/devices
 func handleDevices(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query("SELECT id, device_id, nama, lokasi, last_seen FROM devices ORDER BY last_seen DESC")
 	if err != nil {
@@ -1065,17 +1378,17 @@ func handleDevices(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// 7. GET /api/health
+// 10. GET /api/health
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":    "ok",
 		"database":  "sqlite3",
 		"timestamp": time.Now().Format(time.RFC3339),
-		"app":       "SIAKAD Absensi Digital IoT ESP32 (Backdate & Offline Sync Support)",
+		"app":       "SIAKAD Absensi Digital IoT ESP32 (Backdate, Master Kelas/Jabatan, Dashboard Charts)",
 	})
 }
 
-// 8. React SPA Static File Handler with Fallback to index.html
+// 11. React SPA Static File Handler with Fallback to index.html
 func spaHandler() http.Handler {
 	distFS, err := fs.Sub(frontendDist, "frontend/dist")
 	if err != nil {
@@ -1090,10 +1403,8 @@ func spaHandler() http.Handler {
 			return
 		}
 
-		// Check if file exists in embedded filesystem
 		f, err := distFS.Open(path)
 		if err != nil {
-			// File not found -> Fallback to index.html for React SPA client-side routing
 			r.URL.Path = "/"
 			fileServer.ServeHTTP(w, r)
 			return
@@ -1136,8 +1447,11 @@ func main() {
 	// REST API Endpoints
 	mux.HandleFunc("/api/login", handleLogin)
 	mux.HandleFunc("/api/attendance", authMiddleware(handleAttendance))
-	mux.HandleFunc("/api/attendance/tap", handleTapAttendance) // Public untuk ESP32 (mendukung backdate & offline sync)
+	mux.HandleFunc("/api/attendance/tap", handleTapAttendance) // Public untuk ESP32
 	mux.HandleFunc("/api/members", authMiddleware(handleMembers))
+	mux.HandleFunc("/api/classes", authMiddleware(handleClasses))
+	mux.HandleFunc("/api/positions", authMiddleware(handlePositions))
+	mux.HandleFunc("/api/stats/dashboard", authMiddleware(handleDashboardStats))
 	mux.HandleFunc("/api/devices", authMiddleware(handleDevices))
 	mux.HandleFunc("/api/settings", authMiddleware(handleSettings))
 	mux.HandleFunc("/api/settings/reset-attendance", authMiddleware(handleResetAttendance))

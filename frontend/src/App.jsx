@@ -5,22 +5,26 @@ import Swal from 'sweetalert2';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import LoginView from './views/LoginView';
-import LaporanView from './views/LaporanView';
+import DashboardView from './views/DashboardView';
 import MembersView from './views/MembersView';
+import ClassesView from './views/ClassesView';
+import PositionsView from './views/PositionsView';
 import CetakView from './views/CetakView';
 import PengaturanView from './views/PengaturanView';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!getAuthToken());
   const [user, setUser] = useState(getUserInfo());
-  const [currentTab, setCurrentTab] = useState('laporan');
+  const [currentTab, setCurrentTab] = useState('dashboard');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const [membersCache, setMembersCache] = useState([]);
+  const [classesCache, setClassesCache] = useState([]);
+  const [positionsCache, setPositionsCache] = useState([]);
   const [settings, setSettings] = useState({});
   const [realtimeEvent, setRealtimeEvent] = useState(null);
 
-  // Play audio chime on realtime event
+  // Play audio chime on realtime tap
   const playChime = () => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -38,7 +42,7 @@ export default function App() {
     } catch {}
   };
 
-  // Fetch Members Cache
+  // Load Members Cache
   const loadMembersCache = async () => {
     try {
       const res = await apiFetch('/api/members?tipe=all');
@@ -47,7 +51,25 @@ export default function App() {
     } catch {}
   };
 
-  // Fetch Settings
+  // Load Classes Cache
+  const loadClasses = async () => {
+    try {
+      const res = await apiFetch('/api/classes');
+      const data = await res.json();
+      setClassesCache(data.data || []);
+    } catch {}
+  };
+
+  // Load Positions Cache
+  const loadPositions = async () => {
+    try {
+      const res = await apiFetch('/api/positions');
+      const data = await res.json();
+      setPositionsCache(data.data || []);
+    } catch {}
+  };
+
+  // Load Settings Cache
   const loadSettings = async () => {
     try {
       const res = await apiFetch('/api/settings');
@@ -56,11 +78,13 @@ export default function App() {
     } catch {}
   };
 
-  // Setup SSE
+  // Setup SSE and initial data load
   useEffect(() => {
     if (!isAuthenticated) return;
 
     loadMembersCache();
+    loadClasses();
+    loadPositions();
     loadSettings();
 
     const sseUrl = `${getApiBaseUrl()}/api/realtime`;
@@ -102,7 +126,7 @@ export default function App() {
   const handleLoginSuccess = () => {
     setIsAuthenticated(true);
     setUser(getUserInfo());
-    setCurrentTab('laporan');
+    setCurrentTab('dashboard');
   };
 
   const handleLogout = () => {
@@ -133,9 +157,11 @@ export default function App() {
         />
 
         <div className="flex-1 flex flex-col">
-          {currentTab === 'laporan' && (
-            <LaporanView 
+          {currentTab === 'dashboard' && (
+            <DashboardView 
               members={membersCache} 
+              classes={classesCache}
+              positions={positionsCache}
               realtimeEvent={realtimeEvent} 
             />
           )}
@@ -143,6 +169,8 @@ export default function App() {
           {currentTab === 'santri' && (
             <MembersView 
               tipe="siswa" 
+              classes={classesCache}
+              positions={positionsCache}
               onMembersUpdated={loadMembersCache} 
             />
           )}
@@ -150,13 +178,35 @@ export default function App() {
           {currentTab === 'guru' && (
             <MembersView 
               tipe="guru" 
+              classes={classesCache}
+              positions={positionsCache}
               onMembersUpdated={loadMembersCache} 
+            />
+          )}
+
+          {currentTab === 'kelas' && (
+            <ClassesView 
+              onUpdated={() => {
+                loadClasses();
+                loadMembersCache();
+              }} 
+            />
+          )}
+
+          {currentTab === 'jabatan' && (
+            <PositionsView 
+              onUpdated={() => {
+                loadPositions();
+                loadMembersCache();
+              }} 
             />
           )}
 
           {currentTab === 'cetak' && (
             <CetakView 
               settings={settings} 
+              classes={classesCache}
+              positions={positionsCache}
             />
           )}
 
@@ -166,6 +216,8 @@ export default function App() {
               onSettingsUpdated={() => {
                 loadSettings();
                 loadMembersCache();
+                loadClasses();
+                loadPositions();
               }} 
             />
           )}

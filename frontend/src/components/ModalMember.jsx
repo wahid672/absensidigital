@@ -1,20 +1,24 @@
 import React, { useState } from 'react';
-import { X, UserPlus, PenSquare, CreditCard } from 'lucide-react';
+import { X, UserPlus, PenSquare, CreditCard, GraduationCap, Briefcase } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 
 export default function ModalMember({ 
   member = null, 
-  defaultType = 'siswa', 
+  tipe = 'siswa', 
+  classes = [],
+  positions = [],
   onClose, 
   onSuccess 
 }) {
   const isEdit = !!(member && member.id);
+  const isGuru = tipe === 'guru';
+
   const [formData, setFormData] = useState({
     id: member?.id || '',
     uid: member?.uid || '',
     nama: member?.nama || '',
-    tipe: member?.tipe || defaultType,
+    tipe: member?.tipe || tipe,
     kelas: member?.kelas || '',
     no_hp: member?.no_hp || ''
   });
@@ -27,13 +31,18 @@ export default function ModalMember({
       return;
     }
 
+    if (!formData.kelas.trim()) {
+      Swal.fire('Peringatan', `Silakan pilih ${isGuru ? 'Jabatan / Mapel' : 'Kelas'} terlebih dahulu.`, 'warning');
+      return;
+    }
+
     setLoading(true);
     try {
       const method = isEdit ? 'PUT' : 'POST';
       const payload = {
         uid: formData.uid.trim(),
         nama: formData.nama.trim(),
-        tipe: formData.tipe,
+        tipe: tipe,
         kelas: formData.kelas.trim(),
         no_hp: formData.no_hp.trim()
       };
@@ -73,12 +82,12 @@ export default function ModalMember({
             {isEdit ? (
               <>
                 <PenSquare className="w-5 h-5 text-primary-600" />
-                <span>Edit Data {formData.nama}</span>
+                <span>Edit Data {isGuru ? 'Guru' : 'Santri'}</span>
               </>
             ) : (
               <>
-                <UserPlus className="w-5 h-5 text-primary-600" />
-                <span>Tambah Data {formData.tipe === 'guru' ? 'Guru' : 'Santri'}</span>
+                <UserPlus className={`w-5 h-5 ${isGuru ? 'text-indigo-600' : 'text-sky-600'}`} />
+                <span>Tambah Data {isGuru ? 'Guru / Asatidz' : 'Santri / Siswa'}</span>
               </>
             )}
           </h3>
@@ -88,6 +97,16 @@ export default function ModalMember({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
+          {/* Badge Tipe Terkunci */}
+          <div className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
+            <span className="text-xs text-slate-500 font-medium">Kategori Pengguna:</span>
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${
+              isGuru ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-sky-100 text-sky-800 border border-sky-200'
+            }`}>
+              {isGuru ? 'Guru / Ustadz' : 'Santri / Siswa'}
+            </span>
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               UID Kartu RFID / Tag Fingerprint <span className="text-rose-500">*</span>
@@ -114,33 +133,43 @@ export default function ModalMember({
               value={formData.nama} 
               onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
               required 
-              placeholder="Contoh: Muhammad Rizky" 
+              placeholder={isGuru ? 'Contoh: Ustadz Ahmad Fauzi, S.Pd.I' : 'Contoh: Muhammad Rizky Pratama'} 
               className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Tipe Anggota</label>
+          {/* DROPDOWN KELAS / JABATAN SESUAI TIPE */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              {isGuru ? 'Jabatan / Tugas Mengajar' : 'Pilih Kelas / Rombel'} <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative">
+              {isGuru ? (
+                <Briefcase className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              ) : (
+                <GraduationCap className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              )}
               <select 
-                value={formData.tipe} 
-                onChange={(e) => setFormData({ ...formData, tipe: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-              >
-                <option value="siswa">Santri / Siswa</option>
-                <option value="guru">Guru / Ustadz</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Kelas / Jabatan</label>
-              <input 
-                type="text" 
                 value={formData.kelas} 
                 onChange={(e) => setFormData({ ...formData, kelas: e.target.value })}
-                placeholder="10 IPA 1 / Guru Fiqih" 
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
+                required 
+                className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
+              >
+                <option value="">-- Pilih {isGuru ? 'Jabatan / Mapel' : 'Kelas'} --</option>
+                {isGuru ? (
+                  positions.map(p => (
+                    <option key={p.id} value={p.nama}>
+                      {p.nama} {p.keterangan ? `(${p.keterangan})` : ''}
+                    </option>
+                  ))
+                ) : (
+                  classes.map(c => (
+                    <option key={c.id} value={c.nama}>
+                      {c.nama} {c.keterangan ? `(${c.keterangan})` : ''}
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
           </div>
 
@@ -168,7 +197,7 @@ export default function ModalMember({
               disabled={loading}
               className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-xl shadow-md transition-all disabled:opacity-50"
             >
-              {loading ? 'Menyimpan...' : (isEdit ? 'Simpan Perubahan' : 'Simpan Data')}
+              {loading ? 'Menyimpan...' : (isEdit ? 'Simpan Perubahan' : `Simpan ${isGuru ? 'Guru' : 'Santri'}`)}
             </button>
           </div>
         </form>
