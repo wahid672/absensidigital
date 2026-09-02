@@ -1217,6 +1217,7 @@ void sendSensorPacket(uint8_t pid, uint8_t *payload, uint16_t length) {
   }
   mySerial.write((uint8_t)(sum >> 8));
   mySerial.write((uint8_t)(sum & 0xFF));
+  mySerial.flush();
 }
 
 String extractFingerprintTemplate(uint16_t id) {
@@ -1330,25 +1331,43 @@ bool saveFingerprintTemplate(uint16_t id, String hexStr) {
   uint8_t cmd[2] = { 0x09, 0x01 };
   sendSensorPacket(0x01, cmd, 2);
 
-  // Tunggu Ack
+  // Tunggu Ack dari sensor dengan toleransi streaming buffer
   unsigned long startT = millis();
   bool ackOk = false;
   while (millis() - startT < 1500) {
-    if (mySerial.available() >= 12) {
-      if (mySerial.read() == 0xEF && mySerial.read() == 0x01) {
-        for (int k = 0; k < 4; k++) mySerial.read(); // Address
-        uint8_t pid = mySerial.read();
-        mySerial.read(); mySerial.read(); // Length
-        uint8_t confirmCode = mySerial.read();
-        mySerial.read(); mySerial.read(); // Checksum
-        if (pid == 0x07 && confirmCode == 0x00) {
-          ackOk = true;
-          break;
+    if (mySerial.available()) {
+      if (mySerial.read() == 0xEF) {
+        unsigned long t2 = millis();
+        while (!mySerial.available() && millis() - t2 < 50) delay(1);
+        if (mySerial.available() && mySerial.read() == 0x01) {
+          // Tunggu sisa 7 bytes header (Address 4B + PID 1B + Length 2B)
+          unsigned long t3 = millis();
+          while (mySerial.available() < 7 && millis() - t3 < 100) delay(1);
+          if (mySerial.available() >= 7) {
+            for (int k = 0; k < 4; k++) mySerial.read(); // Skip Address
+            uint8_t pid = mySerial.read();
+            uint8_t lenH = mySerial.read();
+            uint8_t lenL = mySerial.read();
+            uint16_t len = ((uint16_t)lenH << 8) | lenL;
+            if (len >= 3) {
+              unsigned long t4 = millis();
+              while (mySerial.available() < len && millis() - t4 < 150) delay(1);
+              if (mySerial.available() >= len) {
+                uint8_t confirmCode = mySerial.read();
+                for (int k = 0; k < len - 1; k++) mySerial.read(); // Sisa payload + checksum
+                if (pid == 0x07 && confirmCode == 0x00) {
+                  ackOk = true;
+                  break;
+                }
+              }
+            }
+          }
         }
       }
     }
-    delay(2);
+    delay(1);
   }
+
   if (!ackOk) {
     Serial.printf("[SAVE TEMPLATE] GAGAL: Sensor tidak merespon Ack DownChar untuk ID %d\n", id);
     return false;
@@ -1358,15 +1377,20 @@ bool saveFingerprintTemplate(uint16_t id, String hexStr) {
 
   // 2. Kirim 512 bytes dalam 4 paket data (128 bytes per paket)
   for (int p = 0; p < 4; p++) {
-    uint8_t pid = (p == 3) ? 0x08 : 0x02; // Paket terakhir PID 0x08
+    uint8_t pid = (p == 3) ? 0x08 : 0x02; // Paket 0,1,2: 0x02 (Data), Paket 3: 0x08 (End Data)
     sendSensorPacket(pid, &templateBytes[p * 128], 128);
-    delay(25);
+    delay(20);
   }
-  delay(40);
+  delay(50);
   while (mySerial.available()) { mySerial.read(); delay(1); }
 
   // 3. Simpan dari CharBuffer 1 ke memori permanen sensor (slot id)
   uint8_t storeRes = finger.storeModel(id);
+  if (storeRes != FINGERPRINT_OK) {
+    delay(100);
+    while (mySerial.available()) { mySerial.read(); delay(1); }
+    storeRes = finger.storeModel(id);
+  }
   delay(40);
   while (mySerial.available()) { mySerial.read(); delay(1); }
 
@@ -1732,8 +1756,11 @@ void handleWebUploadJsonTemplates() {
   }
   syncDeleteAll(); // Hapus di database server
 
-  // Beri jeda 1.5 detik agar mikrokontroler sensor R503 selesai menghapus seluruh sektor flash
-  delay(1500);
+  // Beri jeda 2 detik agar mikrokontroler sensor R503 selesai menghapus seluruh sektor flash
+  delay(2000);
+  while (mySerial.available()) { mySerial.read(); delay(1); }
+  finger.getParameters(); // Verifikasi sensor siap menerima instruksi
+  delay(50);
   while (mySerial.available()) { mySerial.read(); delay(1); }
 
   // LANGKAH 2: Masukkan seluruh template dari JSON ke sensor
@@ -1751,12 +1778,13 @@ void handleWebUploadJsonTemplates() {
       Serial.printf("[JSON RESTORE] Menyimpan ID %d... ", fId);
       printCentered("Simpan ID: " + String(fId), 1);
       
-      bool ok = saveFingerprintTemplate(fId, hexData);
-      if (!ok) {
-        // Coba ulang 1x jika slot butuh jeda tambahan
-        delay(200);
-        while (mySerial.available()) { mySerial.read(); delay(1); }
+      bool ok = false;
+      for (int attempt = 1; attempt <= 3; attempt++) {
         ok = saveFingerprintTemplate(fId, hexData);
+        if (ok) break;
+        Serial.printf("(Retry %d)... ", attempt);
+        delay(300);
+        while (mySerial.available()) { mySerial.read(); delay(1); }
       }
 
       if (ok) {
