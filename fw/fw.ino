@@ -43,6 +43,8 @@ const char* serverUrl   = "https://absensi.smartapps.my.id/api/attendance/tap"; 
 const char* apiKey      = "KUNCI_API_PRESENSI_V1_2026";              // Harus sama dengan SECRET_API_KEY di PHP
 const char* deviceId    = "PRESENSI-V1";                             // ID unik mesin presensi ini
 const char* otaPassword = "wahid123";                                // Password proteksi upload firmware via WiFi (OTA)
+const char* webUsername = "admin";                                   // Username login portal Web ESP32
+const char* webPassword = "admin123";                                // Password login portal Web ESP32
 
 // Konfigurasi NTP Server
 const char* ntpServer = "pool.ntp.org";
@@ -1468,7 +1470,103 @@ void printNetworkInfo() {
   Serial.println("=======================================================\n");
 }
 
+bool isWebAuthenticated() {
+  if (webServer.hasHeader("Cookie")) {
+    String cookie = webServer.header("Cookie");
+    if (cookie.indexOf("ESPAUTH=LOGGED_IN") != -1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void handleWebLogin() {
+  String errorMsg = "";
+
+  if (webServer.method() == HTTP_POST) {
+    String u = webServer.arg("username");
+    String p = webServer.arg("password");
+
+    if (u == webUsername && p == webPassword) {
+      webServer.sendHeader("Set-Cookie", "ESPAUTH=LOGGED_IN; Path=/; HttpOnly; Max-Age=86400");
+      webServer.sendHeader("Location", "/");
+      webServer.send(303);
+      return;
+    } else {
+      errorMsg = "<div class='alert'>Username atau Password Salah!</div>";
+    }
+  }
+
+  String html = "<!DOCTYPE html><html lang='id'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+  html += "<title>Login Portal ESP32 - " + String(deviceId) + "</title>";
+  html += "<style>";
+  html += "body{font-family:Arial,sans-serif;background:#0f172a;margin:0;padding:20px;color:#333;display:flex;align-items:center;justify-content:center;min-height:90vh;}";
+  html += ".card{max-width:380px;width:100%;background:#fff;padding:28px;border-radius:16px;box-shadow:0 12px 32px rgba(0,0,0,0.25);box-sizing:border-box;}";
+  html += "h1{color:#0284c7;font-size:20px;margin-top:0;text-align:center;margin-bottom:4px;}";
+  html += ".subtitle{color:#64748b;font-size:12px;text-align:center;margin-bottom:20px;}";
+  html += ".form-group{margin-bottom:14px;}";
+  html += "label{display:block;font-size:12px;font-weight:bold;color:#334155;margin-bottom:6px;}";
+  html += "input[type='text'],input[type='password']{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;box-sizing:border-box;background:#f8fafc;}";
+  html += "input:focus{outline:none;border-color:#0284c7;box-shadow:0 0 0 3px rgba(2,132,199,0.15);background:#fff;}";
+  html += ".btn{display:block;width:100%;padding:12px;margin-top:18px;background:#0284c7;color:#fff;text-align:center;border-radius:8px;font-weight:bold;border:none;cursor:pointer;font-size:14px;}";
+  html += ".btn:hover{background:#0369a1;}";
+  html += ".alert{background:#fee2e2;color:#b91c1c;padding:10px 12px;border-radius:8px;font-size:12px;margin-bottom:16px;border:1px solid #fca5a5;text-align:center;}";
+  html += ".footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:20px;}";
+  html += "</style></head><body>";
+  html += "<div class='card'>";
+  html += "<h1>Login Portal Mesin</h1>";
+  html += "<div class='subtitle'>Mesin Presensi IoT (" + String(deviceId) + ")</div>";
+  html += errorMsg;
+  html += "<form method='POST' action='/login'>";
+  html += "<div class='form-group'><label>Username</label><input type='text' name='username' required autofocus placeholder='admin'></div>";
+  html += "<div class='form-group'><label>Password</label><input type='password' name='password' required placeholder='admin123'></div>";
+  html += "<button type='submit' class='btn'>Masuk ke Portal</button>";
+  html += "</form>";
+  html += "<div class='footer'>Siakad Ponpes IoT Firmware &copy; 2026</div>";
+  html += "</div></body></html>";
+
+  webServer.send(200, "text/html", html);
+}
+
+void handleWebLogout() {
+  webServer.sendHeader("Set-Cookie", "ESPAUTH=LOGGED_OUT; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  webServer.sendHeader("Location", "/login");
+  webServer.send(303);
+}
+
+void handleWebDeleteAllFinger() {
+  if (!isWebAuthenticated()) {
+    webServer.sendHeader("Location", "/login");
+    webServer.send(303);
+    return;
+  }
+
+  Serial.println("[WEB] Menghapus SEMUA sidik jari dari sensor dan server...");
+  lcd.clear();
+  printCentered("Hapus Semua Jari", 0);
+  printCentered("Memproses...", 1);
+
+  if (finger.emptyDatabase() == FINGERPRINT_OK) {
+    digitalWrite(BUZZ, HIGH); delay(800); digitalWrite(BUZZ, LOW);
+    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 15, FINGERPRINT_LED_PURPLE, 8);
+    showScannedMessage("Semua Data Jari", "Dihapus (Web)!");
+    syncDeleteAll(); // Hapus di database server juga
+  } else {
+    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+    showScannedMessage("Gagal Hapus!", "Sistem Error");
+  }
+
+  webServer.sendHeader("Location", "/");
+  webServer.send(303);
+}
+
 void handleWebRoot() {
+  if (!isWebAuthenticated()) {
+    webServer.sendHeader("Location", "/login");
+    webServer.send(303);
+    return;
+  }
+
   int totalJari = 0;
   for (int i = 1; i <= MAX_FINGERPRINTS; i++) {
     if (finger.loadModel(i) == FINGERPRINT_OK) totalJari++;
@@ -1483,33 +1581,38 @@ void handleWebRoot() {
   String html = "<!DOCTYPE html><html lang='id'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'>";
   html += "<title>Portal ESP32 - " + String(deviceId) + "</title>";
   html += "<style>";
-  html += "body{font-family:Arial,sans-serif;background:#f0f2f5;margin:0;padding:20px;color:#333;}";
-  html += ".card{max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);}";
-  html += "h1{color:#1a73e8;font-size:22px;margin-top:0;border-bottom:2px solid #e8eaed;padding-bottom:12px;}";
+  html += "body{font-family:Arial,sans-serif;background:#0f172a;margin:0;padding:20px;color:#333;}";
+  html += ".card{max-width:620px;margin:auto;background:#fff;padding:24px;border-radius:16px;box-shadow:0 8px 28px rgba(0,0,0,0.15);}";
+  html += "h1{color:#0284c7;font-size:22px;margin-top:0;border-bottom:2px solid #e2e8f0;padding-bottom:12px;display:flex;justify-content:space-between;align-items:center;}";
+  html += ".logout-link{font-size:12px;color:#ef4444;text-decoration:none;font-weight:normal;padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fef2f2;}";
+  html += ".logout-link:hover{background:#fee2e2;}";
   html += ".grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0;}";
-  html += ".box{background:#f8f9fa;padding:12px;border-radius:8px;border-left:4px solid #1a73e8;}";
-  html += ".box strong{display:block;font-size:12px;color:#5f6368;margin-bottom:4px;}";
-  html += ".box span{font-size:15px;font-weight:bold;color:#202124;}";
-  html += ".btn{display:block;width:100%;padding:12px;margin:8px 0;background:#1a73e8;color:#fff;text-align:center;text-decoration:none;border-radius:6px;font-weight:bold;box-sizing:border-box;border:none;cursor:pointer;}";
-  html += ".btn:hover{background:#1557b0;}";
-  html += ".btn-danger{background:#d93025;} .btn-danger:hover{background:#b3261e;}";
-  html += ".btn-success{background:#188038;} .btn-success:hover{background:#13652c;}";
-  html += ".footer{text-align:center;font-size:12px;color:#70757a;margin-top:20px;}";
+  html += ".box{background:#f8fafc;padding:12px;border-radius:10px;border-left:4px solid #0284c7;border:1px solid #e2e8f0;border-left-width:4px;}";
+  html += ".box strong{display:block;font-size:11px;color:#64748b;margin-bottom:4px;letter-spacing:0.5px;}";
+  html += ".box span{font-size:15px;font-weight:bold;color:#0f172a;}";
+  html += ".btn{display:block;width:100%;padding:12px;margin:8px 0;background:#0284c7;color:#fff;text-align:center;text-decoration:none;border-radius:8px;font-weight:bold;box-sizing:border-box;border:none;cursor:pointer;font-size:13px;}";
+  html += ".btn:hover{background:#0369a1;}";
+  html += ".btn-danger{background:#dc2626;} .btn-danger:hover{background:#b91c1c;}";
+  html += ".btn-success{background:#16a34a;} .btn-success:hover{background:#15803d;}";
+  html += ".btn-warning{background:#d97706;} .btn-warning:hover{background:#b45309;}";
+  html += ".btn-dark{background:#475569;} .btn-dark:hover{background:#334155;}";
+  html += ".footer{text-align:center;font-size:12px;color:#94a3b8;margin-top:20px;}";
   html += "</style></head><body>";
   html += "<div class='card'>";
-  html += "<h1>Mesin Presensi IoT (" + String(deviceId) + ")</h1>";
+  html += "<h1><span>Mesin IoT (" + String(deviceId) + ")</span><a href='/logout' class='logout-link'>Logout</a></h1>";
   html += "<div class='grid'>";
   html += "<div class='box'><strong>IP ADDRESS</strong><span>" + WiFi.localIP().toString() + "</span></div>";
   html += "<div class='box'><strong>STATUS WIFI</strong><span>" + String(WiFi.SSID()) + " (" + String(WiFi.RSSI()) + " dBm)</span></div>";
   html += "<div class='box'><strong>SIDIK JARI TERDAFTAR</strong><span>" + String(totalJari) + " / " + String(MAX_FINGERPRINTS) + " Slot</span></div>";
   html += "<div class='box'><strong>FREE HEAP RAM</strong><span>" + String(ESP.getFreeHeap() / 1024) + " KB</span></div>";
   html += "</div>";
-  html += "<div class='box' style='margin-bottom:16px;border-left-color:#188038;'><strong>WAKTU SISTEM</strong><span>" + String(timeBuff) + "</span></div>";
-  html += "<h3>Aksi Cepat Web</h3>";
+  html += "<div class='box' style='margin-bottom:16px;border-left-color:#16a34a;'><strong>WAKTU SISTEM</strong><span>" + String(timeBuff) + "</span></div>";
+  html += "<h3>Manajemen & Aksi Mesin</h3>";
   html += "<a href='/test-server' class='btn'>Tes Koneksi Server API</a>";
   html += "<a href='/upload' class='btn btn-success'>Upload Template Jari ke Server</a>";
-  html += "<a href='/download' class='btn' style='background:#f29900;'>Download Template dari Server</a>";
-  html += "<a href='/restart' class='btn btn-danger' onclick=\"return confirm('Yakin ingin restart ESP32?');\">Restart Mesin ESP32</a>";
+  html += "<a href='/download' class='btn btn-warning'>Download Template dari Server</a>";
+  html += "<a href='/del-all-finger' class='btn btn-danger' onclick=\"return confirm('PERINGATAN! Seluruh data sidik jari di memori sensor DAN database server akan DIHAPUS PERMANEN. Lanjutkan?');\">Hapus Semua Sidik Jari (Delete All)</a>";
+  html += "<a href='/restart' class='btn btn-dark' onclick=\"return confirm('Yakin ingin restart ESP32?');\">Restart Mesin ESP32</a>";
   html += "<div class='footer'>Siakad Ponpes IoT Firmware &copy; 2026</div>";
   html += "</div></body></html>";
 
@@ -1517,32 +1620,50 @@ void handleWebRoot() {
 }
 
 void setupWebServer() {
+  const char* headerkeys[] = {"Cookie"};
+  size_t headerkeyssize = sizeof(headerkeys) / sizeof(char*);
+  webServer.collectHeaders(headerkeys, headerkeyssize);
+
+  webServer.on("/login", handleWebLogin);
+  webServer.on("/logout", handleWebLogout);
   webServer.on("/", HTTP_GET, handleWebRoot);
+
   webServer.on("/test-server", HTTP_GET, []() {
+    if (!isWebAuthenticated()) { webServer.sendHeader("Location", "/login"); webServer.send(303); return; }
     checkServerConnection();
     webServer.sendHeader("Location", "/");
     webServer.send(303);
   });
+
   webServer.on("/upload", HTTP_GET, []() {
+    if (!isWebAuthenticated()) { webServer.sendHeader("Location", "/login"); webServer.send(303); return; }
     handleTemplateUpload();
     webServer.sendHeader("Location", "/");
     webServer.send(303);
   });
+
   webServer.on("/download", HTTP_GET, []() {
+    if (!isWebAuthenticated()) { webServer.sendHeader("Location", "/login"); webServer.send(303); return; }
     handleTemplateDownload();
     webServer.sendHeader("Location", "/");
     webServer.send(303);
   });
+
+  webServer.on("/del-all-finger", HTTP_GET, handleWebDeleteAllFinger);
+
   webServer.on("/restart", HTTP_GET, []() {
+    if (!isWebAuthenticated()) { webServer.sendHeader("Location", "/login"); webServer.send(303); return; }
     webServer.send(200, "text/html", "<p>Merestart ESP32... Silakan buka kembali dalam 5 detik.</p><script>setTimeout(()=>{window.location.href='/'}, 5000);</script>");
     delay(1000);
     ESP.restart();
   });
+
   webServer.on("/ip", HTTP_GET, []() {
     webServer.send(200, "text/plain", WiFi.localIP().toString());
   });
+
   webServer.begin();
-  Serial.println("[WEB] Web Server Dashboard aktif di port 80!");
+  Serial.println("[WEB] Web Server Portal aktif terlindungi otentikasi (admin:admin123) di port 80!");
 }
 
 void setupOTA() {
