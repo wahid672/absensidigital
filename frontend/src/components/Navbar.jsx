@@ -30,6 +30,12 @@ export default function Navbar({ currentTab, settings = {}, onOpenMobileSidebar 
       title: isPesantren ? 'Data Guru / Asatidz' : 'Data Guru / Pendidik', 
       desc: 'Kelola database kartu RFID, NIP, jabatan, dan staf pengajar' 
     },
+    fingerprint: {
+      title: 'Perekaman Sidik Jari (Fingerprint IoT)',
+      desc: isPesantren
+        ? 'Kelola slot sidik jari yang terekam dari mesin dan hubungkan ke santri / asatidz'
+        : 'Kelola slot sidik jari yang terekam dari mesin dan hubungkan ke siswa / guru'
+    },
     kelas: { 
       title: 'Master Data Kelas & Rombel', 
       desc: 'Kelola daftar kelas dan jenjang tingkatan' 

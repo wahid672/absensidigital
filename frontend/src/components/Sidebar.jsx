@@ -8,6 +8,7 @@ import {
   Printer, 
   Settings, 
   LogOut, 
+  Fingerprint,
   X 
 } from 'lucide-react';
 import AppLogo from './AppLogo';
@@ -39,6 +40,12 @@ export default function Sidebar({
       id: 'guru',
       label: isPesantren ? 'Data Guru / Asatidz' : 'Data Guru',
       icon: Users
+    },
+    {
+      id: 'fingerprint',
+      label: 'Sidik Jari (Fingerprint)',
+      icon: Fingerprint,
+      badge: 'IoT'
     },
     {
       id: 'kelas',

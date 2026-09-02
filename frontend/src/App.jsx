@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar';
 import LoginView from './views/LoginView';
 import DashboardView from './views/DashboardView';
 import MembersView from './views/MembersView';
+import FingerprintsView from './views/FingerprintsView';
 import ClassesView from './views/ClassesView';
 import PositionsView from './views/PositionsView';
 import CetakView from './views/CetakView';
@@ -108,13 +109,34 @@ export default function App() {
           position: 'top-end',
           icon: isAlready ? 'info' : 'success',
           title: isAlready ? `ℹ️ ${rec.nama || 'Anggota'}` : `🎉 ${rec.nama || 'Anggota'}`,
-          text: `${payload.message} (${rec.id_mesin || 'ESP32'})`,
+          text: `${payload.message} (${rec.id_mesin || payload.method || 'ESP32'})`,
           showConfirmButton: false,
           timer: 4000,
           timerProgressBar: true
         });
       } catch (err) {
         console.error('SSE Parse Error:', err);
+      }
+    });
+
+    eventSource.addEventListener('fingerprint_event', (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        playChime();
+        loadMembersCache();
+
+        Swal.fire({
+          toast: true,
+          position: 'top-end',
+          icon: 'info',
+          title: '✨ Sidik Jari Sensor ESP32',
+          text: payload.message || 'Perekaman sidik jari terdeteksi',
+          showConfirmButton: false,
+          timer: 4500,
+          timerProgressBar: true
+        });
+      } catch (err) {
+        console.error('SSE Fingerprint Error:', err);
       }
     });
 
@@ -188,6 +210,15 @@ export default function App() {
               settings={settings}
               appMode={settings.app_mode || 'pesantren'}
               onMembersUpdated={loadMembersCache} 
+            />
+          )}
+
+          {currentTab === 'fingerprint' && (
+            <FingerprintsView 
+              members={membersCache}
+              settings={settings}
+              appMode={settings.app_mode || 'pesantren'}
+              onUpdated={loadMembersCache}
             />
           )}
 

@@ -55,14 +55,33 @@ type LoginResponse struct {
 }
 
 type Member struct {
-	ID        int    `json:"id"`
-	UID       string `json:"uid"`
-	NISNIP    string `json:"nis_nip"` // NIS untuk Santri, NIP untuk Guru
-	Nama      string `json:"nama"`
-	Tipe      string `json:"tipe"`  // "siswa" | "guru"
-	Kelas     string `json:"kelas"` // e.g. "10 IPA 1" atau "Guru Fiqih & Hadits"
-	NoHP      string `json:"no_hp"`
-	CreatedAt string `json:"created_at"`
+	ID            int    `json:"id"`
+	UID           string `json:"uid"`
+	FingerprintID int    `json:"fingerprint_id"` // ID slot sidik jari pada sensor (1-500)
+	NISNIP        string `json:"nis_nip"`        // NIS untuk Santri, NIP untuk Guru
+	Nama          string `json:"nama"`
+	Tipe          string `json:"tipe"`           // "siswa" | "guru"
+	Kelas         string `json:"kelas"`          // e.g. "10 IPA 1" atau "Guru Fiqih & Hadits"
+	NoHP          string `json:"no_hp"`
+	CreatedAt     string `json:"created_at"`
+}
+
+type FingerprintRecord struct {
+	ID            int     `json:"id"`
+	FingerprintID int     `json:"fingerprint_id"`
+	DeviceID      string  `json:"device_id"`
+	MemberID      int     `json:"member_id"`
+	TemplateData  string  `json:"template_data"`
+	Status        string  `json:"status"` // "unmapped" | "mapped"
+	Member        *Member `json:"member,omitempty"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
+}
+
+type TemplateItem struct {
+	FingerprintID int    `json:"fingerprint_id"`
+	TemplateData  string `json:"template_data"`
+	Nama          string `json:"nama,omitempty"`
 }
 
 type ClassRoom struct {
@@ -106,12 +125,22 @@ type AttendanceSummary struct {
 }
 
 type TapRequest struct {
-	DeviceID  string `json:"device_id"`
-	RFIDTag   string `json:"rfid_uid"`
-	TipeScan  string `json:"tipe_scan"` // "auto", "masuk", "keluar"
-	Timestamp string `json:"timestamp"` // e.g. "2026-09-02T06:45:30+07:00"
-	Tanggal   string `json:"tanggal"`   // e.g. "2026-09-02"
-	Waktu     string `json:"waktu"`     // e.g. "06:45:30"
+	Action             string            `json:"action"` // "tap", "enroll", "sync", "delete_fingerprint", "delete_all_fingerprints", "offline_sync", "upload_templates", "get_templates"
+	DeviceID           string            `json:"device_id"`
+	RFIDTag            string            `json:"rfid_uid"`
+	RFIDTagAlt         string            `json:"rfid_tag"` // Support fw.ino
+	FingerprintID      int               `json:"fingerprint_id"`
+	FingerprintIDAlt   int               `json:"finger_id"`
+	TemplateData       string            `json:"template_data"`
+	ActiveFingerprints []int             `json:"active_fingerprints"`
+	TotalFingerprints  int               `json:"total_fingerprints"`
+	Templates          []TemplateItem    `json:"templates"`
+	OfflineLogs        []json.RawMessage `json:"offline_logs"`
+	TipeScan           string            `json:"tipe_scan"` // "auto", "masuk", "keluar"
+	Timestamp          string            `json:"timestamp"` // e.g. "2026-09-02T06:45:30+07:00"
+	RecordedAt         string            `json:"recorded_at"` // e.g. "2026-09-02 06:45:30"
+	Tanggal            string            `json:"tanggal"`   // e.g. "2026-09-02"
+	Waktu              string            `json:"waktu"`     // e.g. "06:45:30"
 }
 
 type DeviceInfo struct {
@@ -185,6 +214,18 @@ func initDatabase() {
 		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS fingerprints (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		fingerprint_id INTEGER NOT NULL,
+		device_id TEXT NOT NULL,
+		member_id INTEGER DEFAULT 0,
+		template_data TEXT DEFAULT '',
+		status TEXT DEFAULT 'unmapped',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(device_id, fingerprint_id)
+	);
+
 	CREATE TABLE IF NOT EXISTS settings (
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL
@@ -196,6 +237,7 @@ func initDatabase() {
 
 	// Migrations for existing database
 	db.Exec("ALTER TABLE members ADD COLUMN nis_nip TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE members ADD COLUMN fingerprint_id INTEGER DEFAULT 0")
 
 	// Default settings
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_nama', 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')")
@@ -862,10 +904,61 @@ func handleAttendanceSummary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// 3. POST /api/attendance/tap (Realtime & Backdate Offline Sync dari ESP32)
+// 3. POST & GET /api/attendance/tap & /api/presensi/api_presensi.php (Hybrid RFID + Fingerprint ESP32 IoT)
 func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
+	// Support GET untuk tes koneksi dan download templates dari ESP32 firmware
+	if r.Method == http.MethodGet {
+		action := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("action")))
+		deviceID := r.URL.Query().Get("device_id")
+		if deviceID == "" {
+			deviceID = "PRESENSI-V1"
+		}
+
+		if action == "get_templates" {
+			// Kirim daftar template sidik jari ke sensor ESP32
+			rows, err := db.Query(`
+				SELECT f.fingerprint_id, f.template_data, COALESCE(m.nama, '') as nama 
+				FROM fingerprints f 
+				LEFT JOIN members m ON f.member_id = m.id 
+				WHERE f.template_data != '' AND (f.device_id = ? OR ? = '')
+				ORDER BY f.fingerprint_id ASC
+			`, deviceID, deviceID)
+
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "Gagal membaca template sidik jari.")
+				return
+			}
+			defer rows.Close()
+
+			templates := make([]TemplateItem, 0)
+			for rows.Next() {
+				var t TemplateItem
+				rows.Scan(&t.FingerprintID, &t.TemplateData, &t.Nama)
+				templates = append(templates, t)
+			}
+
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"status": "success",
+				"data": map[string]interface{}{
+					"templates": templates,
+					"total":     len(templates),
+				},
+			})
+			return
+		}
+
+		// Response status online untuk tes koneksi
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":    "online",
+			"message":   "SIAKAD Absensi Digital API Server Ready",
+			"device_id": deviceID,
+			"timestamp": time.Now().Format("2006-01-02 15:04:05"),
+		})
+		return
+	}
+
 	if r.Method != http.MethodPost {
-		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
 		return
 	}
 
@@ -875,20 +968,173 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.RFIDTag = strings.TrimSpace(req.RFIDTag)
-	if req.RFIDTag == "" {
-		writeJSONError(w, http.StatusBadRequest, "Parameter rfid_uid tidak boleh kosong.")
-		return
-	}
-
+	// Normalisasi payload firmware
 	if req.DeviceID == "" {
-		req.DeviceID = "ESP32-GATE-01"
+		req.DeviceID = "PRESENSI-V1"
+	}
+	if req.RFIDTag == "" && req.RFIDTagAlt != "" {
+		req.RFIDTag = req.RFIDTagAlt
+	}
+	if req.FingerprintID == 0 && req.FingerprintIDAlt > 0 {
+		req.FingerprintID = req.FingerprintIDAlt
+	}
+	if req.Timestamp == "" && req.RecordedAt != "" {
+		req.Timestamp = req.RecordedAt
 	}
 
 	db.Exec(`INSERT INTO devices (device_id, nama, lokasi, last_seen) 
 		VALUES (?, ?, 'Pintu Masuk', CURRENT_TIMESTAMP) 
 		ON CONFLICT(device_id) DO UPDATE SET last_seen = CURRENT_TIMESTAMP`, req.DeviceID, req.DeviceID)
 
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+
+	// === 1. ACTION: ENROLL FINGERPRINT DARI MESIN ===
+	if action == "enroll" {
+		if req.FingerprintID <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "Parameter fingerprint_id tidak valid.")
+			return
+		}
+
+		db.Exec(`INSERT INTO fingerprints (device_id, fingerprint_id, template_data, status, updated_at)
+			VALUES (?, ?, ?, 'unmapped', CURRENT_TIMESTAMP)
+			ON CONFLICT(device_id, fingerprint_id) DO UPDATE SET 
+				template_data = excluded.template_data,
+				updated_at = CURRENT_TIMESTAMP`,
+			req.DeviceID, req.FingerprintID, req.TemplateData)
+
+		log.Printf("[FINGERPRINT ENROLL] Rekaman baru slot ID: %d | Mesin: %s", req.FingerprintID, req.DeviceID)
+
+		broadcastSSE("fingerprint_event", map[string]interface{}{
+			"action":         "enrolled",
+			"device_id":      req.DeviceID,
+			"fingerprint_id": req.FingerprintID,
+			"message":        fmt.Sprintf("Sidik jari baru terekam pada slot #%d (Belum Terhubung)", req.FingerprintID),
+		})
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":         "success",
+			"message":        fmt.Sprintf("Sidik jari ID %d berhasil terekam ke server", req.FingerprintID),
+			"fingerprint_id": req.FingerprintID,
+		})
+		return
+	}
+
+	// === 2. ACTION: DELETE FINGERPRINT DARI MESIN ===
+	if action == "delete_fingerprint" {
+		db.Exec(`UPDATE members SET fingerprint_id = 0 WHERE fingerprint_id = ?`, req.FingerprintID)
+		db.Exec(`DELETE FROM fingerprints WHERE device_id = ? AND fingerprint_id = ?`, req.DeviceID, req.FingerprintID)
+
+		log.Printf("[FINGERPRINT DELETE] Hapus slot ID: %d | Mesin: %s", req.FingerprintID, req.DeviceID)
+
+		broadcastSSE("fingerprint_event", map[string]interface{}{
+			"action":         "deleted",
+			"device_id":      req.DeviceID,
+			"fingerprint_id": req.FingerprintID,
+			"message":        fmt.Sprintf("Sidik jari slot #%d telah dihapus", req.FingerprintID),
+		})
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": fmt.Sprintf("Sidik jari ID %d berhasil dihapus dari server", req.FingerprintID),
+		})
+		return
+	}
+
+	// === 3. ACTION: DELETE ALL FINGERPRINTS ===
+	if action == "delete_all_fingerprints" {
+		db.Exec(`UPDATE members SET fingerprint_id = 0`)
+		db.Exec(`DELETE FROM fingerprints WHERE device_id = ?`, req.DeviceID)
+
+		broadcastSSE("fingerprint_event", map[string]interface{}{
+			"action":    "deleted_all",
+			"device_id": req.DeviceID,
+			"message":   "Seluruh memori sidik jari telah dihapus dari server",
+		})
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": "Seluruh data sidik jari perangkat berhasil dikosongkan.",
+		})
+		return
+	}
+
+	// === 4. ACTION: SYNC PADA SAAT BOOTING / WIFI RECONNECT ===
+	if action == "sync" {
+		for _, fID := range req.ActiveFingerprints {
+			if fID > 0 {
+				db.Exec(`INSERT OR IGNORE INTO fingerprints (device_id, fingerprint_id, status) VALUES (?, ?, 'unmapped')`,
+					req.DeviceID, fID)
+			}
+		}
+
+		log.Printf("[ESP32 BOOT SYNC] Mesin %s terhubung. %d sidik jari aktif disinkronkan.", req.DeviceID, req.TotalFingerprints)
+
+		broadcastSSE("device_status", map[string]interface{}{
+			"device_id": req.DeviceID,
+			"status":    "online",
+			"message":   fmt.Sprintf("Mesin %s online dan tersinkronisasi (%d jari terdata)", req.DeviceID, req.TotalFingerprints),
+		})
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":       "success",
+			"message":      "Sinkronisasi sidik jari & server berhasil",
+			"device_id":    req.DeviceID,
+			"total_synced": len(req.ActiveFingerprints),
+		})
+		return
+	}
+
+	// === 5. ACTION: UPLOAD TEMPLATES ===
+	if action == "upload_templates" {
+		var count int
+		for _, t := range req.Templates {
+			if t.FingerprintID > 0 && t.TemplateData != "" {
+				db.Exec(`INSERT INTO fingerprints (device_id, fingerprint_id, template_data, status, updated_at)
+					VALUES (?, ?, ?, 'unmapped', CURRENT_TIMESTAMP)
+					ON CONFLICT(device_id, fingerprint_id) DO UPDATE SET 
+						template_data = excluded.template_data,
+						updated_at = CURRENT_TIMESTAMP`,
+					req.DeviceID, t.FingerprintID, t.TemplateData)
+				count++
+			}
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": fmt.Sprintf("%d template sidik jari berhasil diunggah", count),
+		})
+		return
+	}
+
+	// === 6. ACTION: OFFLINE LOGS SYNC (BATCH FLUSH) ===
+	if action == "offline_sync" {
+		var syncedCount int
+		for _, raw := range req.OfflineLogs {
+			var logItem struct {
+				DeviceID      string `json:"device_id"`
+				RFIDTag       string `json:"rfid_tag"`
+				FingerprintID int    `json:"fingerprint_id"`
+				RecordedAt    string `json:"recorded_at"`
+			}
+			if err := json.Unmarshal(raw, &logItem); err == nil {
+				if logItem.DeviceID == "" {
+					logItem.DeviceID = req.DeviceID
+				}
+				// Process individual log
+				processSingleTap(logItem.DeviceID, logItem.RFIDTag, logItem.FingerprintID, logItem.RecordedAt)
+				syncedCount++
+			}
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": fmt.Sprintf("%d antrean presensi offline berhasil disinkronkan", syncedCount),
+			"count":   syncedCount,
+		})
+		return
+	}
+
+	// === 7. NORMAL SCAN TAP (PRESENSI REALTIME VIA RFID ATAU FINGERPRINT) ===
 	tDate, tTime, tHour, tMin := parseDateTime(req.Tanggal, req.Waktu, req.Timestamp)
 	inH, inM, outH, outM := getThresholdTimes()
 
@@ -899,47 +1145,107 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var member Member
-	err := db.QueryRow("SELECT id, uid, nis_nip, nama, tipe, kelas, no_hp FROM members WHERE uid = ?", req.RFIDTag).
-		Scan(&member.ID, &member.UID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
+	var isFingerScan = req.FingerprintID > 0
+	var memberFound = false
 
-	if err != nil {
-		if autoRegister == "0" || strings.ToLower(autoRegister) == "false" {
-			log.Printf("[ESP32 TAP DITOLAK] Kartu tidak terdaftar: %s | Mesin: %s", req.RFIDTag, req.DeviceID)
+	if isFingerScan {
+		// Cari member berdasarkan fingerprint_id langsung atau melalui tabel fingerprints
+		err := db.QueryRow(`
+			SELECT m.id, m.uid, COALESCE(m.fingerprint_id, 0), m.nis_nip, m.nama, m.tipe, m.kelas, m.no_hp
+			FROM members m
+			WHERE m.fingerprint_id = ? 
+			   OR m.id = (SELECT member_id FROM fingerprints WHERE fingerprint_id = ? AND (device_id = ? OR ? = '') LIMIT 1)
+			LIMIT 1
+		`, req.FingerprintID, req.FingerprintID, req.DeviceID, req.DeviceID).
+			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
+
+		if err == nil && member.ID > 0 {
+			memberFound = true
+		} else {
+			// Pastikan slot tersimpan di fingerprints agar muncul di dashboard admin untuk dimapping
+			db.Exec(`INSERT OR IGNORE INTO fingerprints (device_id, fingerprint_id, status) VALUES (?, ?, 'unmapped')`,
+				req.DeviceID, req.FingerprintID)
+
+			log.Printf("[FINGERPRINT BELUM DIMAPPING] Slot ID: %d | Mesin: %s", req.FingerprintID, req.DeviceID)
 
 			broadcastSSE("attendance_tap", map[string]interface{}{
-				"action":           "card_not_registered",
-				"status":           "not_found",
+				"action":           "fingerprint_unmapped",
+				"status":           "unmapped",
 				"already_recorded": false,
-				"rfid_uid":         req.RFIDTag,
+				"fingerprint_id":   req.FingerprintID,
 				"time":             tTime,
-				"message":          fmt.Sprintf("Kartu RFID (%s) tidak terdaftar dalam sistem", req.RFIDTag),
+				"message":          fmt.Sprintf("Sidik jari slot #%d terdeteksi namun belum dihubungkan ke data santri/guru", req.FingerprintID),
 			})
 
 			writeJSON(w, http.StatusOK, map[string]interface{}{
-				"status":           "not_found",
-				"action":           "card_not_registered",
-				"message":          "Data kartu tidak ditemukan / belum terdaftar dalam sistem",
+				"status":           "unmapped",
+				"action":           "fingerprint_unmapped",
+				"message":          fmt.Sprintf("Sidik Jari ID %d belum dimapping oleh admin", req.FingerprintID),
+				"fingerprint_id":   req.FingerprintID,
 				"already_recorded": false,
-				"rfid_uid":         req.RFIDTag,
 				"data":             nil,
 			})
 			return
 		}
 
-		// Auto Register ON: Otomatis daftarkan kartu baru
-		member = Member{
-			UID:   req.RFIDTag,
-			Nama:  fmt.Sprintf("Kartu Baru (#%s)", req.RFIDTag),
-			Tipe:  "siswa",
-			Kelas: "Belum Ditentukan",
+	} else {
+		// Scan RFID
+		req.RFIDTag = strings.TrimSpace(req.RFIDTag)
+		if req.RFIDTag == "" {
+			writeJSONError(w, http.StatusBadRequest, "Parameter rfid_uid atau fingerprint_id wajib disertakan.")
+			return
 		}
-		db.Exec("INSERT OR IGNORE INTO members (uid, nama, tipe, kelas) VALUES (?, ?, ?, ?)",
-			member.UID, member.Nama, member.Tipe, member.Kelas)
+
+		err := db.QueryRow("SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp FROM members WHERE uid = ?", req.RFIDTag).
+			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
+
+		if err == nil {
+			memberFound = true
+		} else {
+			if autoRegister == "0" || strings.ToLower(autoRegister) == "false" {
+				log.Printf("[ESP32 TAP DITOLAK] Kartu tidak terdaftar: %s | Mesin: %s", req.RFIDTag, req.DeviceID)
+
+				broadcastSSE("attendance_tap", map[string]interface{}{
+					"action":           "card_not_registered",
+					"status":           "not_found",
+					"already_recorded": false,
+					"rfid_uid":         req.RFIDTag,
+					"time":             tTime,
+					"message":          fmt.Sprintf("Kartu RFID (%s) tidak terdaftar dalam sistem", req.RFIDTag),
+				})
+
+				writeJSON(w, http.StatusOK, map[string]interface{}{
+					"status":           "not_found",
+					"action":           "card_not_registered",
+					"message":          "Data kartu tidak ditemukan / belum terdaftar dalam sistem",
+					"already_recorded": false,
+					"rfid_uid":         req.RFIDTag,
+					"data":             nil,
+				})
+				return
+			}
+
+			// Auto Register ON: Otomatis daftarkan kartu baru
+			member = Member{
+				UID:   req.RFIDTag,
+				Nama:  fmt.Sprintf("Kartu Baru (#%s)", req.RFIDTag),
+				Tipe:  "siswa",
+				Kelas: "Belum Ditentukan",
+			}
+			db.Exec("INSERT OR IGNORE INTO members (uid, nama, tipe, kelas) VALUES (?, ?, ?, ?)",
+				member.UID, member.Nama, member.Tipe, member.Kelas)
+			memberFound = true
+		}
+	}
+
+	if !memberFound {
+		writeJSONError(w, http.StatusNotFound, "Data anggota tidak ditemukan.")
+		return
 	}
 
 	var existing AttendanceRecord
 	checkErr := db.QueryRow(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin 
-		FROM attendances WHERE uid = ? AND tanggal = ? ORDER BY id DESC LIMIT 1`, req.RFIDTag, tDate).
+		FROM attendances WHERE uid = ? AND tanggal = ? ORDER BY id DESC LIMIT 1`, member.UID, tDate).
 		Scan(&existing.ID, &existing.UID, &existing.Nama, &existing.Tipe, &existing.Kelas, &existing.Tanggal,
 			&existing.WaktuMasuk, &existing.StatusMasuk, &existing.WaktuKeluar, &existing.StatusKeluar, &existing.DeviceID)
 
@@ -1014,12 +1320,17 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 			member.Nama, existing.WaktuMasuk, existing.WaktuKeluar, existing.Tanggal)
 	}
 
-	log.Printf("[ESP32 TAP] %s | Tgl: %s %s | Mesin: %s", actionMessage, tDate, tTime, req.DeviceID)
+	methodType := "RFID"
+	if isFingerScan {
+		methodType = fmt.Sprintf("FINGER #%d", req.FingerprintID)
+	}
+	log.Printf("[ESP32 %s] %s | Tgl: %s %s | Mesin: %s", methodType, actionMessage, tDate, tTime, req.DeviceID)
 
 	broadcastSSE("attendance_tap", map[string]interface{}{
 		"action":           actionType,
 		"status":           statusResult,
 		"already_recorded": alreadyRecorded,
+		"method":           methodType,
 		"record":           record,
 		"time":             tTime,
 		"message":          actionMessage,
@@ -1028,9 +1339,216 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, statusCode, map[string]interface{}{
 		"status":           statusResult,
 		"action":           actionType,
+		"method":           methodType,
 		"message":          actionMessage,
 		"already_recorded": alreadyRecorded,
 		"data":             record,
+	})
+}
+
+// Helper untuk memproses single offline log
+func processSingleTap(deviceID, rfidTag string, fingerprintID int, recordedAt string) {
+	tDate, tTime, tHour, tMin := parseDateTime("", "", recordedAt)
+	inH, inM, outH, outM := getThresholdTimes()
+
+	var member Member
+	var err error
+	if fingerprintID > 0 {
+		err = db.QueryRow(`SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp 
+			FROM members WHERE fingerprint_id = ? 
+			OR id = (SELECT member_id FROM fingerprints WHERE fingerprint_id = ? AND device_id = ?) LIMIT 1`,
+			fingerprintID, fingerprintID, deviceID).
+			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
+	} else if rfidTag != "" {
+		err = db.QueryRow("SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp FROM members WHERE uid = ?", rfidTag).
+			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
+	}
+
+	if err != nil || member.ID == 0 {
+		return
+	}
+
+	var existing AttendanceRecord
+	checkErr := db.QueryRow(`SELECT id, waktu_masuk, waktu_keluar FROM attendances WHERE uid = ? AND tanggal = ? ORDER BY id DESC LIMIT 1`,
+		member.UID, tDate).Scan(&existing.ID, &existing.WaktuMasuk, &existing.WaktuKeluar)
+
+	if checkErr == sql.ErrNoRows {
+		statusMasuk := "tepat"
+		if tHour > inH || (tHour == inH && tMin > inM) {
+			statusMasuk = "telat"
+		}
+		db.Exec(`INSERT INTO attendances (uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin) 
+			VALUES (?, ?, ?, ?, ?, ?, ?, '-', '-', ?)`,
+			member.UID, member.Nama, member.Tipe, member.Kelas, tDate, tTime, statusMasuk, deviceID)
+	} else if existing.WaktuKeluar == "-" || existing.WaktuKeluar == "" {
+		statusKeluar := "tepat"
+		if tHour < outH || (tHour == outH && tMin < outM) {
+			statusKeluar = "cepat"
+		}
+		db.Exec(`UPDATE attendances SET waktu_keluar = ?, status_keluar = ?, id_mesin = ? WHERE id = ?`,
+			tTime, statusKeluar, deviceID, existing.ID)
+	}
+}
+
+// 3b. CRUD FINGERPRINTS & MAPPING (/api/fingerprints, /api/fingerprints/map, /api/fingerprints/unmap)
+func handleFingerprints(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		rows, err := db.Query(`
+			SELECT 
+				f.id, 
+				f.fingerprint_id, 
+				f.device_id, 
+				f.member_id, 
+				f.template_data, 
+				f.status,
+				f.created_at, 
+				f.updated_at,
+				COALESCE(m.id, 0),
+				COALESCE(m.uid, ''),
+				COALESCE(m.nis_nip, ''),
+				COALESCE(m.nama, ''),
+				COALESCE(m.tipe, ''),
+				COALESCE(m.kelas, ''),
+				COALESCE(m.no_hp, '')
+			FROM fingerprints f
+			LEFT JOIN members m ON f.member_id = m.id
+			ORDER BY f.device_id ASC, f.fingerprint_id ASC
+		`)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Query fingerprints gagal: %v", err))
+			return
+		}
+		defer rows.Close()
+
+		list := make([]FingerprintRecord, 0)
+		for rows.Next() {
+			var fp FingerprintRecord
+			var m Member
+			rows.Scan(
+				&fp.ID, &fp.FingerprintID, &fp.DeviceID, &fp.MemberID, &fp.TemplateData, &fp.Status, &fp.CreatedAt, &fp.UpdatedAt,
+				&m.ID, &m.UID, &m.NISNIP, &m.Nama, &m.Tipe, &m.Kelas, &m.NoHP,
+			)
+			if m.ID > 0 {
+				fp.Member = &m
+				fp.Status = "mapped"
+			} else {
+				fp.Status = "unmapped"
+			}
+			list = append(list, fp)
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status": "success",
+			"total":  len(list),
+			"data":   list,
+		})
+
+	case http.MethodDelete:
+		idStr := r.URL.Query().Get("id")
+		id, _ := strconv.Atoi(idStr)
+		if id > 0 {
+			var fID int
+			db.QueryRow("SELECT fingerprint_id FROM fingerprints WHERE id = ?", id).Scan(&fID)
+			db.Exec("UPDATE members SET fingerprint_id = 0 WHERE fingerprint_id = ?", fID)
+			db.Exec("DELETE FROM fingerprints WHERE id = ?", id)
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": "Data rekaman sidik jari berhasil dihapus.",
+		})
+
+	default:
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
+	}
+}
+
+func handleMapFingerprint(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	var req struct {
+		FingerprintID int    `json:"fingerprint_id"`
+		DeviceID      string `json:"device_id"`
+		MemberID      int    `json:"member_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+		return
+	}
+
+	if req.FingerprintID <= 0 || req.MemberID <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "Parameter fingerprint_id dan member_id wajib diisi.")
+		return
+	}
+	if req.DeviceID == "" {
+		req.DeviceID = "PRESENSI-V1"
+	}
+
+	// 1. Lepas mapping member lama jika fingerprint ini sudah terhubung ke orang lain
+	db.Exec("UPDATE members SET fingerprint_id = 0 WHERE fingerprint_id = ?", req.FingerprintID)
+
+	// 2. Hubungkan ke member baru
+	db.Exec("UPDATE members SET fingerprint_id = ? WHERE id = ?", req.FingerprintID, req.MemberID)
+
+	// 3. Update status tabel fingerprints
+	db.Exec(`INSERT INTO fingerprints (device_id, fingerprint_id, member_id, status, updated_at)
+		VALUES (?, ?, ?, 'mapped', CURRENT_TIMESTAMP)
+		ON CONFLICT(device_id, fingerprint_id) DO UPDATE SET 
+			member_id = excluded.member_id,
+			status = 'mapped',
+			updated_at = CURRENT_TIMESTAMP`,
+		req.DeviceID, req.FingerprintID, req.MemberID)
+
+	var memberNama string
+	db.QueryRow("SELECT nama FROM members WHERE id = ?", req.MemberID).Scan(&memberNama)
+
+	broadcastSSE("fingerprint_event", map[string]interface{}{
+		"action":         "mapped",
+		"fingerprint_id": req.FingerprintID,
+		"member_id":      req.MemberID,
+		"member_nama":    memberNama,
+		"message":        fmt.Sprintf("Sidik Jari slot #%d berhasil dihubungkan ke %s", req.FingerprintID, memberNama),
+	})
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": fmt.Sprintf("Sidik jari slot #%d berhasil dihubungkan ke %s.", req.FingerprintID, memberNama),
+	})
+}
+
+func handleUnmapFingerprint(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	var req struct {
+		FingerprintID int    `json:"fingerprint_id"`
+		DeviceID      string `json:"device_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+		return
+	}
+
+	db.Exec("UPDATE members SET fingerprint_id = 0 WHERE fingerprint_id = ?", req.FingerprintID)
+	db.Exec("UPDATE fingerprints SET member_id = 0, status = 'unmapped', updated_at = CURRENT_TIMESTAMP WHERE fingerprint_id = ?", req.FingerprintID)
+
+	broadcastSSE("fingerprint_event", map[string]interface{}{
+		"action":         "unmapped",
+		"fingerprint_id": req.FingerprintID,
+		"message":        fmt.Sprintf("Hubungan sidik jari slot #%d telah dilepas", req.FingerprintID),
+	})
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": fmt.Sprintf("Hubungan sidik jari slot #%d berhasil dilepas.", req.FingerprintID),
 	})
 }
 
@@ -1041,7 +1559,7 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		tipe := strings.ToLower(r.URL.Query().Get("tipe"))
 		search := strings.ToLower(r.URL.Query().Get("search"))
 
-		query := "SELECT id, uid, nis_nip, nama, tipe, kelas, no_hp, created_at FROM members WHERE 1=1"
+		query := "SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp, created_at FROM members WHERE 1=1"
 		var args []interface{}
 
 		if tipe != "" && tipe != "all" {
@@ -1064,7 +1582,7 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		members := make([]Member, 0)
 		for rows.Next() {
 			var m Member
-			rows.Scan(&m.ID, &m.UID, &m.NISNIP, &m.Nama, &m.Tipe, &m.Kelas, &m.NoHP, &m.CreatedAt)
+			rows.Scan(&m.ID, &m.UID, &m.FingerprintID, &m.NISNIP, &m.Nama, &m.Tipe, &m.Kelas, &m.NoHP, &m.CreatedAt)
 			members = append(members, m)
 		}
 
@@ -1093,8 +1611,8 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 			m.Tipe = "siswa"
 		}
 
-		res, err := db.Exec("INSERT INTO members (uid, nis_nip, nama, tipe, kelas, no_hp) VALUES (?, ?, ?, ?, ?, ?)",
-			m.UID, m.NISNIP, m.Nama, m.Tipe, m.Kelas, m.NoHP)
+		res, err := db.Exec("INSERT INTO members (uid, fingerprint_id, nis_nip, nama, tipe, kelas, no_hp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			m.UID, m.FingerprintID, m.NISNIP, m.Nama, m.Tipe, m.Kelas, m.NoHP)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "UID Kartu RFID sudah terdaftar.")
 			return
@@ -1119,8 +1637,8 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_, err := db.Exec("UPDATE members SET uid = ?, nis_nip = ?, nama = ?, tipe = ?, kelas = ?, no_hp = ? WHERE id = ?",
-			m.UID, m.NISNIP, m.Nama, m.Tipe, m.Kelas, m.NoHP, m.ID)
+		_, err := db.Exec("UPDATE members SET uid = ?, fingerprint_id = ?, nis_nip = ?, nama = ?, tipe = ?, kelas = ?, no_hp = ? WHERE id = ?",
+			m.UID, m.FingerprintID, m.NISNIP, m.Nama, m.Tipe, m.Kelas, m.NoHP, m.ID)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "Gagal memperbarui data member.")
 			return
@@ -1667,7 +2185,11 @@ func main() {
 	mux.HandleFunc("/api/login", handleLogin)
 	mux.HandleFunc("/api/attendance", authMiddleware(handleAttendance))
 	mux.HandleFunc("/api/attendance/summary", authMiddleware(handleAttendanceSummary))
-	mux.HandleFunc("/api/attendance/tap", handleTapAttendance) // Public untuk ESP32
+	mux.HandleFunc("/api/attendance/tap", handleTapAttendance)           // Public untuk ESP32 (RFID + Fingerprint)
+	mux.HandleFunc("/api/presensi/api_presensi.php", handleTapAttendance) // Public endpoint kompatibel fw.ino firmware
+	mux.HandleFunc("/api/fingerprints", authMiddleware(handleFingerprints))
+	mux.HandleFunc("/api/fingerprints/map", authMiddleware(handleMapFingerprint))
+	mux.HandleFunc("/api/fingerprints/unmap", authMiddleware(handleUnmapFingerprint))
 	mux.HandleFunc("/api/members", authMiddleware(handleMembers))
 	mux.HandleFunc("/api/members/bulk", authMiddleware(handleBulkMembers))
 	mux.HandleFunc("/api/classes", authMiddleware(handleClasses))

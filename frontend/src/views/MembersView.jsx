@@ -11,6 +11,7 @@ import {
   FileSpreadsheet, 
   Printer, 
   School,
+  Fingerprint,
   X,
   FileDown
 } from 'lucide-react';
@@ -488,10 +489,15 @@ export default function MembersView({
                     </td>
                     <td className="py-3.5 px-4">
                       <p className="font-semibold text-slate-800 text-sm">{m.nama}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                         <span className="inline-flex items-center gap-1 font-mono text-[11px] text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-200">
                           <CreditCard className="w-3 h-3 text-primary-500" /> RFID: {m.uid}
                         </span>
+                        {m.fingerprint_id > 0 && (
+                          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                            <Fingerprint className="w-3 h-3 text-amber-600" /> Finger: #{m.fingerprint_id}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="py-3.5 px-4">
