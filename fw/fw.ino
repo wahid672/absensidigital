@@ -1643,6 +1643,127 @@ void handleWebDeleteAllFinger() {
   webServer.send(303);
 }
 
+// 1. Download Template (Backup Seluruh Template Sensor ke File JSON di Browser)
+void handleWebDownloadJsonTemplates() {
+  if (!isWebAuthenticated()) {
+    webServer.sendHeader("Location", "/login");
+    webServer.send(303);
+    return;
+  }
+
+  Serial.println("\n[JSON BACKUP] Memulai proses ekspor seluruh template sidik jari ke file JSON...");
+  lcd.clear();
+  printCentered("Backup Template", 0);
+  printCentered("Membaca Jari...", 1);
+  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
+
+  DynamicJsonDocument doc(65536);
+  doc["device_id"] = deviceId;
+  doc["exported_at"] = getCurrentTimestamp();
+  JsonArray tmplArray = doc.createNestedArray("templates");
+
+  int totalFound = 0;
+  for (int id = 1; id <= MAX_FINGERPRINTS; id++) {
+    while (mySerial.available()) mySerial.read();
+    delay(15);
+
+    if (finger.loadModel(id) == FINGERPRINT_OK) {
+      String hexData = extractFingerprintTemplate(id);
+      if (hexData.length() >= 1024) {
+        JsonObject item = tmplArray.createNestedObject();
+        item["fingerprint_id"] = id;
+        item["template_data"] = hexData;
+        totalFound++;
+      }
+      delay(25);
+    }
+  }
+
+  doc["total"] = totalFound;
+
+  String jsonOutput;
+  serializeJson(doc, jsonOutput);
+
+  webServer.sendHeader("Content-Type", "application/json");
+  webServer.sendHeader("Content-Disposition", "attachment; filename=\"fingerprint_backup_" + String(deviceId) + ".json\"");
+  webServer.send(200, "application/json", jsonOutput);
+
+  digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
+  finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
+  showScannedMessage("Backup Selesai!", String(totalFound) + " Jari Diekspor");
+}
+
+// 2. Upload Template (Restore File JSON: Delete All Dulu, Baru Masukkan Template)
+void handleWebUploadJsonTemplates() {
+  if (!isWebAuthenticated()) {
+    webServer.send(401, "application/json", "{\"status\":\"error\",\"message\":\"Sesi login telah habis. Silakan login kembali.\"}");
+    return;
+  }
+
+  String body = webServer.arg("plain");
+  if (body.length() == 0) {
+    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Payload data JSON kosong!\"}");
+    return;
+  }
+
+  DynamicJsonDocument doc(65536);
+  DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Format file JSON rusak / tidak valid!\"}");
+    return;
+  }
+
+  // LANGKAH 1: DELETE ALL DULU di Sensor & Server
+  Serial.println("\n[JSON RESTORE] Mengosongkan seluruh memori sensor (Delete All) sebelum restore...");
+  lcd.clear();
+  printCentered("Restore Template", 0);
+  printCentered("Reset Memori...", 1);
+  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
+
+  if (finger.emptyDatabase() != FINGERPRINT_OK) {
+    webServer.send(500, "application/json", "{\"status\":\"error\",\"message\":\"Gagal mereset memori sensor sidik jari!\"}");
+    return;
+  }
+  syncDeleteAll(); // Hapus di database server
+
+  // LANGKAH 2: Masukkan seluruh template dari JSON ke sensor
+  JsonArray templates = doc.containsKey("templates") ? doc["templates"].as<JsonArray>() : doc.as<JsonArray>();
+  int totalTemplates = templates.size();
+  int successCount = 0;
+
+  Serial.printf("[JSON RESTORE] Memulai penulisan %d template ke sensor...\n", totalTemplates);
+
+  for (JsonObject item : templates) {
+    int fId = item["fingerprint_id"].as<int>();
+    String hexData = item["template_data"].as<String>();
+
+    if (fId > 0 && hexData.length() >= 1024) {
+      printCentered("Simpan ID: " + String(fId), 1);
+      if (saveFingerprintTemplate(fId, hexData)) {
+        successCount++;
+        syncSingleEnroll(fId); // Sinkronkan pendaftaran ID ke server
+      }
+      delay(30);
+    }
+  }
+
+  Serial.printf("[JSON RESTORE] Selesai: %d dari %d template berhasil disimpan ke sensor!\n", successCount, totalTemplates);
+
+  digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW); delay(50);
+  digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
+  finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 5);
+  showScannedMessage("Restore Sukses!", String(successCount) + " Jari Disimpan");
+
+  DynamicJsonDocument resp(512);
+  resp["status"] = "success";
+  resp["message"] = "Berhasil! Memori dikosongkan dan " + String(successCount) + " dari " + String(totalTemplates) + " template sidik jari berhasil di-restore ke sensor.";
+  resp["count"] = successCount;
+
+  String respStr;
+  serializeJson(resp, respStr);
+  webServer.send(200, "application/json", respStr);
+}
+
 void handleWebRoot() {
   if (!isWebAuthenticated()) {
     webServer.sendHeader("Location", "/login");
@@ -1680,6 +1801,10 @@ void handleWebRoot() {
   html += ".btn-warning{background:#d97706;} .btn-warning:hover{background:#b45309;}";
   html += ".btn-dark{background:#475569;} .btn-dark:hover{background:#334155;}";
   html += ".footer{text-align:center;font-size:12px;color:#94a3b8;margin-top:20px;}";
+  html += ".modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.7);display:flex;align-items:center;justify-content:center;z-index:999;backdrop-filter:blur(4px);}";
+  html += ".modal-content{background:#fff;padding:24px;border-radius:16px;max-width:440px;width:90%;box-shadow:0 12px 32px rgba(0,0,0,0.3);text-align:center;}";
+  html += ".modal-content h2{margin-top:0;font-size:18px;color:#0284c7;margin-bottom:12px;}";
+  html += ".alert-box{background:#fef3c7;color:#92400e;padding:12px;border-radius:8px;font-size:12px;margin-bottom:16px;border:1px solid #fde68a;text-align:left;line-height:1.4;}";
   html += "</style></head><body>";
   html += "<div class='card'>";
   html += "<h1><span>Mesin IoT (" + String(deviceId) + ")</span><a href='/logout' class='logout-link'>Logout</a></h1>";
@@ -1692,12 +1817,66 @@ void handleWebRoot() {
   html += "<div class='box' style='margin-bottom:16px;border-left-color:#16a34a;'><strong>WAKTU SISTEM</strong><span>" + String(timeBuff) + "</span></div>";
   html += "<h3>Manajemen & Aksi Mesin</h3>";
   html += "<a href='/test-server' class='btn'>Tes Koneksi Server API</a>";
-  html += "<a href='/upload' class='btn btn-success'>Upload Template Jari ke Server</a>";
-  html += "<a href='/download' class='btn btn-warning'>Download Template dari Server</a>";
+  html += "<a href='/download-templates' class='btn btn-warning'>Download Template (Backup JSON)</a>";
+  html += "<button type='button' onclick='openUploadModal()' class='btn btn-success'>Upload Template (Restore JSON)</button>";
   html += "<a href='/del-all-finger' class='btn btn-danger' onclick=\"return confirm('PERINGATAN! Seluruh data sidik jari di memori sensor DAN database server akan DIHAPUS PERMANEN. Lanjutkan?');\">Hapus Semua Sidik Jari (Delete All)</a>";
   html += "<a href='/restart' class='btn btn-dark' onclick=\"return confirm('Yakin ingin restart ESP32?');\">Restart Mesin ESP32</a>";
   html += "<div class='footer'>Siakad Ponpes IoT Firmware &copy; 2026</div>";
-  html += "</div></body></html>";
+  html += "</div>";
+
+  // MODAL POPUP UNTUK UPLOAD TEMPLATE JSON
+  html += "<div id='uploadModal' class='modal' style='display:none;'>";
+  html += "<div class='modal-content'>";
+  html += "<h2>Upload Template JSON</h2>";
+  html += "<div class='alert-box'>";
+  html += "<strong>⚠️ PERHATIAN PENTING:</strong><br>";
+  html += "Proses ini akan <strong>MENGHAPUS SEMUA (Delete All)</strong> sidik jari yang ada di sensor terlebih dahulu, lalu memasukkan seluruh template baru dari file JSON.";
+  html += "</div>";
+  html += "<div style='margin:16px 0;text-align:left;'>";
+  html += "<label style='display:block;font-weight:bold;font-size:12px;margin-bottom:6px;color:#334155;'>Pilih File JSON Template:</label>";
+  html += "<input type='file' id='jsonFileInput' accept='.json,application/json' style='width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:8px;box-sizing:border-box;'>";
+  html += "</div>";
+  html += "<div id='uploadStatus' style='display:none;margin-bottom:12px;font-size:12px;color:#0284c7;font-weight:bold;'></div>";
+  html += "<div style='display:flex;gap:10px;'>";
+  html += "<button type='button' class='btn' style='background:#64748b;margin:0;' onclick='closeUploadModal()'>Batal</button>";
+  html += "<button type='button' id='btnSubmitUpload' class='btn btn-success' style='margin:0;' onclick='submitJsonUpload()'>Mulai Restore</button>";
+  html += "</div>";
+  html += "</div></div>";
+
+  // JAVASCRIPT UNTUK MODAL & AJAX RESTORE
+  html += "<script>";
+  html += "function openUploadModal(){document.getElementById('uploadModal').style.display='flex';}";
+  html += "function closeUploadModal(){document.getElementById('uploadModal').style.display='none';}";
+  html += "async function submitJsonUpload(){";
+  html += "  var f=document.getElementById('jsonFileInput').files;";
+  html += "  if(!f||f.length===0){alert('Silakan pilih file JSON terlebih dahulu!');return;}";
+  html += "  if(!confirm('Yakin ingin MENGHAPUS SEMUA sidik jari di sensor dan me-restore file JSON ini?'))return;";
+  html += "  var btn=document.getElementById('btnSubmitUpload');";
+  html += "  var st=document.getElementById('uploadStatus');";
+  html += "  btn.disabled=true;btn.innerText='Memproses...';";
+  html += "  st.style.display='block';st.innerText='Membaca file JSON & merestore sensor...';";
+  html += "  var reader=new FileReader();";
+  html += "  reader.onload=async function(e){";
+  html += "    try{";
+  html += "      var res=await fetch('/upload-json',{";
+  html += "        method:'POST',";
+  html += "        headers:{'Content-Type':'application/json'},";
+  html += "        body:e.target.result";
+  html += "      });";
+  html += "      var data=await res.json();";
+  html += "      alert(data.message||'Proses selesai!');";
+  html += "      location.reload();";
+  html += "    }catch(err){";
+  html += "      alert('Error upload: '+err.message);";
+  html += "      btn.disabled=false;btn.innerText='Mulai Restore';";
+  html += "      st.style.display='none';";
+  html += "    }";
+  html += "  };";
+  html += "  reader.readAsText(f[0]);";
+  html += "}";
+  html += "</script>";
+
+  html += "</body></html>";
 
   webServer.send(200, "text/html", html);
 }
@@ -1718,19 +1897,8 @@ void setupWebServer() {
     webServer.send(303);
   });
 
-  webServer.on("/upload", HTTP_GET, []() {
-    if (!isWebAuthenticated()) { webServer.sendHeader("Location", "/login"); webServer.send(303); return; }
-    handleTemplateUpload();
-    webServer.sendHeader("Location", "/");
-    webServer.send(303);
-  });
-
-  webServer.on("/download", HTTP_GET, []() {
-    if (!isWebAuthenticated()) { webServer.sendHeader("Location", "/login"); webServer.send(303); return; }
-    handleTemplateDownload();
-    webServer.sendHeader("Location", "/");
-    webServer.send(303);
-  });
+  webServer.on("/download-templates", HTTP_GET, handleWebDownloadJsonTemplates);
+  webServer.on("/upload-json", HTTP_POST, handleWebUploadJsonTemplates);
 
   webServer.on("/del-all-finger", HTTP_GET, handleWebDeleteAllFinger);
 
