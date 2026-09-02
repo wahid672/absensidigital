@@ -145,6 +145,7 @@ export default function App() {
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         user={user}
+        settings={settings}
         onLogout={handleLogout}
         mobileOpen={mobileSidebarOpen}
         setMobileOpen={setMobileSidebarOpen}
@@ -153,6 +154,7 @@ export default function App() {
       <main id="main-viewport" className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto">
         <Navbar 
           currentTab={currentTab}
+          settings={settings}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
         />
 
@@ -162,6 +164,7 @@ export default function App() {
               members={membersCache} 
               classes={classesCache}
               positions={positionsCache}
+              settings={settings}
               realtimeEvent={realtimeEvent} 
             />
           )}
@@ -171,6 +174,8 @@ export default function App() {
               tipe="siswa" 
               classes={classesCache}
               positions={positionsCache}
+              settings={settings}
+              appMode={settings.app_mode || 'pesantren'}
               onMembersUpdated={loadMembersCache} 
             />
           )}
@@ -180,6 +185,8 @@ export default function App() {
               tipe="guru" 
               classes={classesCache}
               positions={positionsCache}
+              settings={settings}
+              appMode={settings.app_mode || 'pesantren'}
               onMembersUpdated={loadMembersCache} 
             />
           )}

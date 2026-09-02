@@ -16,10 +16,13 @@ export default function Sidebar({
   currentTab, 
   setCurrentTab, 
   user = {}, 
+  settings = {},
   onLogout, 
   mobileOpen, 
   setMobileOpen 
 }) {
+  const isPesantren = (settings.app_mode || 'pesantren') !== 'umum';
+
   const navItems = [
     {
       id: 'dashboard',
@@ -29,12 +32,12 @@ export default function Sidebar({
     },
     {
       id: 'santri',
-      label: 'Data Santri',
+      label: isPesantren ? 'Data Santri' : 'Data Siswa',
       icon: GraduationCap
     },
     {
       id: 'guru',
-      label: 'Data Guru',
+      label: isPesantren ? 'Data Guru / Asatidz' : 'Data Guru',
       icon: Users
     },
     {

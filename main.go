@@ -201,6 +201,7 @@ func initDatabase() {
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_nama', 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_alamat', 'Jl. Pesantren Digital No. 01')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_kota', 'Kota Santri')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('app_mode', 'pesantren')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_register_card', '1')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_masuk_batas', '07:00')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_pulang_batas', '15:00')")
@@ -1155,6 +1156,83 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// 4b. POST /api/members/bulk (Bulk Import dari Excel)
+func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	var req struct {
+		Members []Member `json:"members"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+		return
+	}
+
+	if len(req.Members) == 0 {
+		writeJSONError(w, http.StatusBadRequest, "Tidak ada data anggota yang dikirim.")
+		return
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal memulai transaksi database.")
+		return
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`
+		INSERT INTO members (uid, nis_nip, nama, tipe, kelas, no_hp)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(uid) DO UPDATE SET
+			nis_nip = excluded.nis_nip,
+			nama = excluded.nama,
+			tipe = excluded.tipe,
+			kelas = excluded.kelas,
+			no_hp = excluded.no_hp
+	`)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Gagal prepare statement: %v", err))
+		return
+	}
+	defer stmt.Close()
+
+	var insertedCount int
+	for _, m := range req.Members {
+		uid := strings.TrimSpace(m.UID)
+		nama := strings.TrimSpace(m.Nama)
+		tipe := strings.ToLower(strings.TrimSpace(m.Tipe))
+		if uid == "" || nama == "" {
+			continue
+		}
+		if tipe != "siswa" && tipe != "guru" {
+			tipe = "siswa"
+		}
+		nisNIP := strings.TrimSpace(m.NISNIP)
+		kelas := strings.TrimSpace(m.Kelas)
+		noHP := strings.TrimSpace(m.NoHP)
+
+		_, err := stmt.Exec(uid, nisNIP, nama, tipe, kelas, noHP)
+		if err == nil {
+			insertedCount++
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal commit import database.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": fmt.Sprintf("Berhasil mengimpor / memperbarui %d data anggota.", insertedCount),
+		"count":   insertedCount,
+	})
+}
+
 // 5. CRUD MASTER KELAS (/api/classes)
 func handleClasses(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -1591,6 +1669,7 @@ func main() {
 	mux.HandleFunc("/api/attendance/summary", authMiddleware(handleAttendanceSummary))
 	mux.HandleFunc("/api/attendance/tap", handleTapAttendance) // Public untuk ESP32
 	mux.HandleFunc("/api/members", authMiddleware(handleMembers))
+	mux.HandleFunc("/api/members/bulk", authMiddleware(handleBulkMembers))
 	mux.HandleFunc("/api/classes", authMiddleware(handleClasses))
 	mux.HandleFunc("/api/positions", authMiddleware(handlePositions))
 	mux.HandleFunc("/api/stats/dashboard", authMiddleware(handleDashboardStats))

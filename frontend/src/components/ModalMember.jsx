@@ -8,11 +8,17 @@ export default function ModalMember({
   tipe = 'siswa', 
   classes = [],
   positions = [],
+  appMode = 'pesantren',
   onClose, 
   onSuccess 
 }) {
   const isEdit = !!(member && member.id);
   const isGuru = tipe === 'guru';
+  const isPesantren = appMode !== 'umum';
+
+  const labelMember = isGuru 
+    ? (isPesantren ? 'Guru / Asatidz' : 'Guru / Pendidik') 
+    : (isPesantren ? 'Santri' : 'Siswa');
 
   const [formData, setFormData] = useState({
     id: member?.id || '',
@@ -84,12 +90,12 @@ export default function ModalMember({
             {isEdit ? (
               <>
                 <PenSquare className="w-5 h-5 text-primary-600" />
-                <span>Edit Data {isGuru ? 'Guru' : 'Santri'}</span>
+                <span>Edit Data {labelMember}</span>
               </>
             ) : (
               <>
                 <UserPlus className={`w-5 h-5 ${isGuru ? 'text-indigo-600' : 'text-sky-600'}`} />
-                <span>Tambah Data {isGuru ? 'Guru / Asatidz' : 'Santri / Siswa'}</span>
+                <span>Tambah Data {labelMember}</span>
               </>
             )}
           </h3>
@@ -105,14 +111,14 @@ export default function ModalMember({
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${
               isGuru ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-sky-100 text-sky-800 border border-sky-200'
             }`}>
-              {isGuru ? 'Guru / Ustadz' : 'Santri / Siswa'}
+              {labelMember}
             </span>
           </div>
 
           {/* INPUT NIS / NIP */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              {isGuru ? 'NIP (Nomor Induk Pegawai / Guru)' : 'NIS (Nomor Induk Santri / Siswa)'}
+              {isGuru ? 'NIP (Nomor Induk Pegawai / Guru)' : (isPesantren ? 'NIS (Nomor Induk Santri)' : 'NIS (Nomor Induk Siswa)')}
             </label>
             <div className="relative">
               <Hash className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -217,7 +223,7 @@ export default function ModalMember({
               disabled={loading}
               className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-xl shadow-md transition-all disabled:opacity-50"
             >
-              {loading ? 'Menyimpan...' : (isEdit ? 'Simpan Perubahan' : `Simpan ${isGuru ? 'Guru' : 'Santri'}`)}
+              {loading ? 'Menyimpan...' : (isEdit ? 'Simpan Perubahan' : `Simpan ${labelMember}`)}
             </button>
           </div>
         </form>

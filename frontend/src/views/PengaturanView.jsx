@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Database, School, CloudDownload, Broom, Trash2, Save, Loader2, MapPin, CreditCard, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { Database, School, CloudDownload, Broom, Trash2, Save, Loader2, MapPin, CreditCard, ShieldAlert, CheckCircle2, Sparkles, Building2 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 
@@ -8,6 +8,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     instansi_nama: settings.instansi_nama || '',
     instansi_alamat: settings.instansi_alamat || '',
     instansi_kota: settings.instansi_kota || 'Kota Santri',
+    app_mode: settings.app_mode || 'pesantren',
     auto_register_card: settings.auto_register_card !== undefined ? settings.auto_register_card : '1',
     jam_masuk_batas: settings.jam_masuk_batas || '07:00',
     jam_pulang_batas: settings.jam_pulang_batas || '15:00',
@@ -21,6 +22,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
       instansi_nama: settings.instansi_nama || '',
       instansi_alamat: settings.instansi_alamat || '',
       instansi_kota: settings.instansi_kota || 'Kota Santri',
+      app_mode: settings.app_mode || 'pesantren',
       auto_register_card: settings.auto_register_card !== undefined ? settings.auto_register_card : '1',
       jam_masuk_batas: settings.jam_masuk_batas || '07:00',
       jam_pulang_batas: settings.jam_pulang_batas || '15:00',
@@ -41,7 +43,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
         Swal.fire({
           icon: 'success',
           title: 'Berhasil',
-          text: 'Pengaturan berhasil disimpan ke sistem',
+          text: 'Pengaturan dan mode instansi berhasil disimpan',
           timer: 1500,
           showConfirmButton: false
         });
@@ -64,7 +66,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   const handleSeedDummy = () => {
     Swal.fire({
       title: 'Import Data Dummy?',
-      text: 'Sistem akan memasukkan data contoh santri, guru, kelas, jabatan, dan riwayat presensi demo.',
+      text: 'Sistem akan memasukkan data contoh santri/siswa, guru, kelas, jabatan, dan riwayat presensi demo.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#0284c7',
@@ -89,7 +91,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   const handleResetAttendance = () => {
     Swal.fire({
       title: 'Hapus Semua Data Absensi?',
-      text: 'Seluruh riwayat kehadiran akan dikosongkan. Data master santri, guru, kelas, dan jabatan TIDAK akan terhapus.',
+      text: 'Seluruh riwayat kehadiran akan dikosongkan. Data master santri/siswa, guru, kelas, dan jabatan TIDAK akan terhapus.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#d97706',
@@ -113,7 +115,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   const handleResetAll = () => {
     Swal.fire({
       title: 'Reset Total Database?',
-      html: '<span class="text-rose-600 font-bold">PERINGATAN!</span> Tindakan ini akan menghapus SEMUA data santri, guru, kelas, jabatan, dan riwayat absensi. Database akan kembali kosong.',
+      html: '<span class="text-rose-600 font-bold">PERINGATAN!</span> Tindakan ini akan menghapus SEMUA data santri/siswa, guru, kelas, jabatan, dan riwayat absensi. Database akan kembali kosong.',
       icon: 'error',
       showCancelButton: true,
       confirmButtonColor: '#e11d48',
@@ -136,19 +138,71 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   };
 
   const isAutoRegisterOn = formData.auto_register_card === '1';
+  const isPesantren = formData.app_mode === 'pesantren';
 
   return (
     <section className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-5xl w-full mx-auto">
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <h3 className="text-lg font-bold text-slate-800">Pengaturan Sistem & Kebijakan Mesin IoT</h3>
-        <p className="text-xs text-slate-500">Kelola registrasi kartu otomatis, profil instansi, kota dokumen PDF, dan reset database</p>
+        <h3 className="text-lg font-bold text-slate-800">Pengaturan Sistem & Kebijakan Aplikasi</h3>
+        <p className="text-xs text-slate-500">Pilih mode istilah instansi (Umum vs Pesantren), pendaftaran kartu baru, dan kop surat PDF</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
-        {/* KARTU 1: MANAJEMEN DATA DUMMY & RESET */}
+        {/* KOLOM KIRI */}
         <div className="space-y-6">
-          {/* TOGGLE ON/OFF KARTU BARU */}
+          {/* 1. PILIHAN MODE APLIKASI (UMUM vs PESANTREN) */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center text-lg">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-sm text-slate-800">Mode Istilah Aplikasi</h4>
+                <p className="text-xs text-slate-400">Sesuaikan sebutan untuk Pesantren atau Sekolah Umum</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, app_mode: 'pesantren' }))}
+                className={`p-3.5 rounded-xl border text-left transition-all ${
+                  isPesantren 
+                    ? 'border-primary-600 bg-primary-50/60 ring-2 ring-primary-500/20' 
+                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-xs text-slate-800">Mode Pesantren</span>
+                  {isPesantren && <CheckCircle2 className="w-4 h-4 text-primary-600" />}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  Menggunakan sebutan <span className="font-semibold text-primary-700">"Santri"</span> & <span className="font-semibold text-primary-700">"Asatidz/Guru"</span>.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, app_mode: 'umum' }))}
+                className={`p-3.5 rounded-xl border text-left transition-all ${
+                  !isPesantren 
+                    ? 'border-primary-600 bg-primary-50/60 ring-2 ring-primary-500/20' 
+                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-xs text-slate-800">Mode Umum / Sekolah</span>
+                  {!isPesantren && <CheckCircle2 className="w-4 h-4 text-primary-600" />}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  Menggunakan sebutan <span className="font-semibold text-primary-700">"Siswa"</span> & <span className="font-semibold text-primary-700">"Guru"</span>.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {/* 2. TOGGLE ON/OFF KARTU BARU */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex items-center gap-3">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
@@ -190,45 +244,28 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                   />
                 </button>
               </div>
-
-              <div className="pt-2 border-t border-slate-200 flex items-center gap-1.5 text-[11px]">
-                {isAutoRegisterOn ? (
-                  <span className="text-emerald-700 flex items-center gap-1 font-medium">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Mode Mudah: Bagus saat inisialisasi awal pembagian kartu
-                  </span>
-                ) : (
-                  <span className="text-rose-600 flex items-center gap-1 font-medium">
-                    <ShieldAlert className="w-3.5 h-3.5" /> Mode Ketat: Mencegah kartu asing/tak terdaftar masuk absensi
-                  </span>
-                )}
-              </div>
             </div>
           </div>
 
-          {/* DUMMY & RESET */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg">
-                  <Database className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-sm text-slate-800">Manajemen Data Contoh & Reset</h4>
-                  <p className="text-xs text-slate-400">Generate atau bersihkan database SQLite</p>
-                </div>
+          {/* 3. DUMMY & RESET */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg">
+                <Database className="w-5 h-5" />
               </div>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Gunakan fitur ini untuk memasukkan data contoh santri/guru/kelas/jabatan dan riwayat absensi demo, atau membersihkan data saat sistem siap digunakan produksi.
-              </p>
+              <div>
+                <h4 className="font-bold text-sm text-slate-800">Manajemen Data Contoh & Reset</h4>
+                <p className="text-xs text-slate-400">Generate atau bersihkan database SQLite</p>
+              </div>
             </div>
 
-            <div className="space-y-2.5 pt-4 border-t border-slate-100">
+            <div className="space-y-2.5 pt-2 border-t border-slate-100">
               <button 
                 onClick={handleSeedDummy}
                 className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow transition-all"
               >
                 <CloudDownload className="w-4 h-4" />
-                <span>Import / Generate Data Master & Presensi Dummy</span>
+                <span>Import / Generate Sample Data Dummy</span>
               </button>
 
               <button 
@@ -250,7 +287,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
           </div>
         </div>
 
-        {/* KARTU 2: PENGATURAN INSTANSI & KOTA PDF */}
+        {/* KOLOM KANAN: PENGATURAN PROFIL & JAM */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center text-lg">
@@ -264,12 +301,14 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
 
           <form onSubmit={handleSave} className="space-y-3 pt-2 border-t border-slate-100">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Yayasan / Sekolah</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                {isPesantren ? 'Nama Yayasan / Pesantren' : 'Nama Sekolah / Madrasah'}
+              </label>
               <input 
                 type="text" 
                 value={formData.instansi_nama} 
                 onChange={(e) => setFormData({ ...formData, instansi_nama: e.target.value })}
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 font-medium"
               />
             </div>
 
@@ -319,7 +358,9 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Kepala Sekolah / Pengasuh</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                {isPesantren ? 'Nama Pengasuh / Mudir Pesantren' : 'Nama Kepala Sekolah'}
+              </label>
               <input 
                 type="text" 
                 value={formData.kepala_nama} 
@@ -334,7 +375,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
               className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow transition-all mt-2 disabled:opacity-50"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span>Simpan Pengaturan</span>
+              <span>Simpan Seluruh Pengaturan</span>
             </button>
           </form>
         </div>

@@ -154,6 +154,7 @@ export default function PositionsView({ onUpdated }) {
             <thead>
               <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] uppercase font-bold tracking-wider text-slate-500">
                 <th className="py-3.5 px-4 text-center w-12">No</th>
+                <th className="py-3.5 px-4 w-20 text-center">ID</th>
                 <th className="py-3.5 px-4">Nama Jabatan / Mapel</th>
                 <th className="py-3.5 px-4">Keterangan / Tugas</th>
                 <th className="py-3.5 px-4 text-center w-28">Aksi</th>
@@ -162,14 +163,14 @@ export default function PositionsView({ onUpdated }) {
             <tbody className="divide-y divide-slate-100 text-sm">
               {loading && positions.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="py-12 text-center text-slate-400 text-xs">
+                  <td colSpan="5" className="py-12 text-center text-slate-400 text-xs">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-primary-600" />
                     <span>Memuat data jabatan...</span>
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="py-8 text-center text-slate-400 text-xs">
+                  <td colSpan="5" className="py-8 text-center text-slate-400 text-xs">
                     Belum ada data jabatan. Silakan klik Tambah Jabatan.
                   </td>
                 </tr>
@@ -177,6 +178,11 @@ export default function PositionsView({ onUpdated }) {
                 filtered.map((p, idx) => (
                   <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3 px-4 text-center font-medium text-slate-400 text-xs">{idx + 1}</td>
+                    <td className="py-3 px-4 text-center">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded font-mono font-bold text-xs bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        #{p.id}
+                      </span>
+                    </td>
                     <td className="py-3 px-4 font-bold text-slate-800 flex items-center gap-2">
                       <Award className="w-4 h-4 text-indigo-600" />
                       <span>{p.nama}</span>

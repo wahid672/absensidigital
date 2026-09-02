@@ -156,6 +156,7 @@ export default function ClassesView({ onUpdated }) {
             <thead>
               <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] uppercase font-bold tracking-wider text-slate-500">
                 <th className="py-3.5 px-4 text-center w-12">No</th>
+                <th className="py-3.5 px-4 w-20 text-center">ID</th>
                 <th className="py-3.5 px-4">Nama Kelas</th>
                 <th className="py-3.5 px-4">Tingkat / Jenjang</th>
                 <th className="py-3.5 px-4">Keterangan</th>
@@ -165,14 +166,14 @@ export default function ClassesView({ onUpdated }) {
             <tbody className="divide-y divide-slate-100 text-sm">
               {loading && classes.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="py-12 text-center text-slate-400 text-xs">
+                  <td colSpan="6" className="py-12 text-center text-slate-400 text-xs">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-primary-600" />
                     <span>Memuat data kelas...</span>
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="py-8 text-center text-slate-400 text-xs">
+                  <td colSpan="6" className="py-8 text-center text-slate-400 text-xs">
                     Belum ada data kelas. Silakan klik Tambah Kelas.
                   </td>
                 </tr>
@@ -180,6 +181,11 @@ export default function ClassesView({ onUpdated }) {
                 filtered.map((c, idx) => (
                   <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3 px-4 text-center font-medium text-slate-400 text-xs">{idx + 1}</td>
+                    <td className="py-3 px-4 text-center">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded font-mono font-bold text-xs bg-slate-100 text-slate-700 border border-slate-200">
+                        #{c.id}
+                      </span>
+                    </td>
                     <td className="py-3 px-4 font-bold text-slate-800 flex items-center gap-2">
                       <BookOpen className="w-4 h-4 text-primary-600" />
                       <span>{c.nama}</span>

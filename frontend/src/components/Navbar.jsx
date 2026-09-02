@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, Clock } from 'lucide-react';
 
-export default function Navbar({ currentTab, onOpenMobileSidebar }) {
+export default function Navbar({ currentTab, settings = {}, onOpenMobileSidebar }) {
   const [timeStr, setTimeStr] = useState('00:00:00 WIB');
+  const isPesantren = (settings.app_mode || 'pesantren') !== 'umum';
 
   useEffect(() => {
     const updateTime = () => {
@@ -15,13 +16,36 @@ export default function Navbar({ currentTab, onOpenMobileSidebar }) {
   }, []);
 
   const titles = {
-    dashboard: { title: 'Dashboard & Statistik Presensi', desc: 'Pemantauan data kehadiran santri, guru, dan grafik secara realtime' },
-    santri: { title: 'Data Santri / Siswa', desc: 'Kelola database kartu RFID dan data siswa' },
-    guru: { title: 'Data Guru / Asatidz', desc: 'Kelola database kartu RFID, jabatan, dan staf pengajar' },
-    kelas: { title: 'Master Data Kelas & Rombel', desc: 'Kelola daftar kelas dan jenjang tingkatan untuk santri/siswa' },
-    jabatan: { title: 'Master Data Jabatan & Mapel', desc: 'Kelola daftar jabatan, mata pelajaran, dan tugas pengampu guru' },
-    cetak: { title: 'Cetak Rekap Laporan PDF', desc: 'Pratinjau cetak dan ekspor laporan ke format PDF resmi' },
-    pengaturan: { title: 'Pengaturan Sistem & Instansi', desc: 'Kelola data contoh dummy, reset database, dan konfigurasi instansi' }
+    dashboard: { 
+      title: 'Dashboard & Statistik Presensi', 
+      desc: isPesantren 
+        ? 'Pemantauan kehadiran santri, asatidz/guru, dan grafik visual secara realtime' 
+        : 'Pemantauan kehadiran siswa, guru, dan grafik visual secara realtime' 
+    },
+    santri: { 
+      title: isPesantren ? 'Data Santri' : 'Data Siswa', 
+      desc: isPesantren ? 'Kelola database kartu RFID, NIS, dan kontak santri' : 'Kelola database kartu RFID, NIS, dan kontak siswa' 
+    },
+    guru: { 
+      title: isPesantren ? 'Data Guru / Asatidz' : 'Data Guru / Pendidik', 
+      desc: 'Kelola database kartu RFID, NIP, jabatan, dan staf pengajar' 
+    },
+    kelas: { 
+      title: 'Master Data Kelas & Rombel', 
+      desc: 'Kelola daftar kelas dan jenjang tingkatan' 
+    },
+    jabatan: { 
+      title: 'Master Data Jabatan & Mapel', 
+      desc: 'Kelola daftar jabatan, mata pelajaran, dan tugas pengampu guru' 
+    },
+    cetak: { 
+      title: 'Cetak Rekap Laporan PDF', 
+      desc: 'Pratinjau cetak dan ekspor laporan ke format PDF resmi' 
+    },
+    pengaturan: { 
+      title: 'Pengaturan Sistem & Instansi', 
+      desc: 'Kelola mode instansi (Umum/Pesantren), kartu baru, dan data' 
+    }
   };
 
   const info = titles[currentTab] || titles.dashboard;

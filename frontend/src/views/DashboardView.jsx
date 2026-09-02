@@ -24,7 +24,17 @@ import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 import ModalAttendance from '../components/ModalAttendance';
 
-export default function DashboardView({ members = [], classes = [], positions = [], realtimeEvent = null }) {
+export default function DashboardView({ 
+  members = [], 
+  classes = [], 
+  positions = [], 
+  settings = {},
+  realtimeEvent = null 
+}) {
+  const isPesantren = (settings.app_mode || 'pesantren') !== 'umum';
+  const labelSiswa = isPesantren ? 'Santri' : 'Siswa';
+  const labelGuru = isPesantren ? 'Guru / Asatidz' : 'Guru';
+
   const today = new Date().toISOString().split('T')[0];
   const [tanggal, setTanggal] = useState(today);
   const [tipe, setTipe] = useState('all');
@@ -213,7 +223,7 @@ export default function DashboardView({ members = [], classes = [], positions = 
             <GraduationCap className="w-6 h-6" />
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-medium text-slate-500 truncate">Siswa / Guru</p>
+            <p className="text-xs font-medium text-slate-500 truncate">{labelSiswa} / {labelGuru}</p>
             <h3 className="text-xl font-bold text-slate-800">{siswaCount} / {guruCount}</h3>
           </div>
         </div>
