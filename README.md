@@ -3,7 +3,7 @@
 [![Docker Build and Push to GHCR](https://github.com/wahid672/absensidigital/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/wahid672/absensidigital/actions/workflows/docker-publish.yml)
 [![Docker Image](https://img.shields.io/badge/Docker%20Image-GHCR-blue?logo=docker)](https://github.com/wahid672/absensidigital/pkgs/container/absensidigital)
 
-Aplikasi **Fullstack All-in-One** (Backend REST API Golang + Frontend Web Admin Single Page Application) untuk sistem presensi dan absensi digital terintegrasi mesin mikrokontroler **ESP32** (RFID & Fingerprint) dengan database **SQLite** permanen, alur **Realtime SSE**, dan fitur **Cetak Dokumen PDF**.
+Aplikasi **Fullstack All-in-One** (Backend REST API Golang + Frontend Web Admin Single Page Application) untuk sistem presensi dan absensi digital terintegrasi mesin mikrokontroler **ESP32** (RFID & Fingerprint) dengan database **SQLite** permanen, alur **Realtime SSE**, dukungan **Offline Sync / Backdate**, dan fitur **Cetak Dokumen PDF**.
 
 Docker Image resmi tersedia dan otomatis di-build melalui **GitHub Container Registry (GHCR)**:
 ```text
@@ -30,23 +30,32 @@ ghcr.io/wahid672/absensidigital:latest
   - 📊 Baris data pada tabel langsung bertambah/terupdate secara realtime dengan animasi *highlight*.
   - 📈 Angka metrik kehadiran (Hadir, Tepat, Telat, Siswa/Guru) ter-update otomatis tanpa perlu refresh halaman.
 
-### 4. 👥 Manajemen Data Master (CRUD Santri & Guru)
+### 4. 🔄 Sinkronisasi Data Offline & Backdate (ESP32 Offline Sync)
+- **Tahan Gangguan Internet:** Jika koneksi internet pada ESP32 terputus, ESP32 dapat menyimpan rekaman tap di media lokal (SD Card / Flash LittleFS).
+- **Kirim Data Backdate:** Saat internet kembali aktif, ESP32 dapat mengirimkan payload tap dengan menyertakan `timestamp` (ISO8601) atau `tanggal` & `waktu` asli kejadian.
+- Backend Golang akan mencatat absensi sesuai tanggal dan waktu kejadian tersebut, bukan waktu server saat menerima request.
+
+### 5. 🛑 Deteksi Cerdas "Sudah Absen" (Anti Duplicate Tap)
+- Jika kartu di-tap kembali setelah melakukan absen masuk & keluar lengkap, API merespon dengan `status: "already_attended"` dan `already_recorded: true`.
+- Mesin ESP32 dapat membaca respon ini untuk menampilkan pesan **"SUDAH ABSEN"** di layar LCD/OLED atau membunyikan buzzer 2x.
+
+### 6. 👥 Manajemen Data Master (CRUD Santri & Guru)
 - Kelola data **Santri / Siswa** dan **Guru / Asatidz** secara mandiri.
 - Input data: Nama Lengkap, UID Kartu RFID / Tag Fingerprint, Kelas/Jabatan, dan Nomor WhatsApp.
 - Fitur pencarian instan dan filter kategori.
 
-### 5. 📝 CRUD Presensi & Smart Auto-Fill
+### 7. 📝 CRUD Presensi & Smart Auto-Fill
 - **Tambah Presensi Manual:** Cukup pilih Tipe (Santri/Guru) dan pilih Nama dari Data Master, maka kolom Nama, UID, dan Kelas akan **otomatis terisi (*auto-fill*)**.
 - **Edit Presensi:** Data identitas terkunci (*readonly*), administrator cukup mengedit **Jam Masuk/Keluar** dan **Status Kehadiran** (`Tepat`, `Telat`, `Izin`, `Sakit`).
 - **Hapus Presensi:** Hapus baris absensi dengan konfirmasi dialog aman.
 
-### 6. 🖨️ Cetak & Export Laporan ke PDF
+### 8. 🖨️ Cetak & Export Laporan ke PDF
 - Pilihan periode: **Laporan Harian (Per Tanggal)** atau **Laporan Rekap Bulanan**.
 - Desain dokumen resmi dilengkapi **Kop Surat Yayasan/Sekolah** dan lembar **Tanda Tangan Pengesahan** (Kepala Sekolah & Admin).
 - Format CSS `@media print` teroptimasi untuk ukuran kertas A4 siap cetak atau simpan sebagai PDF.
 - Fitur export data mentah ke format **CSV / Excel**.
 
-### 7. ⚙️ Pengaturan Sistem & Manajemen Data
+### 9. ⚙️ Pengaturan Sistem & Manajemen Data
 - **Import / Generate Data Dummy:** Satu klik untuk mengisi data contoh santri, guru, dan riwayat presensi demo.
 - **Hapus Riwayat Absensi Saja:** Mengosongkan data log absensi tanpa menghapus data anggota.
 - **Reset Total Database:** Mengosongkan seluruh database jika sistem siap digunakan secara *fresh*.
@@ -58,7 +67,7 @@ ghcr.io/wahid672/absensidigital:latest
 
 ```text
 .
-├── main.go                              # Fullstack Server (REST API, SQLite, SSE, Embedded SPA)
+├── main.go                              # Fullstack Server (REST API, SQLite, SSE, Backdate Sync, Embedded SPA)
 ├── index.html                           # Web Admin SPA (Tailwind CSS, Icons, JS)
 ├── go.mod / go.sum                      # Go Module & Dependensi SQLite
 ├── absensi_api_postman_collection.json  # Koleksi Postman Lengkap
@@ -143,7 +152,7 @@ caddy reload
 | `POST` | `/api/attendance` | Tambah data absensi manual | Bearer Token |
 | `PUT` | `/api/attendance` | Edit jam/status absensi | Bearer Token |
 | `DELETE` | `/api/attendance?id={id}` | Hapus data absensi | Bearer Token |
-| `POST` | `/api/attendance/tap` | Menerima tap RFID / Fingerprint dari mesin ESP32 | Public (IoT) |
+| `POST` | `/api/attendance/tap` | Menerima tap RFID / Fingerprint (Realtime & Backdate Sync) | Public (IoT) |
 | `GET` | `/api/members` | Ambil daftar data Santri / Guru | Bearer Token |
 | `POST` | `/api/members` | Tambah Santri / Guru baru | Bearer Token |
 | `PUT` | `/api/members` | Update data Santri / Guru | Bearer Token |
@@ -156,17 +165,81 @@ caddy reload
 | `GET` | `/api/realtime` | Server-Sent Events (SSE) Live Stream | Public |
 | `GET` | `/api/health` | Health check endpoint | Public |
 
+### Format Payload `POST /api/attendance/tap`:
+
+#### 1. Tap Realtime (Menggunakan Waktu Server Saat Ini):
+```json
+{
+  "device_id": "ESP32-GATE-01",
+  "rfid_uid": "A1B2C301",
+  "tipe_scan": "auto"
+}
+```
+
+#### 2. Sync Offline / Backdate (Saat Internet ESP32 Pulih):
+```json
+{
+  "device_id": "ESP32-GATE-01",
+  "rfid_uid": "A1B2C301",
+  "timestamp": "2026-09-02T06:45:30+07:00",
+  "tipe_scan": "auto"
+}
+```
+*Atau menggunakan format tanggal & waktu terpisah:*
+```json
+{
+  "device_id": "ESP32-GATE-01",
+  "rfid_uid": "A1B2C301",
+  "tanggal": "2026-09-02",
+  "waktu": "06:45:30",
+  "tipe_scan": "auto"
+}
+```
+
+#### Contoh Respon API:
+- **Absen Masuk Berhasil:**
+  ```json
+  {
+    "status": "success",
+    "action": "check_in",
+    "message": "Absen Masuk Berhasil (Muhammad Rizky Pratama - tepat)",
+    "already_recorded": false,
+    "data": { ... }
+  }
+  ```
+- **Absen Keluar Berhasil:**
+  ```json
+  {
+    "status": "success",
+    "action": "check_out",
+    "message": "Absen Keluar Berhasil (Muhammad Rizky Pratama - tepat)",
+    "already_recorded": false,
+    "data": { ... }
+  }
+  ```
+- **Sudah Pernah Absen (Already Attended):**
+  ```json
+  {
+    "status": "already_attended",
+    "action": "already_completed",
+    "message": "Muhammad Rizky Pratama sudah lengkap absen masuk (06:45:12) & keluar (15:05:30) pada tgl 2026-09-02",
+    "already_recorded": true,
+    "data": { ... }
+  }
+  ```
+
 ---
 
 ## 📟 Contoh Kode ESP32 (Arduino C++)
 
-Contoh potongan kode ESP32 dengan modul RFID RC522 untuk mengirim absensi ke backend:
+Contoh kode ESP32 dengan modul RFID RC522:
 
 ```cpp
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <SPI.h>
 #include <MFRC522.h>
+#include <ArduinoJson.h>
 
 const char* ssid = "NAMA_WIFI";
 const char* password = "PASSWORD_WIFI";
@@ -201,12 +274,24 @@ void loop() {
     http.begin(serverUrl);
     http.addHeader("Content-Type", "application/json");
 
-    String jsonPayload = "{\"device_id\":\"ESP32-GATE-01\",\"rfid_uid\":\"" + uidStr + "\"}";
+    String jsonPayload = "{\"device_id\":\"ESP32-GATE-01\",\"rfid_uid\":\"" + uidStr + "\",\"tipe_scan\":\"auto\"}";
     int httpCode = http.POST(jsonPayload);
     
     if (httpCode > 0) {
       String response = http.getString();
-      Serial.println("Respon: " + response);
+      Serial.println("Respon Server: " + response);
+
+      // Parse status respon
+      StaticJsonDocument<512> doc;
+      deserializeJson(doc, response);
+      const char* status = doc["status"];
+      const char* message = doc["message"];
+
+      if (strcmp(status, "already_attended") == 0) {
+        Serial.println("⚠️ NOTIFIKASI: SUDAH ABSEN HARI INI!");
+      } else {
+        Serial.println("✅ " + String(message));
+      }
     }
     http.end();
   }
@@ -223,8 +308,12 @@ void loop() {
 
 1. Buka aplikasi **Postman**.
 2. Klik tombol **Import** lalu pilih file `absensi_api_postman_collection.json`.
-3. Jalankan request **`1. Login Admin`** untuk otomatis menyimpan token JWT.
-4. Anda dapat langsung menguji seluruh endpoint CRUD Anggota, CRUD Absensi, Cetak Rekap, dan Simulasi Mesin ESP32.
+3. Jalankan request **`1. Login Admin`** untuk otomatis menyimpan token JWT ke variabel `{{jwt_token}}`.
+4. Buka folder **`2. Integrasi Mesin ESP32 & Sync Offline`** untuk mencoba simulasi:
+   - Tap Masuk Realtime
+   - Tap Keluar Realtime
+   - Tap Saat Sudah Absen Lengkap (*Already Attended Response*)
+   - Sync Backdate Offline Data (ISO8601 & Tanggal/Jam Manual)
 
 ---
 

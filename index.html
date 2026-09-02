@@ -1078,15 +1078,16 @@
 
         function handleRealtimeTapEvent(eventData) {
             playChime();
-            const record = eventData.record;
+            const record = eventData.record || {};
             const message = eventData.message;
+            const isAlready = eventData.status === 'already_attended' || eventData.already_recorded;
 
             Swal.fire({
                 toast: true,
                 position: 'top-end',
-                icon: 'success',
-                title: `🎉 ${record.nama}`,
-                text: `${message} (${record.id_mesin})`,
+                icon: isAlready ? 'info' : 'success',
+                title: isAlready ? `ℹ️ ${record.nama || 'Anggota'}` : `🎉 ${record.nama || 'Anggota'}`,
+                text: `${message} (${record.id_mesin || 'ESP32'})`,
                 showConfirmButton: false,
                 timer: 4000,
                 timerProgressBar: true
@@ -1095,7 +1096,7 @@
             const filterTgl = document.getElementById('filter-tanggal').value;
             const today = new Date().toISOString().split('T')[0];
 
-            if (filterTgl === today) {
+            if (filterTgl === today && record.id) {
                 const existingIdx = rawAttendanceData.findIndex(item => item.id === record.id || (item.uid === record.uid && item.tanggal === record.tanggal));
                 if (existingIdx >= 0) {
                     rawAttendanceData[existingIdx] = record;

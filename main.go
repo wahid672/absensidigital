@@ -79,9 +79,12 @@ type AttendanceRecord struct {
 }
 
 type TapRequest struct {
-	DeviceID string `json:"device_id"`
-	RFIDTag  string `json:"rfid_uid"`
-	TipeScan string `json:"tipe_scan"` // "auto", "masuk", "keluar"
+	DeviceID  string `json:"device_id"`
+	RFIDTag   string `json:"rfid_uid"`
+	TipeScan  string `json:"tipe_scan"` // "auto", "masuk", "keluar"
+	Timestamp string `json:"timestamp"` // e.g. "2026-09-02T06:45:30+07:00" (untuk sync offline ESP32)
+	Tanggal   string `json:"tanggal"`   // e.g. "2026-09-02"
+	Waktu     string `json:"waktu"`     // e.g. "06:45:30"
 }
 
 type DeviceInfo struct {
@@ -218,6 +221,88 @@ func seedDummyData() {
 	`, today, today, today, today, today, yesterday, yesterday, yesterday, twoDaysAgo, twoDaysAgo)
 
 	log.Println("✅ Data dummy berhasil di-generate.")
+}
+
+// -------------------------------------------------------------
+// HELPER: PARSE WAKTU & JAM BATAS
+// -------------------------------------------------------------
+func parseDateTime(reqDate, reqTime, reqTimestamp string) (string, string, int, int) {
+	now := time.Now()
+	tDate := now.Format("2006-01-02")
+	tTime := now.Format("15:04:05")
+	tHour := now.Hour()
+	tMin := now.Minute()
+
+	if reqTimestamp != "" {
+		formats := []string{
+			time.RFC3339,
+			"2006-01-02T15:04:05Z07:00",
+			"2006-01-02T15:04:05",
+			"2006-01-02 15:04:05",
+			"2006-01-02",
+		}
+		for _, f := range formats {
+			if pt, err := time.Parse(f, reqTimestamp); err == nil {
+				tDate = pt.Format("2006-01-02")
+				tTime = pt.Format("15:04:05")
+				tHour = pt.Hour()
+				tMin = pt.Minute()
+				return tDate, tTime, tHour, tMin
+			}
+		}
+	}
+
+	if reqDate != "" {
+		tDate = reqDate
+	}
+	if reqTime != "" {
+		tTime = reqTime
+		parts := strings.Split(reqTime, ":")
+		if len(parts) >= 2 {
+			if h, err := strconv.Atoi(parts[0]); err == nil {
+				tHour = h
+			}
+			if m, err := strconv.Atoi(parts[1]); err == nil {
+				tMin = m
+			}
+		}
+	}
+
+	return tDate, tTime, tHour, tMin
+}
+
+func getThresholdTimes() (int, int, int, int) {
+	inH, inM := 7, 0
+	outH, outM := 15, 0
+
+	var jm, jp string
+	db.QueryRow("SELECT value FROM settings WHERE key = 'jam_masuk_batas'").Scan(&jm)
+	db.QueryRow("SELECT value FROM settings WHERE key = 'jam_pulang_batas'").Scan(&jp)
+
+	if jm != "" {
+		p := strings.Split(jm, ":")
+		if len(p) >= 2 {
+			if h, err := strconv.Atoi(p[0]); err == nil {
+				inH = h
+			}
+			if m, err := strconv.Atoi(p[1]); err == nil {
+				inM = m
+			}
+		}
+	}
+	if jp != "" {
+		p := strings.Split(jp, ":")
+		if len(p) >= 2 {
+			if h, err := strconv.Atoi(p[0]); err == nil {
+				outH = h
+			}
+			if m, err := strconv.Atoi(p[1]); err == nil {
+				outM = m
+			}
+		}
+	}
+
+	return inH, inM, outH, outM
 }
 
 // -------------------------------------------------------------
@@ -438,7 +523,6 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 func handleAttendance(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		// Read / Query
 		query := r.URL.Query()
 		tanggal := query.Get("tanggal")
 		bulan := query.Get("bulan")
@@ -494,7 +578,6 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPost:
-		// Create Manual Attendance Record
 		var a AttendanceRecord
 		if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -546,7 +629,6 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPut:
-		// Update Attendance Record
 		var a AttendanceRecord
 		if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -573,7 +655,6 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodDelete:
-		// Delete Attendance Record
 		idStr := r.URL.Query().Get("id")
 		id, err := strconv.Atoi(idStr)
 		if err != nil || id <= 0 {
@@ -597,7 +678,7 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// 3. POST /api/attendance/tap (Realtime ESP32 RFID / Fingerprint Tap)
+// 3. POST /api/attendance/tap (Realtime & Backdate Offline Sync dari ESP32)
 func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
@@ -620,10 +701,12 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		req.DeviceID = "ESP32-GATE-01"
 	}
 
+	// Update timestamp device
 	db.Exec(`INSERT INTO devices (device_id, nama, lokasi, last_seen) 
 		VALUES (?, ?, 'Pintu Masuk', CURRENT_TIMESTAMP) 
 		ON CONFLICT(device_id) DO UPDATE SET last_seen = CURRENT_TIMESTAMP`, req.DeviceID, req.DeviceID)
 
+	// Cari member berdasarkan UID
 	var member Member
 	err := db.QueryRow("SELECT id, uid, nama, tipe, kelas, no_hp FROM members WHERE uid = ?", req.RFIDTag).
 		Scan(&member.ID, &member.UID, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
@@ -639,28 +722,34 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 			member.UID, member.Nama, member.Tipe, member.Kelas)
 	}
 
-	now := time.Now()
-	today := now.Format("2006-01-02")
-	currentTime := now.Format("15:04:05")
+	// Parsing Tanggal & Jam (Mendukung Backdate / Sync Data Offline dari ESP32)
+	tDate, tTime, tHour, tMin := parseDateTime(req.Tanggal, req.Waktu, req.Timestamp)
+	inH, inM, outH, outM := getThresholdTimes()
 
+	// Cek apakah sudah ada catatan absensi pada tanggal tersebut
 	var existing AttendanceRecord
 	checkErr := db.QueryRow(`SELECT id, uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin 
-		FROM attendances WHERE uid = ? AND tanggal = ? ORDER BY id DESC LIMIT 1`, req.RFIDTag, today).
+		FROM attendances WHERE uid = ? AND tanggal = ? ORDER BY id DESC LIMIT 1`, req.RFIDTag, tDate).
 		Scan(&existing.ID, &existing.UID, &existing.Nama, &existing.Tipe, &existing.Kelas, &existing.Tanggal,
 			&existing.WaktuMasuk, &existing.StatusMasuk, &existing.WaktuKeluar, &existing.StatusKeluar, &existing.DeviceID)
 
 	var record AttendanceRecord
 	var actionMessage string
+	var statusCode = http.StatusOK
+	var statusResult = "success"
+	var actionType = "check_in"
+	var alreadyRecorded = false
 
 	if checkErr == sql.ErrNoRows {
+		// KASUS 1: BELUM PERNAH ABSEN PADA TANGGAL INI -> CATAT ABSEN MASUK
 		statusMasuk := "tepat"
-		if now.Hour() > 7 || (now.Hour() == 7 && now.Minute() > 0) {
+		if tHour > inH || (tHour == inH && tMin > inM) {
 			statusMasuk = "telat"
 		}
 
 		res, err := db.Exec(`INSERT INTO attendances (uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin) 
 			VALUES (?, ?, ?, ?, ?, ?, ?, '-', '-', ?)`,
-			member.UID, member.Nama, member.Tipe, member.Kelas, today, currentTime, statusMasuk, req.DeviceID)
+			member.UID, member.Nama, member.Tipe, member.Kelas, tDate, tTime, statusMasuk, req.DeviceID)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "Gagal mencatat absensi masuk.")
 			return
@@ -673,41 +762,71 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 			Nama:         member.Nama,
 			Tipe:         member.Tipe,
 			Kelas:        member.Kelas,
-			Tanggal:      today,
-			WaktuMasuk:   currentTime,
+			Tanggal:      tDate,
+			WaktuMasuk:   tTime,
 			StatusMasuk:  statusMasuk,
 			WaktuKeluar:  "-",
 			StatusKeluar: "-",
 			DeviceID:     req.DeviceID,
 		}
+		actionType = "check_in"
 		actionMessage = fmt.Sprintf("Absen Masuk Berhasil (%s - %s)", member.Nama, statusMasuk)
-	} else {
-		statusKeluar := "tepat"
-		if now.Hour() < 15 {
-			statusKeluar = "cepat"
+
+	} else if existing.WaktuKeluar == "-" || existing.WaktuKeluar == "" {
+		// KASUS 2: SUDAH ABSEN MASUK, BELUM ABSEN KELUAR
+		if req.TipeScan == "masuk" {
+			// Permintaan eksplisit tap masuk, namun sudah masuk
+			statusResult = "already_attended"
+			actionType = "already_check_in"
+			alreadyRecorded = true
+			record = existing
+			actionMessage = fmt.Sprintf("%s sudah melakukan absen masuk pada jam %s", member.Nama, existing.WaktuMasuk)
+		} else {
+			// Catat Absen Keluar
+			statusKeluar := "tepat"
+			if tHour < outH || (tHour == outH && tMin < outM) {
+				statusKeluar = "cepat"
+			}
+
+			db.Exec(`UPDATE attendances SET waktu_keluar = ?, status_keluar = ?, id_mesin = ? WHERE id = ?`,
+				tTime, statusKeluar, req.DeviceID, existing.ID)
+
+			record = existing
+			record.WaktuKeluar = tTime
+			record.StatusKeluar = statusKeluar
+			record.DeviceID = req.DeviceID
+			actionType = "check_out"
+			actionMessage = fmt.Sprintf("Absen Keluar Berhasil (%s - %s)", member.Nama, statusKeluar)
 		}
 
-		db.Exec(`UPDATE attendances SET waktu_keluar = ?, status_keluar = ?, id_mesin = ? WHERE id = ?`,
-			currentTime, statusKeluar, req.DeviceID, existing.ID)
-
+	} else {
+		// KASUS 3: SUDAH LENGKAP ABSEN MASUK DAN KELUAR PADA TANGGAL INI
+		statusResult = "already_attended"
+		actionType = "already_completed"
+		alreadyRecorded = true
 		record = existing
-		record.WaktuKeluar = currentTime
-		record.StatusKeluar = statusKeluar
-		record.DeviceID = req.DeviceID
-		actionMessage = fmt.Sprintf("Absen Keluar Berhasil (%s - %s)", member.Nama, statusKeluar)
+		actionMessage = fmt.Sprintf("%s sudah lengkap absen masuk (%s) & keluar (%s) pada tgl %s",
+			member.Nama, existing.WaktuMasuk, existing.WaktuKeluar, existing.Tanggal)
 	}
 
+	log.Printf("[ESP32 TAP] %s | Tgl: %s %s | Mesin: %s", actionMessage, tDate, tTime, req.DeviceID)
+
+	// Broadcast SSE Live
 	broadcastSSE("attendance_tap", map[string]interface{}{
-		"action":  actionMessage,
-		"record":  record,
-		"time":    currentTime,
-		"message": actionMessage,
+		"action":           actionType,
+		"status":           statusResult,
+		"already_recorded": alreadyRecorded,
+		"record":           record,
+		"time":             tTime,
+		"message":          actionMessage,
 	})
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":  "success",
-		"message": actionMessage,
-		"data":    record,
+	writeJSON(w, statusCode, map[string]interface{}{
+		"status":           statusResult,
+		"action":           actionType,
+		"message":          actionMessage,
+		"already_recorded": alreadyRecorded,
+		"data":             record,
 	})
 }
 
@@ -876,7 +995,6 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Reset Attendance Data Only (Hapus Seluruh Data Absensi)
 func handleResetAttendance(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
@@ -895,7 +1013,6 @@ func handleResetAttendance(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Reset Total (Hapus Absensi + Data Anggota)
 func handleResetAll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
@@ -911,7 +1028,6 @@ func handleResetAll(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Seed Dummy Data (Generate data contoh)
 func handleSeedDummy(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
@@ -954,7 +1070,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":    "ok",
 		"database":  "sqlite3",
 		"timestamp": time.Now().Format(time.RFC3339),
-		"app":       "SIAKAD Absensi Digital IoT ESP32 (CRUD Absensi + Settings)",
+		"app":       "SIAKAD Absensi Digital IoT ESP32 (Backdate & Offline Sync Support)",
 	})
 }
 
@@ -996,9 +1112,9 @@ func main() {
 
 	// REST API Endpoints
 	mux.HandleFunc("/api/login", handleLogin)
-	mux.HandleFunc("/api/attendance", authMiddleware(handleAttendance)) // GET, POST, PUT, DELETE
-	mux.HandleFunc("/api/attendance/tap", handleTapAttendance)           // Public untuk ESP32
-	mux.HandleFunc("/api/members", authMiddleware(handleMembers))       // GET, POST, PUT, DELETE
+	mux.HandleFunc("/api/attendance", authMiddleware(handleAttendance))
+	mux.HandleFunc("/api/attendance/tap", handleTapAttendance) // Public untuk ESP32 (mendukung backdate & offline sync)
+	mux.HandleFunc("/api/members", authMiddleware(handleMembers))
 	mux.HandleFunc("/api/devices", authMiddleware(handleDevices))
 	mux.HandleFunc("/api/settings", authMiddleware(handleSettings))
 	mux.HandleFunc("/api/settings/reset-attendance", authMiddleware(handleResetAttendance))
