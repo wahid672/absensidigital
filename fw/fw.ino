@@ -1723,7 +1723,7 @@ void handleWebDownloadJsonTemplates() {
   showScannedMessage("Backup Selesai!", String(totalFound) + " Jari Diekspor");
 }
 
-// 2. Upload Template (Restore File JSON: Delete All Dulu, Baru Masukkan Template)
+// 2. Upload Template (Restore File JSON ke Sensor)
 void handleWebUploadJsonTemplates() {
   if (!isWebAuthenticated()) {
     webServer.send(401, "application/json", "{\"status\":\"error\",\"message\":\"Sesi login telah habis. Silakan login kembali.\"}");
@@ -1743,32 +1743,17 @@ void handleWebUploadJsonTemplates() {
     return;
   }
 
-  // LANGKAH 1: DELETE ALL DULU di Sensor & Server
-  Serial.println("\n[JSON RESTORE] Mengosongkan seluruh memori sensor (Delete All) sebelum restore...");
+  // Langsung masukkan template dari JSON ke sensor (tanpa proses format otomatis)
   lcd.clear();
   printCentered("Restore Template", 0);
-  printCentered("Reset Memori...", 1);
+  printCentered("Menulis Sensor..", 1);
   finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
 
-  if (finger.emptyDatabase() != FINGERPRINT_OK) {
-    webServer.send(500, "application/json", "{\"status\":\"error\",\"message\":\"Gagal mereset memori sensor sidik jari!\"}");
-    return;
-  }
-  syncDeleteAll(); // Hapus di database server
-
-  // Beri jeda 2 detik agar mikrokontroler sensor R503 selesai menghapus seluruh sektor flash
-  delay(2000);
-  while (mySerial.available()) { mySerial.read(); delay(1); }
-  finger.getParameters(); // Verifikasi sensor siap menerima instruksi
-  delay(50);
-  while (mySerial.available()) { mySerial.read(); delay(1); }
-
-  // LANGKAH 2: Masukkan seluruh template dari JSON ke sensor
   JsonArray templates = doc.containsKey("templates") ? doc["templates"].as<JsonArray>() : doc.as<JsonArray>();
   int totalTemplates = templates.size();
   int successCount = 0;
 
-  Serial.printf("[JSON RESTORE] Memulai penulisan %d template ke sensor...\n", totalTemplates);
+  Serial.printf("\n[JSON RESTORE] Memulai penulisan %d template ke sensor...\n", totalTemplates);
 
   for (JsonObject item : templates) {
     int fId = item["fingerprint_id"].as<int>();
@@ -1783,7 +1768,7 @@ void handleWebUploadJsonTemplates() {
         ok = saveFingerprintTemplate(fId, hexData);
         if (ok) break;
         Serial.printf("(Retry %d)... ", attempt);
-        delay(300);
+        delay(200);
         while (mySerial.available()) { mySerial.read(); delay(1); }
       }
 
@@ -1793,7 +1778,7 @@ void handleWebUploadJsonTemplates() {
       } else {
         Serial.println("GAGAL!");
       }
-      delay(50);
+      delay(40);
     }
   }
 
@@ -1811,7 +1796,7 @@ void handleWebUploadJsonTemplates() {
 
   DynamicJsonDocument resp(512);
   resp["status"] = "success";
-  resp["message"] = "Berhasil! Memori dikosongkan dan " + String(successCount) + " dari " + String(totalTemplates) + " template sidik jari berhasil di-restore ke sensor.";
+  resp["message"] = "Berhasil! " + String(successCount) + " dari " + String(totalTemplates) + " template sidik jari berhasil di-restore ke sensor.";
   resp["count"] = successCount;
 
   String respStr;
@@ -1857,7 +1842,7 @@ void handleWebRoot() {
   html += ".btn-dark{background:#475569;} .btn-dark:hover{background:#334155;}";
   html += ".footer{text-align:center;font-size:12px;color:#94a3b8;margin-top:20px;}";
   html += ".modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.7);display:flex;align-items:center;justify-content:center;z-index:999;backdrop-filter:blur(4px);}";
-  html += ".modal-content{background:#fff;padding:24px;border-radius:16px;max-width:440px;width:90%;box-shadow:0 12px 32px rgba(0,0,0,0.3);text-align:center;}";
+  html += ".modal-content{background:#fff;padding:24px;border-radius:16px;max-width:460px;width:90%;box-shadow:0 12px 32px rgba(0,0,0,0.3);text-align:center;}";
   html += ".modal-content h2{margin-top:0;font-size:18px;color:#0284c7;margin-bottom:12px;}";
   html += ".alert-box{background:#fef3c7;color:#92400e;padding:12px;border-radius:8px;font-size:12px;margin-bottom:16px;border:1px solid #fde68a;text-align:left;line-height:1.4;}";
   html += "</style></head><body>";
@@ -1883,18 +1868,29 @@ void handleWebRoot() {
   html += "<div id='uploadModal' class='modal' style='display:none;'>";
   html += "<div class='modal-content'>";
   html += "<h2>Upload Template JSON</h2>";
-  html += "<div class='alert-box'>";
-  html += "<strong>⚠️ PERHATIAN PENTING:</strong><br>";
-  html += "Proses ini akan <strong>MENGHAPUS SEMUA (Delete All)</strong> sidik jari yang ada di sensor terlebih dahulu, lalu memasukkan seluruh template baru dari file JSON.";
-  html += "</div>";
+
+  if (totalJari > 0) {
+    html += "<div class='alert-box' style='background:#fef2f2;color:#991b1b;border:1px solid #fecaca;'>";
+    html += "<strong>⚠️ PERINGATAN: Memori Sensor Belum 0!</strong><br>";
+    html += "Saat ini masih ada <strong>" + String(totalJari) + " sidik jari</strong> tersimpan di sensor.<br><br>";
+    html += "Agar hasil upload tidak bentrok atau gagal, <strong>sangat disarankan untuk Hapus Semua Sidik Jari terlebih dahulu sampai 0</strong>.<br><br>";
+    html += "<a href='/del-all-finger' class='btn btn-danger' style='margin:0;padding:10px;' onclick=\"return confirm('PERINGATAN! Seluruh data sidik jari di sensor DAN database server akan DIHAPUS PERMANEN. Lanjutkan?');\">🗑️ Hapus Semua Sidik Jari Sekarang</a>";
+    html += "</div>";
+  } else {
+    html += "<div class='alert-box' style='background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;'>";
+    html += "<strong>✅ Memori Bersih (0 Sidik Jari):</strong><br>";
+    html += "Sensor dalam kondisi kosong (0) dan siap menerima template baru dari file JSON.";
+    html += "</div>";
+  }
+
   html += "<div style='margin:16px 0;text-align:left;'>";
   html += "<label style='display:block;font-weight:bold;font-size:12px;margin-bottom:6px;color:#334155;'>Pilih File JSON Template:</label>";
   html += "<input type='file' id='jsonFileInput' accept='.json,application/json' style='width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:8px;box-sizing:border-box;'>";
   html += "</div>";
   html += "<div id='uploadStatus' style='display:none;margin-bottom:12px;font-size:12px;color:#0284c7;font-weight:bold;'></div>";
   html += "<div style='display:flex;gap:10px;'>";
-  html += "<button type='button' class='btn' style='background:#64748b;margin:0;' onclick='closeUploadModal()'>Batal</button>";
-  html += "<button type='button' id='btnSubmitUpload' class='btn btn-success' style='margin:0;' onclick='submitJsonUpload()'>Mulai Restore</button>";
+  html += "<button type='button' class='btn' style='background:#64748b;margin:0;' onclick='closeUploadModal()'>Tutup</button>";
+  html += "<button type='button' id='btnSubmitUpload' class='btn btn-success' style='margin:0;' onclick='submitJsonUpload(" + String(totalJari) + ")'>Mulai Restore</button>";
   html += "</div>";
   html += "</div></div>";
 
@@ -1902,14 +1898,16 @@ void handleWebRoot() {
   html += "<script>";
   html += "function openUploadModal(){document.getElementById('uploadModal').style.display='flex';}";
   html += "function closeUploadModal(){document.getElementById('uploadModal').style.display='none';}";
-  html += "async function submitJsonUpload(){";
+  html += "async function submitJsonUpload(totalJariNow){";
   html += "  var f=document.getElementById('jsonFileInput').files;";
   html += "  if(!f||f.length===0){alert('Silakan pilih file JSON terlebih dahulu!');return;}";
-  html += "  if(!confirm('Yakin ingin MENGHAPUS SEMUA sidik jari di sensor dan me-restore file JSON ini?'))return;";
+  html += "  if(totalJariNow>0){";
+  html += "    if(!confirm('Peringatan: Jumlah sidik jari di sensor masih '+totalJariNow+' (belum 0).\\nSangat disarankan untuk Hapus Semua Sidik Jari terlebih dahulu agar tidak bentrok.\\n\\nTetap lanjutkan upload?'))return;";
+  html += "  }";
   html += "  var btn=document.getElementById('btnSubmitUpload');";
   html += "  var st=document.getElementById('uploadStatus');";
   html += "  btn.disabled=true;btn.innerText='Memproses...';";
-  html += "  st.style.display='block';st.innerText='Membaca file JSON & merestore sensor...';";
+  html += "  st.style.display='block';st.innerText='Membaca file JSON & merestore template ke sensor...';";
   html += "  var reader=new FileReader();";
   html += "  reader.onload=async function(e){";
   html += "    try{";
