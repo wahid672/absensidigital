@@ -14,10 +14,39 @@ import CetakView from './views/CetakView';
 import PengaturanView from './views/PengaturanView';
 
 export default function App() {
+  const getTabFromPath = () => {
+    const rawPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+    const validTabs = ['dashboard', 'santri', 'guru', 'fingerprint', 'kelas', 'jabatan', 'cetak', 'pengaturan'];
+    if (validTabs.includes(rawPath)) {
+      return rawPath;
+    }
+    return 'dashboard';
+  };
+
   const [isAuthenticated, setIsAuthenticated] = useState(!!getAuthToken());
   const [user, setUser] = useState(getUserInfo());
-  const [currentTab, setCurrentTab] = useState('dashboard');
+  const [currentTab, setCurrentTabState] = useState(getTabFromPath());
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  const setCurrentTab = (tab, updateHistory = true) => {
+    setCurrentTabState(tab);
+    if (updateHistory) {
+      const targetPath = tab === 'dashboard' ? '/dashboard' : `/${tab}`;
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState({ tab }, '', targetPath);
+      }
+    }
+  };
+
+  // Sync route on browser Back / Forward buttons (popstate)
+  useEffect(() => {
+    const handlePopState = () => {
+      const targetTab = getTabFromPath();
+      setCurrentTabState(targetTab);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const [membersCache, setMembersCache] = useState([]);
   const [classesCache, setClassesCache] = useState([]);
@@ -148,7 +177,8 @@ export default function App() {
   const handleLoginSuccess = () => {
     setIsAuthenticated(true);
     setUser(getUserInfo());
-    setCurrentTab('dashboard');
+    const initialTab = getTabFromPath();
+    setCurrentTab(initialTab);
   };
 
   const handleLogout = () => {

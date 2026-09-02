@@ -251,19 +251,42 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
 
       {/* LEMBAR PRINT / PDF PREVIEW */}
       <div className="bg-white p-8 sm:p-10 rounded-2xl border border-slate-200 shadow-sm print-area">
-        <div className="text-center border-b-2 border-slate-900 pb-4 mb-6">
-          <div className="flex items-center justify-center gap-3 mb-1">
-            <School className="w-8 h-8 text-slate-900" />
-            <div>
-              <h1 className="text-xl font-bold tracking-wide uppercase text-slate-900">
+        {/* KOP SURAT RESMI */}
+        <div className="border-b-4 border-double border-slate-900 pb-4 mb-6">
+          <div className="flex items-center justify-between gap-4">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center flex-shrink-0">
+              {settings.instansi_logo ? (
+                <img 
+                  src={settings.instansi_logo} 
+                  alt="Logo Lembaga" 
+                  className="max-w-full max-h-full object-contain"
+                />
+              ) : (
+                <School className="w-12 h-12 text-slate-800" />
+              )}
+            </div>
+
+            <div className="flex-1 text-center pr-4">
+              <h1 className="text-xl sm:text-2xl font-black tracking-wide uppercase text-slate-900 leading-tight">
                 {settings.instansi_nama || 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL'}
               </h1>
-              <p className="text-xs text-slate-600">Sistem Presensi & Kehadiran Otomatis Berbasis IoT ESP32</p>
+              <p className="text-xs font-semibold text-slate-700 mt-1">
+                Sistem Presensi & Kehadiran Otomatis Berbasis IoT ESP32 & RFID/Fingerprint
+              </p>
+              <p className="text-[11px] text-slate-600 mt-0.5">
+                Alamat: {settings.instansi_alamat || 'Jl. Pesantren Digital No. 01'} • Wilayah: {kotaInstansi}
+              </p>
+            </div>
+
+            {/* Placeholder kanan agar teks tetap tepat di tengah */}
+            <div className="w-20 h-20 sm:w-24 sm:h-24 hidden sm:block flex-shrink-0 opacity-0 pointer-events-none">
+              {settings.instansi_logo ? (
+                <img src={settings.instansi_logo} alt="" className="max-w-full max-h-full" />
+              ) : (
+                <div className="w-12 h-12" />
+              )}
             </div>
           </div>
-          <p className="text-[11px] text-slate-500 italic">
-            Alamat: {settings.instansi_alamat || 'Jl. Pesantren Digital No. 01'} • Wilayah: {kotaInstansi}
-          </p>
         </div>
 
         {/* HEADER DOKUMEN SESUAI MODE */}

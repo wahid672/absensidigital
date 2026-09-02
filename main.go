@@ -2147,17 +2147,35 @@ func spaHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/")
 		if path == "" {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			fileServer.ServeHTTP(w, r)
 			return
 		}
 
 		f, err := distFS.Open(path)
 		if err != nil {
+			// SPA Route Fallback (e.g. /dashboard, /santri, /pengaturan) -> serve index.html
 			r.URL.Path = "/"
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			fileServer.ServeHTTP(w, r)
 			return
 		}
+
+		fi, err := f.Stat()
 		f.Close()
+
+		if err != nil || fi.IsDir() {
+			// Directory request -> serve index.html
+			r.URL.Path = "/"
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// Static assets cache
+		if strings.HasPrefix(path, "assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
 
 		fileServer.ServeHTTP(w, r)
 	})

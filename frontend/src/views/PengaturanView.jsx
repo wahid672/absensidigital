@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Database, School, CloudDownload, Broom, Trash2, Save, Loader2, MapPin, CreditCard, ShieldAlert, CheckCircle2, Sparkles, Building2, Cpu, Copy } from 'lucide-react';
+import { Database, School, CloudDownload, Broom, Trash2, Save, Loader2, MapPin, CreditCard, ShieldAlert, CheckCircle2, Sparkles, Building2, Cpu, Copy, Image as ImageIcon, Upload, XCircle } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 
@@ -8,6 +8,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     instansi_nama: settings.instansi_nama || '',
     instansi_alamat: settings.instansi_alamat || '',
     instansi_kota: settings.instansi_kota || 'Kota Santri',
+    instansi_logo: settings.instansi_logo || '',
     app_mode: settings.app_mode || 'pesantren',
     auto_register_card: settings.auto_register_card !== undefined ? settings.auto_register_card : '1',
     jam_masuk_batas: settings.jam_masuk_batas || '07:00',
@@ -22,6 +23,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
       instansi_nama: settings.instansi_nama || '',
       instansi_alamat: settings.instansi_alamat || '',
       instansi_kota: settings.instansi_kota || 'Kota Santri',
+      instansi_logo: settings.instansi_logo || '',
       app_mode: settings.app_mode || 'pesantren',
       auto_register_card: settings.auto_register_card !== undefined ? settings.auto_register_card : '1',
       jam_masuk_batas: settings.jam_masuk_batas || '07:00',
@@ -29,6 +31,56 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
       kepala_nama: settings.kepala_nama || ''
     });
   }, [settings]);
+
+  const handleLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      Swal.fire('Format Salah', 'Harap pilih file gambar (PNG, JPG, JPEG, SVG, WebP)', 'warning');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      Swal.fire('File Terlalu Besar', 'Ukuran logo maksimal 2 MB', 'warning');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      // Resize image if too large to save space and render crisply
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 320;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const optimizedDataUrl = canvas.toDataURL('image/png');
+        setFormData(prev => ({ ...prev, instansi_logo: optimizedDataUrl }));
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    setFormData(prev => ({ ...prev, instansi_logo: '' }));
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -43,7 +95,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
         Swal.fire({
           icon: 'success',
           title: 'Berhasil',
-          text: 'Pengaturan dan mode instansi berhasil disimpan',
+          text: 'Pengaturan dan logo instansi berhasil disimpan permanen',
           timer: 1500,
           showConfirmButton: false
         });
@@ -144,7 +196,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     <section className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-5xl w-full mx-auto">
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         <h3 className="text-lg font-bold text-slate-800">Pengaturan Sistem & Kebijakan Aplikasi</h3>
-        <p className="text-xs text-slate-500">Pilih mode istilah instansi (Umum vs Pesantren), pendaftaran kartu baru, dan kop surat PDF</p>
+        <p className="text-xs text-slate-500">Pilih mode istilah instansi (Umum vs Pesantren), logo kop surat PDF, pendaftaran kartu baru, dan batas jam</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -355,97 +407,161 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
           </div>
         </div>
 
-        {/* KOLOM KANAN: PENGATURAN PROFIL & JAM */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center text-lg">
-              <School className="w-5 h-5" />
+        {/* KOLOM KANAN: PENGATURAN LOGO, PROFIL & JAM */}
+        <div className="space-y-6">
+          {/* LOGO INSTANSI SECTION */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg">
+                <ImageIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-sm text-slate-800">Logo Lembaga / Instansi</h4>
+                <p className="text-xs text-slate-400">Tampil pada Kop Surat Cetak Laporan PDF</p>
+              </div>
             </div>
-            <div>
-              <h4 className="font-bold text-sm text-slate-800">Profil Instansi & Kota Dokumen</h4>
-              <p className="text-xs text-slate-400">Atur kop surat, kota tanda tangan PDF, dan batas jam</p>
+
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 pt-2">
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                <div className="w-24 h-24 rounded-2xl bg-white border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden shadow-inner flex-shrink-0 p-1">
+                  {formData.instansi_logo ? (
+                    <img 
+                      src={formData.instansi_logo} 
+                      alt="Logo Lembaga" 
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <div className="text-center p-2">
+                      <School className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+                      <span className="text-[10px] text-slate-400 block leading-tight">Default Logo</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 space-y-2 text-center sm:text-left">
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-semibold shadow transition-all">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload Logo Baru</span>
+                      <input 
+                        type="file" 
+                        accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp" 
+                        onChange={handleLogoUpload} 
+                        className="hidden" 
+                      />
+                    </label>
+
+                    {formData.instansi_logo && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-medium border border-rose-200 transition-all"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Hapus Logo</span>
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Format yang didukung: PNG, JPG, SVG, WebP (Maks. 2 MB). Logo disimpan permanen di database.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
-          <form onSubmit={handleSave} className="space-y-3 pt-2 border-t border-slate-100">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {isPesantren ? 'Nama Yayasan / Pesantren' : 'Nama Sekolah / Madrasah'}
-              </label>
-              <input 
-                type="text" 
-                value={formData.instansi_nama} 
-                onChange={(e) => setFormData({ ...formData, instansi_nama: e.target.value })}
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 font-medium"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Alamat Instansi</label>
-              <input 
-                type="text" 
-                value={formData.instansi_alamat} 
-                onChange={(e) => setFormData({ ...formData, instansi_alamat: e.target.value })}
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-primary-600" />
-                <span>Kota / Wilayah Instansi (Untuk Tanda Tangan PDF)</span>
-              </label>
-              <input 
-                type="text" 
-                value={formData.instansi_kota} 
-                onChange={(e) => setFormData({ ...formData, instansi_kota: e.target.value })}
-                placeholder="Contoh: Jombang / Surabaya / Jakarta" 
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 font-medium text-primary-900"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Batas Jam Masuk (Telat)</label>
-                <input 
-                  type="time" 
-                  value={formData.jam_masuk_batas} 
-                  onChange={(e) => setFormData({ ...formData, jam_masuk_batas: e.target.value })}
-                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
+          {/* PROFIL INSTANSI & BATAS JAM */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center text-lg">
+                <School className="w-5 h-5" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Batas Jam Pulang</label>
-                <input 
-                  type="time" 
-                  value={formData.jam_pulang_batas} 
-                  onChange={(e) => setFormData({ ...formData, jam_pulang_batas: e.target.value })}
-                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
+                <h4 className="font-bold text-sm text-slate-800">Profil Instansi & Kota Dokumen</h4>
+                <p className="text-xs text-slate-400">Atur kop surat, kota tanda tangan PDF, dan batas jam</p>
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {isPesantren ? 'Nama Pengasuh / Mudir Pesantren' : 'Nama Kepala Sekolah'}
-              </label>
-              <input 
-                type="text" 
-                value={formData.kepala_nama} 
-                onChange={(e) => setFormData({ ...formData, kepala_nama: e.target.value })}
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
+            <form onSubmit={handleSave} className="space-y-3 pt-2 border-t border-slate-100">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {isPesantren ? 'Nama Yayasan / Pesantren' : 'Nama Sekolah / Madrasah'}
+                </label>
+                <input 
+                  type="text" 
+                  value={formData.instansi_nama} 
+                  onChange={(e) => setFormData({ ...formData, instansi_nama: e.target.value })}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 font-medium"
+                />
+              </div>
 
-            <button 
-              type="submit" 
-              disabled={saving}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow transition-all mt-2 disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span>Simpan Seluruh Pengaturan</span>
-            </button>
-          </form>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Alamat Instansi</label>
+                <input 
+                  type="text" 
+                  value={formData.instansi_alamat} 
+                  onChange={(e) => setFormData({ ...formData, instansi_alamat: e.target.value })}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-primary-600" />
+                  <span>Kota / Wilayah Instansi (Untuk Tanda Tangan PDF)</span>
+                </label>
+                <input 
+                  type="text" 
+                  value={formData.instansi_kota} 
+                  onChange={(e) => setFormData({ ...formData, instansi_kota: e.target.value })}
+                  placeholder="Contoh: Jombang / Surabaya / Jakarta" 
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 font-medium text-primary-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Batas Jam Masuk (Telat)</label>
+                  <input 
+                    type="time" 
+                    value={formData.jam_masuk_batas} 
+                    onChange={(e) => setFormData({ ...formData, jam_masuk_batas: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Batas Jam Pulang</label>
+                  <input 
+                    type="time" 
+                    value={formData.jam_pulang_batas} 
+                    onChange={(e) => setFormData({ ...formData, jam_pulang_batas: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {isPesantren ? 'Nama Pengasuh / Mudir Pesantren' : 'Nama Kepala Sekolah'}
+                </label>
+                <input 
+                  type="text" 
+                  value={formData.kepala_nama} 
+                  onChange={(e) => setFormData({ ...formData, kepala_nama: e.target.value })}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={saving}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow transition-all mt-2 disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>Simpan Seluruh Pengaturan</span>
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     </section>
