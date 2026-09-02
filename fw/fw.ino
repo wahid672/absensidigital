@@ -28,6 +28,7 @@
 #include <Adafruit_Fingerprint.h> 
 #include <WebServer.h>
 #include <ArduinoOTA.h>
+#include "mbedtls/base64.h"
 
 // Instansiasi Web Server ESP32 (Port 80)
 WebServer webServer(80); 
@@ -1753,21 +1754,40 @@ void handleWebUploadBinTemplates() {
   }
 
   String body = webServer.arg("plain");
-  size_t dataLen = body.length();
-  const uint8_t* rawData = (const uint8_t*)body.c_str();
-
-  if (dataLen < 6) {
-    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"File BIN kosong atau rusak!\"}");
+  if (body.length() == 0) {
+    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Payload data upload kosong!\"}");
     return;
   }
 
-  // Validasi Magic Header FPBK
-  if (rawData[0] != 'F' || rawData[1] != 'P' || rawData[2] != 'B' || rawData[3] != 'K') {
+  DynamicJsonDocument doc(98304);
+  DeserializationError err = deserializeJson(doc, body);
+  if (err || !doc.containsKey("bin_base64")) {
+    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Format data upload tidak valid!\"}");
+    return;
+  }
+
+  String b64 = doc["bin_base64"].as<String>();
+  if (b64.length() == 0) {
+    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Data file .bin kosong!\"}");
+    return;
+  }
+
+  static uint8_t rawBuffer[65536];
+  size_t dataLen = 0;
+  int b64Res = mbedtls_base64_decode(rawBuffer, sizeof(rawBuffer), &dataLen, (const unsigned char*)b64.c_str(), b64.length());
+
+  if (b64Res != 0 || dataLen < 6) {
+    webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Gagal membaca data biner file .bin!\"}");
+    return;
+  }
+
+  // 1. Validasi Magic Header FPBK
+  if (rawBuffer[0] != 'F' || rawBuffer[1] != 'P' || rawBuffer[2] != 'B' || rawBuffer[3] != 'K') {
     webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Format file bukan backup fingerprint (.bin) yang valid (Header mismatch)!\"}");
     return;
   }
 
-  uint16_t totalTemplates = rawData[4] | ((uint16_t)rawData[5] << 8);
+  uint16_t totalTemplates = rawBuffer[4] | ((uint16_t)rawBuffer[5] << 8);
   if (dataLen < (size_t)(6 + totalTemplates * 514)) {
     webServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Ukuran file BIN tidak lengkap!\"}");
     return;
@@ -1783,8 +1803,8 @@ void handleWebUploadBinTemplates() {
 
   size_t offset = 6;
   for (int i = 0; i < totalTemplates; i++) {
-    uint16_t fId = rawData[offset] | ((uint16_t)rawData[offset + 1] << 8);
-    const uint8_t* tmplBytes = &rawData[offset + 2];
+    uint16_t fId = rawBuffer[offset] | ((uint16_t)rawBuffer[offset + 1] << 8);
+    const uint8_t* tmplBytes = &rawBuffer[offset + 2];
     offset += 514;
 
     if (fId > 0 && fId <= MAX_FINGERPRINTS) {
@@ -1939,10 +1959,18 @@ void handleWebRoot() {
   html += "  var reader=new FileReader();";
   html += "  reader.onload=async function(e){";
   html += "    try{";
+  html += "      var bytes=new Uint8Array(e.target.result);";
+  html += "      var binary='';";
+  html += "      var chunk=8192;";
+  html += "      for(var i=0;i<bytes.byteLength;i+=chunk){";
+  html += "        var sub=bytes.subarray(i,Math.min(i+chunk,bytes.byteLength));";
+  html += "        binary+=String.fromCharCode.apply(null,sub);";
+  html += "      }";
+  html += "      var b64=btoa(binary);";
   html += "      var res=await fetch('/upload-bin',{";
   html += "        method:'POST',";
-  html += "        headers:{'Content-Type':'application/octet-stream'},";
-  html += "        body:e.target.result";
+  html += "        headers:{'Content-Type':'application/json'},";
+  html += "        body:JSON.stringify({bin_base64:b64})";
   html += "      });";
   html += "      var data=await res.json();";
   html += "      alert(data.message||'Proses selesai!');";
