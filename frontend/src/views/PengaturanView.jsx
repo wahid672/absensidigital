@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Database, School, CloudDownload, Broom, Trash2, Save, Loader2, MapPin, CreditCard, ShieldAlert, CheckCircle2, Sparkles, Building2 } from 'lucide-react';
+import { Database, School, CloudDownload, Broom, Trash2, Save, Loader2, MapPin, CreditCard, ShieldAlert, CheckCircle2, Sparkles, Building2, Cpu, Copy } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 
@@ -247,7 +247,75 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
             </div>
           </div>
 
-          {/* 3. DUMMY & RESET */}
+          {/* 3. KONFIGURASI IOT & API KEY MESIN ESP32 */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center text-lg">
+                <Cpu className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-sm text-slate-800">Konfigurasi Mesin ESP32 (IoT API)</h4>
+                <p className="text-xs text-slate-400">Endpoint & API Key untuk dimasukkan ke file fw.ino</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-2 border-t border-slate-100 text-xs">
+              <div>
+                <label className="block text-slate-500 font-semibold mb-1">IoT Secret API Key:</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="text" 
+                    readOnly 
+                    value="KUNCI_API_PRESENSI_V1_2026" 
+                    className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-700 select-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText("KUNCI_API_PRESENSI_V1_2026");
+                      Swal.fire({ icon: 'success', title: 'Tersalin', text: 'API Key disalin ke clipboard!', timer: 1200, showConfirmButton: false });
+                    }}
+                    className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 border border-slate-300"
+                    title="Salin API Key"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-500 font-semibold mb-1">Server URL Endpoint:</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="text" 
+                    readOnly 
+                    value={`${window.location.origin}/api/presensi/api_presensi.php`} 
+                    className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-[11px] text-primary-700 select-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/api/presensi/api_presensi.php`);
+                      Swal.fire({ icon: 'success', title: 'Tersalin', text: 'URL Endpoint disalin ke clipboard!', timer: 1200, showConfirmButton: false });
+                    }}
+                    className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 border border-slate-300"
+                    title="Salin URL Endpoint"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] font-mono text-slate-600 space-y-1">
+                <p className="text-slate-500 font-sans font-bold">// Baris 41-45 di fw.ino:</p>
+                <p className="text-sky-700">const char* serverUrl = "{window.location.origin}/api/presensi/api_presensi.php";</p>
+                <p className="text-emerald-700">const char* apiKey    = "KUNCI_API_PRESENSI_V1_2026";</p>
+                <p className="text-amber-700">const char* deviceId  = "PRESENSI-V1";</p>
+              </div>
+            </div>
+          </div>
+
+          {/* 4. DUMMY & RESET */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg">
