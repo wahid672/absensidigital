@@ -8,9 +8,9 @@ import {
   Printer, 
   Settings, 
   LogOut, 
-  UserCheck, 
   X 
 } from 'lucide-react';
+import AppLogo from './AppLogo';
 
 export default function Sidebar({ 
   currentTab, 
@@ -79,14 +79,12 @@ export default function Sidebar({
         }`}
       >
         {/* Brand Header */}
-        <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800 bg-slate-950/60">
+        <div className="h-16 flex items-center justify-between px-5 border-b border-slate-800 bg-slate-950/70">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary-600 to-sky-400 flex items-center justify-center text-white shadow-md shadow-primary-500/20">
-              <UserCheck className="w-5 h-5" />
-            </div>
+            <AppLogo className="w-9 h-9" glowing={false} />
             <div>
               <h1 className="font-bold text-sm tracking-tight text-white leading-tight">SIAKAD ABSENSI</h1>
-              <p className="text-[10px] text-slate-400 font-mono">IoT ESP32 & SQLite</p>
+              <p className="text-[10px] text-primary-400 font-mono">IoT ESP32 & SQLite</p>
             </div>
           </div>
 

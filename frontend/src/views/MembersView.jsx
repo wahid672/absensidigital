@@ -91,7 +91,7 @@ export default function MembersView({
     });
   };
 
-  // 1. DOWNLOAD TEMPLATE EXCEL (.XLSX)
+  // 1. DOWNLOAD TEMPLATE EXCEL (.XLSX) DENGAN LEBAR KOLOM & FORMAT RAPI
   const downloadTemplate = () => {
     const wb = XLSX.utils.book_new();
 
@@ -122,17 +122,34 @@ export default function MembersView({
       ];
 
       const ws = XLSX.utils.json_to_sheet(sampleData);
+      // Format lebar kolom agar tidak terpotong saat dibuka di Excel
+      ws['!cols'] = [
+        { wch: 18 }, // NIS
+        { wch: 32 }, // Nama Lengkap
+        { wch: 20 }, // UID Kartu RFID
+        { wch: 22 }, // Nama Kelas
+        { wch: 20 }  // No WhatsApp
+      ];
+      ws['!rows'] = [{ hpx: 26 }, { hpx: 20 }, { hpx: 20 }, { hpx: 20 }];
+
       XLSX.utils.book_append_sheet(wb, ws, isPesantren ? 'DATA SANTRI' : 'DATA SISWA');
 
       // Reference Sheet Kelas
       const classRef = classes.map(c => ({
         'ID Kelas': c.id,
         'Nama Kelas': c.nama,
-        'Tingkat': c.tingkat,
+        'Tingkat': c.tingkat || '-',
         'Keterangan': c.keterangan || '-'
       }));
       if (classRef.length > 0) {
         const wsRef = XLSX.utils.json_to_sheet(classRef);
+        wsRef['!cols'] = [
+          { wch: 12 },
+          { wch: 24 },
+          { wch: 18 },
+          { wch: 35 }
+        ];
+        wsRef['!rows'] = [{ hpx: 24 }];
         XLSX.utils.book_append_sheet(wb, wsRef, 'DAFTAR KELAS (REFERENSI)');
       }
 
@@ -165,6 +182,15 @@ export default function MembersView({
       ];
 
       const ws = XLSX.utils.json_to_sheet(sampleData);
+      ws['!cols'] = [
+        { wch: 24 }, // NIP
+        { wch: 32 }, // Nama Lengkap
+        { wch: 20 }, // UID Kartu RFID
+        { wch: 28 }, // Nama Jabatan
+        { wch: 20 }  // No WhatsApp
+      ];
+      ws['!rows'] = [{ hpx: 26 }, { hpx: 20 }, { hpx: 20 }, { hpx: 20 }];
+
       XLSX.utils.book_append_sheet(wb, ws, 'DATA GURU');
 
       // Reference Sheet Jabatan
@@ -175,6 +201,12 @@ export default function MembersView({
       }));
       if (posRef.length > 0) {
         const wsRef = XLSX.utils.json_to_sheet(posRef);
+        wsRef['!cols'] = [
+          { wch: 12 },
+          { wch: 28 },
+          { wch: 35 }
+        ];
+        wsRef['!rows'] = [{ hpx: 24 }];
         XLSX.utils.book_append_sheet(wb, wsRef, 'DAFTAR JABATAN (REFERENSI)');
       }
 
@@ -182,7 +214,7 @@ export default function MembersView({
     }
   };
 
-  // 2. EXPORT DATA TO EXCEL (.XLSX)
+  // 2. EXPORT DATA TO EXCEL (.XLSX) DENGAN LEBAR KOLOM RAPI
   const exportToExcel = () => {
     if (members.length === 0) {
       Swal.fire('Info', 'Tidak ada data untuk diekspor.', 'info');
@@ -201,8 +233,19 @@ export default function MembersView({
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(exportRows);
-    XLSX.utils.book_append_sheet(wb, ws, `Data_${labelMember}`);
-    XLSX.writeFile(wb, `Data_${labelMember}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    ws['!cols'] = [
+      { wch: 8 },  // No
+      { wch: 24 }, // NIS / NIP
+      { wch: 32 }, // Nama Lengkap
+      { wch: 18 }, // UID RFID
+      { wch: 24 }, // Kelas / Jabatan
+      { wch: 18 }, // No WhatsApp
+      { wch: 14 }  // Kategori
+    ];
+    ws['!rows'] = [{ hpx: 26 }];
+
+    XLSX.utils.book_append_sheet(wb, ws, `Data_${labelMember.replace(/\s+/g, '_')}`);
+    XLSX.writeFile(wb, `Data_${labelMember.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   // 3. IMPORT EXCEL (.XLSX)

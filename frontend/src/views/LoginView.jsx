@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { User, Lock, Eye, EyeOff, Loader2, Database, IdCard } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, Loader2, Database } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch, setAuth } from '../api';
+import AppLogo from '../components/AppLogo';
 
 export default function LoginView({ onLoginSuccess }) {
   const [username, setUsername] = useState('admin');
@@ -54,17 +55,17 @@ export default function LoginView({ onLoginSuccess }) {
   };
 
   return (
-    <section className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-slate-900 via-primary-900 to-slate-900 relative overflow-hidden flex-1">
+    <section className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative overflow-hidden flex-1">
       <div className="absolute -top-32 -left-32 w-96 h-96 bg-primary-500/20 rounded-full blur-3xl pointer-events-none"></div>
       <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
 
       <div className="w-full max-w-md relative z-10">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary-600 to-primary-500 shadow-lg shadow-primary-500/30 text-white mb-4">
-            <IdCard className="w-8 h-8" />
-          </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">SIAKAD Absensi Digital</h1>
-          <p className="text-slate-400 text-sm mt-1">Sistem Pemantauan Absensi IoT ESP32 & SQLite</p>
+        <div className="text-center mb-8 flex flex-col items-center">
+          <AppLogo className="w-20 h-20 mb-3" glowing={true} />
+          <h1 className="text-2xl font-black text-white tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
+            SIAKAD Absensi Digital
+          </h1>
+          <p className="text-slate-400 text-xs mt-1 font-medium">Sistem Pemantauan Absensi IoT ESP32 & SQLite</p>
         </div>
 
         <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-white/20">
