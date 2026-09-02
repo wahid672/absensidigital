@@ -1732,6 +1732,10 @@ void handleWebUploadJsonTemplates() {
   }
   syncDeleteAll(); // Hapus di database server
 
+  // Beri jeda 1.5 detik agar mikrokontroler sensor R503 selesai menghapus seluruh sektor flash
+  delay(1500);
+  while (mySerial.available()) { mySerial.read(); delay(1); }
+
   // LANGKAH 2: Masukkan seluruh template dari JSON ke sensor
   JsonArray templates = doc.containsKey("templates") ? doc["templates"].as<JsonArray>() : doc.as<JsonArray>();
   int totalTemplates = templates.size();
@@ -1744,11 +1748,24 @@ void handleWebUploadJsonTemplates() {
     String hexData = item["template_data"].as<String>();
 
     if (fId > 0 && hexData.length() >= 1024) {
+      Serial.printf("[JSON RESTORE] Menyimpan ID %d... ", fId);
       printCentered("Simpan ID: " + String(fId), 1);
-      if (saveFingerprintTemplate(fId, hexData)) {
-        successCount++;
+      
+      bool ok = saveFingerprintTemplate(fId, hexData);
+      if (!ok) {
+        // Coba ulang 1x jika slot butuh jeda tambahan
+        delay(200);
+        while (mySerial.available()) { mySerial.read(); delay(1); }
+        ok = saveFingerprintTemplate(fId, hexData);
       }
-      delay(30);
+
+      if (ok) {
+        successCount++;
+        Serial.println("OK");
+      } else {
+        Serial.println("GAGAL!");
+      }
+      delay(50);
     }
   }
 
