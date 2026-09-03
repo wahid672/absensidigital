@@ -36,7 +36,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
   const isPesantren = appMode !== 'umum';
   const labelSiswa = isPesantren ? 'Santri' : 'Siswa';
   const labelWali = isPesantren ? 'Wali Santri' : 'Wali Siswa';
-  const labelGuru = isPesantren ? 'Asatidz / Pegawai' : 'Guru / Pegawai';
+  const labelGuru = isPesantren ? 'Guru / Asatidz' : 'Guru / Pegawai';
 
   // Sub-view tab navigation: 'main' (Konfigurasi Bot) | 'template' (Template Pesan) | 'chat_id' (Manajemen Chat ID)
   const [activeTab, setActiveTab] = useState('main');
@@ -429,78 +429,112 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
     <section className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto animate-fade-in">
 
       {/* ========================================================================= */}
-      {/* 1. PAGE HEADER & NAVIGATION TABS */}
+      {/* 1. HEADER SECTION (MATCHING APP-WIDE STANDARD) */}
       {/* ========================================================================= */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 shadow-inner">
-            <Send className="w-6 h-6" />
-          </div>
+      {activeTab === 'main' && (
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
           <div>
-            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              Notifikasi Telegram
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 border border-sky-200">
-                Bot Auto-Push
-              </span>
-            </h2>
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <Send className="w-5 h-5 text-primary-600" />
+              <span>Notifikasi Telegram</span>
+            </h3>
             <p className="text-xs text-slate-500">
-              Konfigurasi Bot Telegram untuk mengirim notifikasi presensi otomatis ke {labelWali} & {labelGuru}
+              Konfigurasi Bot Telegram resmi untuk pengiriman notifikasi absensi otomatis ke {labelWali} & {labelGuru}
             </p>
           </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button 
+              type="button"
+              onClick={() => setActiveTab('template')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-xl shadow transition-all"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              <span>Setting Template Pesan</span>
+            </button>
+
+            <button 
+              type="button"
+              onClick={() => setActiveTab('chat_id')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-xl shadow transition-all"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Manajemen Chat ID Telegram</span>
+            </button>
+
+            <button 
+              type="button"
+              onClick={() => openTestModal('', '')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl transition-all"
+            >
+              <Send className="w-3.5 h-3.5 text-sky-300" />
+              <span>Test Kirim Pesan</span>
+            </button>
+          </div>
         </div>
+      )}
 
-        {/* Action Header Button: Test Kirim */}
-        <button
-          type="button"
-          onClick={() => openTestModal('', '')}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl transition-all shadow-sm self-start lg:self-auto"
-        >
-          <Send className="w-3.5 h-3.5 text-sky-300" />
-          <span>Test Kirim Pesan</span>
-        </button>
-      </div>
+      {activeTab === 'template' && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <div>
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <Settings className="w-5 h-5 text-rose-600" />
+              <span>Setting Template Pesan Telegram</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              Kustomisasi format teks notifikasi presensi masuk, pulang, dan peringatan terlambat
+            </p>
+          </div>
 
-      {/* MAIN NAVIGATION TABS (Pills Matching App Design) */}
-      <div className="flex items-center gap-2 bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200 w-fit">
-        <button
-          type="button"
-          onClick={() => setActiveTab('main')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'main'
-              ? 'bg-white text-primary-600 shadow-sm border border-slate-200/80'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-          }`}
-        >
-          <Bot className="w-4 h-4" />
-          <span>1. Konfigurasi Bot</span>
-        </button>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-400">
+              <span>Home</span>
+              <span>/</span>
+              <span className="text-rose-600 font-semibold">Setting Template Pesan</span>
+            </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('template')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'template'
-              ? 'bg-white text-rose-600 shadow-sm border border-slate-200/80'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-          }`}
-        >
-          <Settings className="w-4 h-4" />
-          <span>2. Setting Template Pesan</span>
-        </button>
+            <button 
+              type="button"
+              onClick={() => setActiveTab('main')}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-xl shadow transition-all"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Kembali</span>
+            </button>
+          </div>
+        </div>
+      )}
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('chat_id')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'chat_id'
-              ? 'bg-white text-sky-600 shadow-sm border border-slate-200/80'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>3. Manajemen Chat ID</span>
-        </button>
-      </div>
+      {activeTab === 'chat_id' && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <div>
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <Users className="w-5 h-5 text-primary-600" />
+              <span>Manajemen Chat Id Telegram</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              Daftar dan kelola nomor Chat ID Telegram {labelWali} dan {labelGuru}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-400">
+              <span>Home</span>
+              <span>/</span>
+              <span className="text-primary-600 font-semibold">Manajemen Chat Id Telegram</span>
+            </div>
+
+            <button 
+              type="button"
+              onClick={() => setActiveTab('main')}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-xl shadow transition-all"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Kembali</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 2. TAB 1: KONFIGURASI BOT TELEGRAM */}
@@ -511,18 +545,18 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
           <div className="bg-sky-50 border border-sky-200 rounded-2xl p-5 text-sky-900 shadow-sm">
             <h3 className="font-bold text-sm text-sky-950 flex items-center gap-2 mb-2.5">
               <Info className="w-4 h-4 text-sky-600" />
-              Cara Menggunakan Fitur Notifikasi:
+              Cara Menggunakan Fitur:
             </h3>
             <ol className="list-decimal list-inside space-y-1 text-xs text-sky-800 leading-relaxed pl-1">
-              <li>Pastikan <b>Telegram Bot Token</b> sudah diisi dengan benar dan berstatus <b>Aktif</b>.</li>
-              <li>Wali santri / Pegawai harus membuka bot Telegram yang telah dibuat.</li>
-              <li>Klik tombol <b>'START'</b> atau kirim perintah <b>'/start'</b> pada bot tersebut agar bot memiliki izin mengirim pesan.</li>
-              <li>Masukkan nomor <b>Chat ID</b> penerima pada menu <b>Manajemen Chat ID Telegram</b>.</li>
-              <li>Setiap ada santri/pegawai yang melakukan scan kartu RFID atau sidik jari di mesin ESP32, notifikasi otomatis terkirim secara instan.</li>
+              <li>Pastikan <b>Bot Token</b> sudah diisi dan status API <b>Aktif</b>.</li>
+              <li>User/Penerima pesan harus membuka bot Telegram yang telah dibuat.</li>
+              <li>Klik tombol <b>'START'</b> atau kirim pesan <b>'/start'</b> pada bot tersebut.</li>
+              <li>Hal ini diperlukan agar sistem dapat mengirimkan notifikasi melalui Telegram.</li>
+              <li>Setiap pesan notifikasi absensi akan otomatis dikirimkan saat santri/pegawai tap kartu RFID atau sidik jari di mesin ESP32.</li>
             </ol>
           </div>
 
-          {/* Settings Card */}
+          {/* Settings Card: Default */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
@@ -530,8 +564,8 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                   <Key className="w-5 h-5 text-primary-600" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-800">Telegram Bot Token</h3>
-                  <p className="text-xs text-slate-500">Kunci otentikasi API bot Telegram resmi dari @BotFather</p>
+                  <h3 className="text-base font-bold text-slate-800">Default</h3>
+                  <p className="text-xs text-slate-500">Pengaturan Kunci API Bot Telegram Utama</p>
                 </div>
               </div>
 
@@ -579,7 +613,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                 </div>
               </div>
               <p className="text-[11px] text-slate-500">
-                Token API yang didapatkan dari @BotFather. Setiap unit/instansi dapat memakai bot yang terdaftar.
+                Token API yang didapatkan dari @BotFather. Setiap unit wajib memakai bot yang berbeda.
               </p>
             </div>
 
@@ -590,8 +624,8 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                 Cara Mendapatkan Bot Token:
               </h4>
               <ol className="list-decimal list-inside space-y-1 text-slate-600 pl-1">
-                <li>Buka aplikasi Telegram dan cari <b className="text-slate-800">@BotFather</b>.</li>
-                <li>Kirim perintah <code className="text-primary-700 bg-primary-50 border border-primary-200 px-1.5 py-0.5 rounded font-bold">/newbot</code> dan ikuti instruksi untuk menentukan nama dan username bot.</li>
+                <li>Buka Telegram dan cari <b className="text-slate-800">@BotFather</b>.</li>
+                <li>Kirim perintah <code className="text-primary-700 bg-primary-50 border border-primary-200 px-1.5 py-0.5 rounded font-bold">/newbot</code> dan ikuti instruksi untuk mengatur nama dan username.</li>
                 <li>Salin <b>API Token</b> yang diberikan dan tempelkan pada kolom di atas.</li>
               </ol>
             </div>
@@ -638,10 +672,10 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                 type="button"
                 onClick={handleSaveBotSettings}
                 disabled={savingSettings}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
               >
                 <Save className="w-4 h-4" />
-                <span>{savingSettings ? 'Menyimpan...' : 'Simpan Pengaturan'}</span>
+                <span>{savingSettings ? 'Menyimpan...' : 'Simpan'}</span>
               </button>
 
               <button
@@ -832,13 +866,13 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-slate-700 shadow-sm space-y-2">
             <h3 className="font-bold text-xs text-slate-800 flex items-center gap-2">
               <Info className="w-4 h-4 text-primary-600" />
-              Cara Mendapatkan Chat ID Telegram Pengguna:
+              Cara Mendapatkan Chat ID:
             </h3>
             <ol className="list-decimal list-inside space-y-1 text-xs text-slate-600 leading-relaxed pl-1">
               <li>Buka aplikasi Telegram dan cari bot <b className="text-slate-800">@userinfobot</b> atau <b className="text-slate-800">@getmyid_bot</b>.</li>
               <li>Klik tombol <b>'Start'</b> atau kirim pesan apa saja ke bot tersebut.</li>
-              <li>Bot akan membalas dengan <b>'ID'</b> atau <b>'Your User ID'</b> (angka angka). Angka tersebut adalah Chat ID.</li>
-              <li>Masukkan nomor tersebut ke dalam kolom Chat ID di bawah.</li>
+              <li>Bot akan membalas dengan <b>'ID'</b> atau <b>'Your User ID'</b>. Angka tersebut adalah Chat ID Anda.</li>
+              <li>Masukkan angka tersebut ke dalam kolom Chat ID pada sistem ini.</li>
             </ol>
           </div>
 
@@ -896,6 +930,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                     <option value={50}>50</option>
                     <option value={100}>100</option>
                   </select>
+                  <span>entries</span>
                 </div>
 
                 <div className="relative w-full sm:w-64">
@@ -907,7 +942,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                       setSearchQuery(e.target.value);
                       setCurrentPage(1);
                     }}
-                    placeholder="Cari nama, NIS, kelas, chat ID..."
+                    placeholder="Search..."
                     className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white"
                   />
                 </div>
@@ -921,12 +956,12 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
                     <th className="py-3 px-4 w-12 text-center">No</th>
                     <th className="py-3 px-4 w-32">{memberTypeTab === 'siswa' ? 'NIS' : 'NIP / ID'}</th>
-                    <th className="py-3 px-4">Nama Lengkap</th>
+                    <th className="py-3 px-4">Nama</th>
                     <th className="py-3 px-4">
-                      {memberTypeTab === 'siswa' ? 'Nama Ayah & Ibu / Wali' : 'Jabatan / Posisi'}
+                      {memberTypeTab === 'siswa' ? 'Nama Ayah & Ibu' : 'Jabatan / Posisi'}
                     </th>
-                    <th className="py-3 px-4">Telegram Chat ID</th>
-                    <th className="py-3 px-4 w-28 text-center">Aksi</th>
+                    <th className="py-3 px-4">Chat ID</th>
+                    <th className="py-3 px-4 w-28 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -939,7 +974,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                   ) : paginatedMembers.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-12 text-center text-slate-500">
-                        Tidak ada data anggota yang ditemukan.
+                        Tidak ada data yang cocok.
                       </td>
                     </tr>
                   ) : (
