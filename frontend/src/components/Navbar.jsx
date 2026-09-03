@@ -36,6 +36,12 @@ export default function Navbar({ currentTab, settings = {}, onOpenMobileSidebar 
         ? 'Kelola slot sidik jari yang terekam dari mesin dan hubungkan ke santri / asatidz'
         : 'Kelola slot sidik jari yang terekam dari mesin dan hubungkan ke siswa / guru'
     },
+    telegram: {
+      title: 'Notifikasi Telegram',
+      desc: isPesantren
+        ? 'Konfigurasi Bot Telegram, template pesan, dan manajemen Chat ID Wali Santri & Asatidz'
+        : 'Konfigurasi Bot Telegram, template pesan, dan manajemen Chat ID Wali Siswa & Guru'
+    },
     kelas: { 
       title: 'Master Data Kelas & Rombel', 
       desc: 'Kelola daftar kelas dan jenjang tingkatan' 
