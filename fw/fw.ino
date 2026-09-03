@@ -746,23 +746,24 @@ void flushOfflineLogs() {
 
 void kirimPresensiFingerprint(uint8_t idFinger) {
   CachedMember localM = findMemberOffline((int)idFinger, "");
+  String namaPreview = localM.found ? localM.nama : ("Slot #" + String(idFinger));
 
-  // 1. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
+  // 1. TAMPILKAN FEEDBACK INSTAN: Beep singkat + LED Ungu + Layar "Sedang Proses..."
+  // Memberitahu user bahwa sidik jari sudah terbaca dan jari bisa langsung diangkat
+  digitalWrite(BUZZ, HIGH); delay(60); digitalWrite(BUZZ, LOW);
+  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 40, FINGERPRINT_LED_PURPLE, 0);
+  showScannedMessage(namaPreview, "Sedang Proses...");
+
+  // 2. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
   if (WiFi.status() != WL_CONNECTED) {
     Serial.printf("[OFFLINE] WiFi offline. Data Fingerprint ID %d disimpan ke SPIFFS.\n", idFinger);
     saveOfflineLog((int)idFinger, "");
-    digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
     finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
-
-    if (localM.found) {
-      showScannedMessage(localM.nama, "Hadir (Offline)");
-    } else {
-      showScannedMessage("Slot #" + String(idFinger), "Hadir (Offline)");
-    }
+    showScannedMessage(namaPreview, "Hadir (Offline)");
     return;
   }
 
-  // 2. JIKA ONLINE: Kirim ke server & tampilkan respon resmi
+  // 3. JIKA ONLINE: Kirim ke server & tampilkan respon resmi
   HTTPClient http;
   http.begin(serverUrl);
   http.setTimeout(3500); // Timeout 3.5 detik
@@ -797,7 +798,7 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
       String waktuKeluar = respDoc["data"]["waktu_keluar"].as<String>();
 
       if (nama == "null" || nama == "") {
-        nama = localM.found ? localM.nama : ("Slot #" + String(idFinger));
+        nama = namaPreview;
       }
 
       if (status == "success") {
@@ -830,34 +831,31 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
     Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke offline buffer...\n", http.errorToString(httpCode).c_str());
     saveOfflineLog((int)idFinger, "");
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
-    if (localM.found) {
-      showScannedMessage(localM.nama, "Hadir (Offline)");
-    } else {
-      showScannedMessage("Slot #" + String(idFinger), "Hadir (Offline)");
-    }
+    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+    showScannedMessage(namaPreview, "Hadir (Offline)");
   }
   http.end();
 }
 
 void kirimPresensiRFID(String tagId) {
   CachedMember localM = findMemberOffline(0, tagId);
+  String namaPreview = localM.found ? localM.nama : ("RFID: " + tagId);
 
-  // 1. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
+  // 1. TAMPILKAN FEEDBACK INSTAN: Beep singkat + LED Ungu + Layar "Sedang Proses..."
+  digitalWrite(BUZZ, HIGH); delay(60); digitalWrite(BUZZ, LOW);
+  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 40, FINGERPRINT_LED_PURPLE, 0);
+  showScannedMessage(namaPreview, "Sedang Proses...");
+
+  // 2. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
   if (WiFi.status() != WL_CONNECTED) {
     Serial.printf("[OFFLINE] WiFi offline. Data RFID %s disimpan ke SPIFFS.\n", tagId.c_str());
     saveOfflineLog(0, tagId);
-    digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
     finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
-
-    if (localM.found) {
-      showScannedMessage(localM.nama, "Hadir (Offline)");
-    } else {
-      showScannedMessage("RFID: " + tagId, "Hadir (Offline)");
-    }
+    showScannedMessage(namaPreview, "Hadir (Offline)");
     return;
   }
 
-  // 2. JIKA ONLINE: Kirim ke server & tampilkan respon resmi
+  // 3. JIKA ONLINE: Kirim ke server & tampilkan respon resmi
   HTTPClient http;
   http.begin(serverUrl);
   http.setTimeout(3500);
@@ -892,10 +890,11 @@ void kirimPresensiRFID(String tagId) {
       String waktuKeluar = respDoc["data"]["waktu_keluar"].as<String>();
 
       if (nama == "null" || nama == "") {
-        nama = localM.found ? localM.nama : ("Kartu #" + tagId);
+        nama = namaPreview;
       }
 
       if (status == "success") {
+        digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
         finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
         if (action == "check_out") {
           showScannedMessage(nama, "Keluar: " + waktuKeluar + " OK");
@@ -903,26 +902,28 @@ void kirimPresensiRFID(String tagId) {
           showScannedMessage(nama, "Masuk: " + waktuMasuk + " OK");
         }
       } else if (status == "already_attended") {
+        digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(50);
+        digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
         finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
         showScannedMessage(nama, "Sudah Absen!");
       } else if (status == "not_found") {
+        digitalWrite(BUZZ, HIGH); delay(300); digitalWrite(BUZZ, LOW);
         finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
         showScannedMessage("Kartu Tdk Dikenal", "Ditolak Sistem");
       } else {
+        digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
         showScannedMessage(nama, "Presensi OK");
       }
     } else {
+      digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
       showScannedMessage("Kartu Terbaca", tagId);
     }
   } else {
     Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke offline buffer...\n", http.errorToString(httpCode).c_str());
     saveOfflineLog(0, tagId);
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
-    if (localM.found) {
-      showScannedMessage(localM.nama, "Hadir (Offline)");
-    } else {
-      showScannedMessage("RFID: " + tagId, "Hadir (Offline)");
-    }
+    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+    showScannedMessage(namaPreview, "Hadir (Offline)");
   }
   http.end();
 }
