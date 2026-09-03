@@ -16,8 +16,6 @@
  ***********************************/
 
 #include <WiFi.h>
-#include <esp_wifi.h>
-#include <esp_system.h>
 #include <time.h>
 #include <SPI.h>
 #include <FS.h>
@@ -2262,10 +2260,12 @@ void setup() {
   
   // Inisialisasi Hostname DHCP unik dari eFuse Hardware MAC (misal: siakadponpes.com-5F2AE4)
   WiFi.mode(WIFI_STA);
-  uint8_t baseMac[6];
-  esp_read_mac(baseMac, ESP_MAC_WIFI_STA);
+  uint64_t chipMac = ESP.getEfuseMac();
+  uint8_t b3 = (uint8_t)(chipMac >> 24);
+  uint8_t b4 = (uint8_t)(chipMac >> 32);
+  uint8_t b5 = (uint8_t)(chipMac >> 40);
   char macSuffix[10];
-  snprintf(macSuffix, sizeof(macSuffix), "%02X%02X%02X", baseMac[3], baseMac[4], baseMac[5]);
+  snprintf(macSuffix, sizeof(macSuffix), "%02X%02X%02X", b3, b4, b5);
   deviceHostName = String(deviceHostNamePrefix) + "-" + String(macSuffix);
   WiFi.setHostname(deviceHostName.c_str());
 
