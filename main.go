@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -55,15 +57,17 @@ type LoginResponse struct {
 }
 
 type Member struct {
-	ID            int    `json:"id"`
-	UID           string `json:"uid"`
-	FingerprintID int    `json:"fingerprint_id"` // ID slot sidik jari pada sensor (1-500)
-	NISNIP        string `json:"nis_nip"`        // NIS untuk Santri, NIP untuk Guru
-	Nama          string `json:"nama"`
-	Tipe          string `json:"tipe"`           // "siswa" | "guru"
-	Kelas         string `json:"kelas"`          // e.g. "10 IPA 1" atau "Guru Fiqih & Hadits"
-	NoHP          string `json:"no_hp"`
-	CreatedAt     string `json:"created_at"`
+	ID             int    `json:"id"`
+	UID            string `json:"uid"`
+	FingerprintID  int    `json:"fingerprint_id"`  // ID slot sidik jari pada sensor (1-500)
+	NISNIP         string `json:"nis_nip"`         // NIS untuk Santri, NIP untuk Guru
+	Nama           string `json:"nama"`
+	NamaOrtu       string `json:"nama_ortu"`       // Nama Orang Tua / Wali
+	Tipe           string `json:"tipe"`            // "siswa" | "guru"
+	Kelas          string `json:"kelas"`           // e.g. "10 IPA 1" atau "Guru Fiqih & Hadits"
+	NoHP           string `json:"no_hp"`
+	TelegramChatID string `json:"telegram_chat_id"` // Telegram Chat ID Wali / Guru
+	CreatedAt      string `json:"created_at"`
 }
 
 type FingerprintRecord struct {
@@ -245,6 +249,8 @@ func initDatabase() {
 	// Migrations for existing database
 	db.Exec("ALTER TABLE members ADD COLUMN nis_nip TEXT DEFAULT ''")
 	db.Exec("ALTER TABLE members ADD COLUMN fingerprint_id INTEGER DEFAULT 0")
+	db.Exec("ALTER TABLE members ADD COLUMN nama_ortu TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE members ADD COLUMN telegram_chat_id TEXT DEFAULT ''")
 
 	// Default settings
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_nama', 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')")
@@ -255,6 +261,15 @@ func initDatabase() {
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_masuk_batas', '07:00')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_pulang_batas', '15:00')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('kepala_nama', 'KH. Ahmad Zaki, Lc., M.Ag')")
+
+	// Default Telegram settings
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_bot_token', '')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_enabled', '1')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_notify_in', '1')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_notify_out', '1')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_in', '🔔 *NOTIFIKASI PRESENSI MASUK*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nAlhamdulillah, santri telah tiba dan melakukan absensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_out', '🔔 *NOTIFIKASI PRESENSI PULANG*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri telah melakukan absensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_late', '⚠️ *PERINGATAN KETERLAMBATAN*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri tercatat terlambat melakukan absensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_')")
 
 	seedInitialData()
 }
@@ -1214,13 +1229,13 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 	if isFingerScan {
 		// Cari member berdasarkan fingerprint_id langsung atau melalui tabel fingerprints
 		err := db.QueryRow(`
-			SELECT m.id, m.uid, COALESCE(m.fingerprint_id, 0), m.nis_nip, m.nama, m.tipe, m.kelas, m.no_hp
+			SELECT m.id, m.uid, COALESCE(m.fingerprint_id, 0), m.nis_nip, m.nama, COALESCE(m.nama_ortu, ''), m.tipe, m.kelas, m.no_hp, COALESCE(m.telegram_chat_id, '')
 			FROM members m
 			WHERE m.fingerprint_id = ? 
 			   OR m.id = (SELECT member_id FROM fingerprints WHERE fingerprint_id = ? AND (device_id = ? OR ? = '') LIMIT 1)
 			LIMIT 1
 		`, req.FingerprintID, req.FingerprintID, req.DeviceID, req.DeviceID).
-			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
+			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.NamaOrtu, &member.Tipe, &member.Kelas, &member.NoHP, &member.TelegramChatID)
 
 		if err == nil && member.ID > 0 {
 			memberFound = true
@@ -1259,8 +1274,8 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err := db.QueryRow("SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp FROM members WHERE uid = ? OR LTRIM(uid, '0') = LTRIM(?, '0')", req.RFIDTag, req.RFIDTag).
-			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
+		err := db.QueryRow("SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, COALESCE(nama_ortu, ''), tipe, kelas, no_hp, COALESCE(telegram_chat_id, '') FROM members WHERE uid = ? OR LTRIM(uid, '0') = LTRIM(?, '0')", req.RFIDTag, req.RFIDTag).
+			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.NamaOrtu, &member.Tipe, &member.Kelas, &member.NoHP, &member.TelegramChatID)
 
 		if err == nil {
 			memberFound = true
@@ -1350,6 +1365,9 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		actionType = "check_in"
 		actionMessage = fmt.Sprintf("Absen Masuk Berhasil (%s - %s)", member.Nama, statusMasuk)
 
+		// Kirim Notifikasi Telegram Otomatis (Asynchronous)
+		triggerTelegramAttendanceNotification(member, record, "check_in")
+
 	} else if existing.WaktuKeluar == "-" || existing.WaktuKeluar == "" {
 		secNow := parseTimeToSeconds(tTime)
 		secIn := parseTimeToSeconds(existing.WaktuMasuk)
@@ -1378,6 +1396,9 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 			record.DeviceID = req.DeviceID
 			actionType = "check_out"
 			actionMessage = fmt.Sprintf("Absen Keluar Berhasil (%s - %s)", member.Nama, statusKeluar)
+
+			// Kirim Notifikasi Telegram Otomatis (Asynchronous)
+			triggerTelegramAttendanceNotification(member, record, "check_out")
 		}
 
 	} else {
@@ -1423,14 +1444,14 @@ func processSingleTap(deviceID, rfidTag string, fingerprintID int, recordedAt st
 	var member Member
 	var err error
 	if fingerprintID > 0 {
-		err = db.QueryRow(`SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp 
+		err = db.QueryRow(`SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, COALESCE(nama_ortu, ''), tipe, kelas, no_hp, COALESCE(telegram_chat_id, '') 
 			FROM members WHERE fingerprint_id = ? 
 			OR id = (SELECT member_id FROM fingerprints WHERE fingerprint_id = ? AND device_id = ?) LIMIT 1`,
 			fingerprintID, fingerprintID, deviceID).
-			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
+			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.NamaOrtu, &member.Tipe, &member.Kelas, &member.NoHP, &member.TelegramChatID)
 	} else if rfidTag != "" {
-		err = db.QueryRow("SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp FROM members WHERE uid = ? OR LTRIM(uid, '0') = LTRIM(?, '0')", rfidTag, rfidTag).
-			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.Tipe, &member.Kelas, &member.NoHP)
+		err = db.QueryRow("SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, COALESCE(nama_ortu, ''), tipe, kelas, no_hp, COALESCE(telegram_chat_id, '') FROM members WHERE uid = ? OR LTRIM(uid, '0') = LTRIM(?, '0')", rfidTag, rfidTag).
+			Scan(&member.ID, &member.UID, &member.FingerprintID, &member.NISNIP, &member.Nama, &member.NamaOrtu, &member.Tipe, &member.Kelas, &member.NoHP, &member.TelegramChatID)
 	}
 
 	if err != nil || member.ID == 0 {
@@ -1446,9 +1467,15 @@ func processSingleTap(deviceID, rfidTag string, fingerprintID int, recordedAt st
 		if tHour > inH || (tHour == inH && tMin > inM) {
 			statusMasuk = "telat"
 		}
-		db.Exec(`INSERT INTO attendances (uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin) 
+		res, _ := db.Exec(`INSERT INTO attendances (uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin) 
 			VALUES (?, ?, ?, ?, ?, ?, ?, '-', '-', ?)`,
 			member.UID, member.Nama, member.Tipe, member.Kelas, tDate, tTime, statusMasuk, deviceID)
+		lastID, _ := res.LastInsertId()
+		rec := AttendanceRecord{
+			ID: int(lastID), UID: member.UID, Nama: member.Nama, Tipe: member.Tipe, Kelas: member.Kelas,
+			Tanggal: tDate, WaktuMasuk: tTime, StatusMasuk: statusMasuk, WaktuKeluar: "-", StatusKeluar: "-", DeviceID: deviceID,
+		}
+		triggerTelegramAttendanceNotification(member, rec, "check_in")
 	} else if existing.WaktuKeluar == "-" || existing.WaktuKeluar == "" {
 		secNow := parseTimeToSeconds(tTime)
 		secIn := parseTimeToSeconds(existing.WaktuMasuk)
@@ -1461,6 +1488,11 @@ func processSingleTap(deviceID, rfidTag string, fingerprintID int, recordedAt st
 			}
 			db.Exec(`UPDATE attendances SET waktu_keluar = ?, status_keluar = ?, id_mesin = ? WHERE id = ?`,
 				tTime, statusKeluar, deviceID, existing.ID)
+			rec := existing
+			rec.WaktuKeluar = tTime
+			rec.StatusKeluar = statusKeluar
+			rec.DeviceID = deviceID
+			triggerTelegramAttendanceNotification(member, rec, "check_out")
 		}
 	}
 }
@@ -1663,7 +1695,7 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		tipe := strings.ToLower(r.URL.Query().Get("tipe"))
 		search := strings.ToLower(r.URL.Query().Get("search"))
 
-		query := "SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, tipe, kelas, no_hp, created_at FROM members WHERE 1=1"
+		query := "SELECT id, uid, COALESCE(fingerprint_id, 0), nis_nip, nama, COALESCE(nama_ortu, ''), tipe, kelas, no_hp, COALESCE(telegram_chat_id, ''), created_at FROM members WHERE 1=1"
 		var args []interface{}
 
 		if tipe != "" && tipe != "all" {
@@ -1671,8 +1703,8 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 			args = append(args, tipe)
 		}
 		if search != "" {
-			query += " AND (lower(nama) LIKE ? OR lower(uid) LIKE ? OR lower(nis_nip) LIKE ? OR lower(kelas) LIKE ?)"
-			args = append(args, "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
+			query += " AND (lower(nama) LIKE ? OR lower(uid) LIKE ? OR lower(nis_nip) LIKE ? OR lower(kelas) LIKE ? OR lower(COALESCE(nama_ortu, '')) LIKE ? OR lower(COALESCE(telegram_chat_id, '')) LIKE ?)"
+			args = append(args, "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 		}
 		query += " ORDER BY id DESC"
 
@@ -1686,7 +1718,7 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		members := make([]Member, 0)
 		for rows.Next() {
 			var m Member
-			rows.Scan(&m.ID, &m.UID, &m.FingerprintID, &m.NISNIP, &m.Nama, &m.Tipe, &m.Kelas, &m.NoHP, &m.CreatedAt)
+			rows.Scan(&m.ID, &m.UID, &m.FingerprintID, &m.NISNIP, &m.Nama, &m.NamaOrtu, &m.Tipe, &m.Kelas, &m.NoHP, &m.TelegramChatID, &m.CreatedAt)
 			members = append(members, m)
 		}
 
@@ -1705,7 +1737,9 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		m.UID = strings.TrimSpace(m.UID)
 		m.NISNIP = strings.TrimSpace(m.NISNIP)
 		m.Nama = strings.TrimSpace(m.Nama)
+		m.NamaOrtu = strings.TrimSpace(m.NamaOrtu)
 		m.Tipe = strings.ToLower(strings.TrimSpace(m.Tipe))
+		m.TelegramChatID = strings.TrimSpace(m.TelegramChatID)
 
 		if m.UID == "" || m.Nama == "" {
 			writeJSONError(w, http.StatusBadRequest, "UID Kartu RFID dan Nama Lengkap wajib diisi.")
@@ -1715,8 +1749,8 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 			m.Tipe = "siswa"
 		}
 
-		res, err := db.Exec("INSERT INTO members (uid, fingerprint_id, nis_nip, nama, tipe, kelas, no_hp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			m.UID, m.FingerprintID, m.NISNIP, m.Nama, m.Tipe, m.Kelas, m.NoHP)
+		res, err := db.Exec("INSERT INTO members (uid, fingerprint_id, nis_nip, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			m.UID, m.FingerprintID, m.NISNIP, m.Nama, m.NamaOrtu, m.Tipe, m.Kelas, m.NoHP, m.TelegramChatID)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "UID Kartu RFID sudah terdaftar.")
 			return
@@ -1741,8 +1775,11 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_, err := db.Exec("UPDATE members SET uid = ?, fingerprint_id = ?, nis_nip = ?, nama = ?, tipe = ?, kelas = ?, no_hp = ? WHERE id = ?",
-			m.UID, m.FingerprintID, m.NISNIP, m.Nama, m.Tipe, m.Kelas, m.NoHP, m.ID)
+		m.NamaOrtu = strings.TrimSpace(m.NamaOrtu)
+		m.TelegramChatID = strings.TrimSpace(m.TelegramChatID)
+
+		_, err := db.Exec("UPDATE members SET uid = ?, fingerprint_id = ?, nis_nip = ?, nama = ?, nama_ortu = ?, tipe = ?, kelas = ?, no_hp = ?, telegram_chat_id = ? WHERE id = ?",
+			m.UID, m.FingerprintID, m.NISNIP, m.Nama, m.NamaOrtu, m.Tipe, m.Kelas, m.NoHP, m.TelegramChatID, m.ID)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "Gagal memperbarui data member.")
 			return
@@ -1807,14 +1844,16 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO members (uid, nis_nip, nama, tipe, kelas, no_hp)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO members (uid, nis_nip, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(uid) DO UPDATE SET
 			nis_nip = excluded.nis_nip,
 			nama = excluded.nama,
+			nama_ortu = excluded.nama_ortu,
 			tipe = excluded.tipe,
 			kelas = excluded.kelas,
-			no_hp = excluded.no_hp
+			no_hp = excluded.no_hp,
+			telegram_chat_id = excluded.telegram_chat_id
 	`)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Gagal prepare statement: %v", err))
@@ -1834,10 +1873,12 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 			tipe = "siswa"
 		}
 		nisNIP := strings.TrimSpace(m.NISNIP)
+		namaOrtu := strings.TrimSpace(m.NamaOrtu)
 		kelas := strings.TrimSpace(m.Kelas)
 		noHP := strings.TrimSpace(m.NoHP)
+		chatId := strings.TrimSpace(m.TelegramChatID)
 
-		_, err := stmt.Exec(uid, nisNIP, nama, tipe, kelas, noHP)
+		_, err := stmt.Exec(uid, nisNIP, nama, namaOrtu, tipe, kelas, noHP, chatId)
 		if err == nil {
 			insertedCount++
 		}
@@ -2225,11 +2266,380 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":    "ok",
 		"database":  "sqlite3",
 		"timestamp": time.Now().Format(time.RFC3339),
-		"app":       "SIAKAD Absensi Digital IoT ESP32 (Backdate, Master Kelas/Jabatan, Dashboard Charts)",
+		"app":       "SIAKAD Absensi Digital IoT ESP32 (Backdate, Master Kelas/Jabatan, Dashboard Charts, Telegram)",
 	})
 }
 
-// 11. React SPA Static File Handler with Fallback to index.html
+// -------------------------------------------------------------
+// 11. TELEGRAM NOTIFICATION ENGINE & HANDLERS
+// -------------------------------------------------------------
+
+func sendTelegramMessage(token, chatID, text string) (bool, string, error) {
+	if token == "" || chatID == "" || text == "" {
+		return false, "Parameter tidak lengkap", errors.New("token, chat_id, dan text wajib diisi")
+	}
+
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
+	payload := map[string]interface{}{
+		"chat_id":    chatID,
+		"text":       text,
+		"parse_mode": "Markdown",
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return false, "Gagal marshal JSON payload", err
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(apiURL, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		return false, fmt.Sprintf("Gagal menghubungi Telegram API: %v", err), err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+		ErrorCode   int    `json:"error_code"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if !result.OK {
+		return false, result.Description, fmt.Errorf("telegram error %d: %s", result.ErrorCode, result.Description)
+	}
+	return true, "Pesan berhasil terkirim", nil
+}
+
+func testTelegramBot(token string) (bool, string, string) {
+	if token == "" {
+		return false, "", "Bot token kosong"
+	}
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/getMe", token)
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Get(apiURL)
+	if err != nil {
+		return false, "", fmt.Sprintf("Koneksi gagal: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			ID        int64  `json:"id"`
+			IsBot     bool   `json:"is_bot"`
+			FirstName string `json:"first_name"`
+			Username  string `json:"username"`
+		} `json:"result"`
+		Description string `json:"description"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	if !result.OK {
+		return false, "", result.Description
+	}
+	botInfo := fmt.Sprintf("%s (@%s)", result.Result.FirstName, result.Result.Username)
+	return true, botInfo, "Bot aktif dan terverifikasi"
+}
+
+func formatTelegramNotification(templateStr string, m Member, rec AttendanceRecord, instansi string) string {
+	if templateStr == "" {
+		templateStr = "🔔 *NOTIFIKASI PRESENSI*\nNama: *{nama}*\nTgl: {tanggal}\nJam: {waktu}\nStatus: {status}\n_{instansi}_"
+	}
+
+	statusText := rec.StatusMasuk
+	waktuText := rec.WaktuMasuk
+	if rec.WaktuKeluar != "-" && rec.WaktuKeluar != "" {
+		statusText = rec.StatusKeluar
+		waktuText = rec.WaktuKeluar
+	}
+	if statusText == "tepat" {
+		statusText = "Tepat Waktu ✅"
+	} else if statusText == "telat" {
+		statusText = "Terlambat ⚠️"
+	} else if statusText == "cepat" {
+		statusText = "Pulang Cepat ⚠️"
+	}
+
+	out := templateStr
+	out = strings.ReplaceAll(out, "{nama}", m.Nama)
+	out = strings.ReplaceAll(out, "{nis}", m.NISNIP)
+	out = strings.ReplaceAll(out, "{tipe}", strings.Title(m.Tipe))
+	out = strings.ReplaceAll(out, "{kelas}", m.Kelas)
+	out = strings.ReplaceAll(out, "{tanggal}", rec.Tanggal)
+	out = strings.ReplaceAll(out, "{waktu}", waktuText)
+	out = strings.ReplaceAll(out, "{status}", statusText)
+	out = strings.ReplaceAll(out, "{instansi}", instansi)
+	out = strings.ReplaceAll(out, "{nama_ortu}", m.NamaOrtu)
+	return out
+}
+
+func triggerTelegramAttendanceNotification(m Member, rec AttendanceRecord, actionType string) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[TELEGRAM PANIC RECOVERED] %v", r)
+			}
+		}()
+
+		if strings.TrimSpace(m.TelegramChatID) == "" {
+			return
+		}
+
+		var botToken, enabled, notifyIn, notifyOut, tIn, tOut, tLate, instansiNama string
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_bot_token'").Scan(&botToken)
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_enabled'").Scan(&enabled)
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_notify_in'").Scan(&notifyIn)
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_notify_out'").Scan(&notifyOut)
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_in'").Scan(&tIn)
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_out'").Scan(&tOut)
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_late'").Scan(&tLate)
+		db.QueryRow("SELECT value FROM settings WHERE key = 'instansi_nama'").Scan(&instansiNama)
+
+		if strings.TrimSpace(botToken) == "" || enabled == "0" || strings.ToLower(enabled) == "false" {
+			return
+		}
+
+		var msg string
+		if actionType == "check_in" {
+			if notifyIn == "0" || strings.ToLower(notifyIn) == "false" {
+				return
+			}
+			if rec.StatusMasuk == "telat" && strings.TrimSpace(tLate) != "" {
+				msg = formatTelegramNotification(tLate, m, rec, instansiNama)
+			} else {
+				msg = formatTelegramNotification(tIn, m, rec, instansiNama)
+			}
+		} else if actionType == "check_out" {
+			if notifyOut == "0" || strings.ToLower(notifyOut) == "false" {
+				return
+			}
+			msg = formatTelegramNotification(tOut, m, rec, instansiNama)
+		} else {
+			return
+		}
+
+		ok, desc, err := sendTelegramMessage(botToken, m.TelegramChatID, msg)
+		if ok {
+			log.Printf("[TELEGRAM NOTIF SENT] Sukses kirim notif %s ke %s (Chat ID: %s)", actionType, m.Nama, m.TelegramChatID)
+		} else {
+			log.Printf("[TELEGRAM NOTIF FAILED] Gagal kirim notif ke %s (Chat ID: %s): %s (%v)", m.Nama, m.TelegramChatID, desc, err)
+		}
+	}()
+}
+
+func handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
+	var botToken, enabled, notifyIn, notifyOut, tIn, tOut, tLate string
+	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_bot_token'").Scan(&botToken)
+	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_enabled'").Scan(&enabled)
+	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_notify_in'").Scan(&notifyIn)
+	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_notify_out'").Scan(&notifyOut)
+	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_in'").Scan(&tIn)
+	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_out'").Scan(&tOut)
+	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_late'").Scan(&tLate)
+
+	var botInfo string
+	var isValid bool
+	if strings.TrimSpace(botToken) != "" {
+		isValid, botInfo, _ = testTelegramBot(botToken)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"bot_token":     botToken,
+			"enabled":       enabled == "1" || strings.ToLower(enabled) == "true",
+			"notify_in":     notifyIn == "1" || strings.ToLower(notifyIn) == "true",
+			"notify_out":    notifyOut == "1" || strings.ToLower(notifyOut) == "true",
+			"template_in":   tIn,
+			"template_out":  tOut,
+			"template_late": tLate,
+			"is_valid":      isValid,
+			"bot_info":      botInfo,
+		},
+	})
+}
+
+func handleTelegramTestBot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
+		return
+	}
+
+	var req struct {
+		BotToken string `json:"bot_token"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	token := strings.TrimSpace(req.BotToken)
+	if token == "" {
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_bot_token'").Scan(&token)
+	}
+
+	if token == "" {
+		writeJSONError(w, http.StatusBadRequest, "Bot token belum diisi.")
+		return
+	}
+
+	isValid, botInfo, msg := testTelegramBot(token)
+	if !isValid {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "error",
+			"message": fmt.Sprintf("Bot Token tidak valid atau tidak dapat dihubungi: %s", msg),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":   "success",
+		"message":  "Bot Token Aktif & Terverifikasi!",
+		"bot_info": botInfo,
+	})
+}
+
+func handleTelegramSendTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
+		return
+	}
+
+	var req struct {
+		BotToken string `json:"bot_token"`
+		ChatID   string `json:"chat_id"`
+		Pesan    string `json:"pesan"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+		return
+	}
+
+	req.ChatID = strings.TrimSpace(req.ChatID)
+	req.Pesan = strings.TrimSpace(req.Pesan)
+	token := strings.TrimSpace(req.BotToken)
+
+	if token == "" {
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_bot_token'").Scan(&token)
+	}
+
+	if token == "" {
+		writeJSONError(w, http.StatusBadRequest, "Bot Token Telegram belum dikonfigurasi. Silakan isi Bot Token terlebih dahulu.")
+		return
+	}
+	if req.ChatID == "" {
+		writeJSONError(w, http.StatusBadRequest, "Chat ID Tujuan wajib diisi.")
+		return
+	}
+	if req.Pesan == "" {
+		req.Pesan = "🔔 *TES NOTIFIKASI TELEGRAM*\nAssalamu'alaikum Wr. Wb.\nIni adalah pesan uji coba (test) notifikasi absensi dari sistem SIAKAD PONPES.\n\nStatus: *Berhasil Terhubung! ✅*"
+	}
+
+	ok, desc, _ := sendTelegramMessage(token, req.ChatID, req.Pesan)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "error",
+			"message": fmt.Sprintf("Gagal kirim pesan: %s", desc),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": fmt.Sprintf("Pesan tes berhasil dikirim ke Chat ID: %s!", req.ChatID),
+	})
+}
+
+func handleTelegramSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
+		return
+	}
+
+	var req struct {
+		BotToken     string `json:"bot_token"`
+		Enabled      bool   `json:"enabled"`
+		NotifyIn     bool   `json:"notify_in"`
+		NotifyOut    bool   `json:"notify_out"`
+		TemplateIn   string `json:"template_in"`
+		TemplateOut  string `json:"template_out"`
+		TemplateLate string `json:"template_late"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+		return
+	}
+
+	setSetting := func(k, v string) {
+		db.Exec(`INSERT INTO settings (key, value) VALUES (?, ?) 
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, k, v)
+	}
+
+	setSetting("telegram_bot_token", strings.TrimSpace(req.BotToken))
+	if req.Enabled {
+		setSetting("telegram_enabled", "1")
+	} else {
+		setSetting("telegram_enabled", "0")
+	}
+	if req.NotifyIn {
+		setSetting("telegram_notify_in", "1")
+	} else {
+		setSetting("telegram_notify_in", "0")
+	}
+	if req.NotifyOut {
+		setSetting("telegram_notify_out", "1")
+	} else {
+		setSetting("telegram_notify_out", "0")
+	}
+
+	if strings.TrimSpace(req.TemplateIn) != "" {
+		setSetting("telegram_template_in", req.TemplateIn)
+	}
+	if strings.TrimSpace(req.TemplateOut) != "" {
+		setSetting("telegram_template_out", req.TemplateOut)
+	}
+	if strings.TrimSpace(req.TemplateLate) != "" {
+		setSetting("telegram_template_late", req.TemplateLate)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": "Pengaturan Notifikasi Telegram berhasil disimpan.",
+	})
+}
+
+func handleUpdateMemberChatID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut && r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
+		return
+	}
+
+	var req struct {
+		ID             int    `json:"id"`
+		TelegramChatID string `json:"telegram_chat_id"`
+		NamaOrtu       string `json:"nama_ortu"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "ID Anggota wajib disertakan.")
+		return
+	}
+
+	req.TelegramChatID = strings.TrimSpace(req.TelegramChatID)
+	req.NamaOrtu = strings.TrimSpace(req.NamaOrtu)
+
+	_, err := db.Exec("UPDATE members SET telegram_chat_id = ?, nama_ortu = ? WHERE id = ?",
+		req.TelegramChatID, req.NamaOrtu, req.ID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal memperbarui Chat ID Telegram.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": "Chat ID Telegram berhasil disimpan",
+		"data":    req,
+	})
+}
+
+// 12. React SPA Static File Handler with Fallback to index.html
 func spaHandler() http.Handler {
 	distFS, err := fs.Sub(frontendDist, "frontend/dist")
 	if err != nil {
@@ -2247,7 +2657,7 @@ func spaHandler() http.Handler {
 
 		f, err := distFS.Open(path)
 		if err != nil {
-			// SPA Route Fallback (e.g. /dashboard, /santri, /pengaturan) -> serve index.html
+			// SPA Route Fallback (e.g. /dashboard, /santri, /pengaturan, /telegram) -> serve index.html
 			r.URL.Path = "/"
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			fileServer.ServeHTTP(w, r)
@@ -2314,6 +2724,7 @@ func main() {
 	mux.HandleFunc("/api/fingerprints/unmap", authMiddleware(handleUnmapFingerprint))
 	mux.HandleFunc("/api/members", authMiddleware(handleMembers))
 	mux.HandleFunc("/api/members/bulk", authMiddleware(handleBulkMembers))
+	mux.HandleFunc("/api/members/chat-id", authMiddleware(handleUpdateMemberChatID))
 	mux.HandleFunc("/api/classes", authMiddleware(handleClasses))
 	mux.HandleFunc("/api/positions", authMiddleware(handlePositions))
 	mux.HandleFunc("/api/stats/dashboard", authMiddleware(handleDashboardStats))
@@ -2322,6 +2733,10 @@ func main() {
 	mux.HandleFunc("/api/settings/reset-attendance", authMiddleware(handleResetAttendance))
 	mux.HandleFunc("/api/settings/reset-all", authMiddleware(handleResetAll))
 	mux.HandleFunc("/api/settings/seed-dummy", authMiddleware(handleSeedDummy))
+	mux.HandleFunc("/api/telegram/status", authMiddleware(handleTelegramStatus))
+	mux.HandleFunc("/api/telegram/test-bot", authMiddleware(handleTelegramTestBot))
+	mux.HandleFunc("/api/telegram/send-test", authMiddleware(handleTelegramSendTest))
+	mux.HandleFunc("/api/telegram/settings", authMiddleware(handleTelegramSettings))
 	mux.HandleFunc("/api/realtime", handleSSE)
 	mux.HandleFunc("/api/health", handleHealth)
 

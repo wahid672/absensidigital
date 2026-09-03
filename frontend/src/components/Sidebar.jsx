@@ -9,6 +9,7 @@ import {
   Settings, 
   LogOut, 
   Fingerprint,
+  Send,
   X 
 } from 'lucide-react';
 import AppLogo from './AppLogo';
@@ -46,6 +47,12 @@ export default function Sidebar({
       label: 'Sidik Jari (Fingerprint)',
       icon: Fingerprint,
       badge: 'IoT'
+    },
+    {
+      id: 'telegram',
+      label: 'Notifikasi Telegram',
+      icon: Send,
+      badge: 'Bot'
     },
     {
       id: 'kelas',

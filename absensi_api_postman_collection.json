@@ -1264,6 +1264,196 @@
 					"response": []
 				}
 			]
+		},
+		{
+			"name": "10. Notifikasi Telegram",
+			"item": [
+				{
+					"name": "Get Status Bot & Konfigurasi Telegram",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/telegram/status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"telegram",
+								"status"
+							]
+						},
+						"description": "Mengambil status verifikasi bot, token, dan template notifikasi aktif."
+					},
+					"response": []
+				},
+				{
+					"name": "Uji Koneksi Bot Token (@BotFather)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"bot_token\": \"8668444866:AAE4IhFH4BIMd1kXTqHRPFQELsfk5upcDFo\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/telegram/test-bot",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"telegram",
+								"test-bot"
+							]
+						},
+						"description": "Memvalidasi apakah Bot Token aktif ke server Telegram API."
+					},
+					"response": []
+				},
+				{
+					"name": "Uji Kirim Pesan Test ke Chat ID (Modal Test)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"chat_id\": \"1234567890\",\n    \"pesan\": \"🔔 *TES NOTIFIKASI TELEGRAM*\\nAssalamu'alaikum Wr. Wb.\\nIni adalah pesan uji coba dari sistem SIAKAD PONPES.\\n\\nStatus: *Berhasil Terhubung! ✅*\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/telegram/send-test",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"telegram",
+								"send-test"
+							]
+						},
+						"description": "Mengirimkan pesan uji coba ke Chat ID penerima tertentu."
+					},
+					"response": []
+				},
+				{
+					"name": "Simpan Pengaturan Bot & Template Pesan",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"bot_token\": \"8668444866:AAE4IhFH4BIMd1kXTqHRPFQELsfk5upcDFo\",\n    \"enabled\": true,\n    \"notify_in\": true,\n    \"notify_out\": true,\n    \"template_in\": \"🔔 *NOTIFIKASI PRESENSI MASUK*\\nAssalamu'alaikum Wr. Wb.\\nYth. Orang Tua/Wali dari *{nama}*\\n\\nAlhamdulillah, santri telah tiba dan melakukan absensi masuk:\\n📅 Tanggal: {tanggal}\\n⏰ Jam: {waktu}\\n📌 Status: {status}\\n\\nTerima kasih.\\n_{instansi}_\",\n    \"template_out\": \"🔔 *NOTIFIKASI PRESENSI PULANG*\\nAssalamu'alaikum Wr. Wb.\\nYth. Orang Tua/Wali dari *{nama}*\\n\\nSantri telah melakukan absensi pulang:\\n📅 Tanggal: {tanggal}\\n⏰ Jam: {waktu}\\n📌 Status: {status}\\n\\nTerima kasih.\\n_{instansi}_\",\n    \"template_late\": \"⚠️ *PERINGATAN KETERLAMBATAN*\\nAssalamu'alaikum Wr. Wb.\\nYth. Orang Tua/Wali dari *{nama}*\\n\\nSantri tercatat terlambat melakukan absensi:\\n📅 Tanggal: {tanggal}\\n⏰ Jam: {waktu}\\n📌 Status: {status}\\n\\nMohon perhatiannya. Terima kasih.\\n_{instansi}_\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/telegram/settings",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"telegram",
+								"settings"
+							]
+						},
+						"description": "Menyimpan seluruh konfigurasi Bot Token, sakelar notifikasi, dan template pesan masuk/pulang."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Chat ID & Nama Ortu Anggota",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"id\": 1,\n    \"nama_ortu\": \"Bp. Anwar TACOB (ALM) & Ibu NURHAYATI\",\n    \"telegram_chat_id\": \"1234567890\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/members/chat-id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"members",
+								"chat-id"
+							]
+						},
+						"description": "Memperbarui data Nama Orang Tua dan Telegram Chat ID anggota."
+					},
+					"response": []
+				}
+			]
 		}
 	],
 	"variable": [

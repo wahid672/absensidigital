@@ -12,11 +12,12 @@ import ClassesView from './views/ClassesView';
 import PositionsView from './views/PositionsView';
 import CetakView from './views/CetakView';
 import PengaturanView from './views/PengaturanView';
+import TelegramView from './views/TelegramView';
 
 export default function App() {
   const getTabFromPath = () => {
     const rawPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
-    const validTabs = ['dashboard', 'santri', 'guru', 'fingerprint', 'kelas', 'jabatan', 'cetak', 'pengaturan'];
+    const validTabs = ['dashboard', 'santri', 'guru', 'fingerprint', 'telegram', 'kelas', 'jabatan', 'cetak', 'pengaturan'];
     if (validTabs.includes(rawPath)) {
       return rawPath;
     }
@@ -249,6 +250,14 @@ export default function App() {
               settings={settings}
               appMode={settings.app_mode || 'pesantren'}
               onUpdated={loadMembersCache}
+            />
+          )}
+
+          {currentTab === 'telegram' && (
+            <TelegramView 
+              settings={settings}
+              appMode={settings.app_mode || 'pesantren'}
+              onSettingsUpdated={loadSettings}
             />
           )}
 
