@@ -34,18 +34,20 @@
 WebServer webServer(80); 
 
 // Konfigurasi WiFi
-const char* ssid       = "ridawahid.web.id";
-const char* password   = "ridawahid123";
-// const char* ssid       = "SIAKADPONPES";
-// const char* password   = "123456789";
+// const char* ssid       = "ridawahid.web.id";
+// const char* password   = "ridawahid123";
+const char* ssid       = "SIAKADPONPES";
+const char* password   = "123456789";
 
 // Konfigurasi API Endpoint & Perangkat (IoT Server)
-const char* serverUrl   = "https://absensi.smartapps.my.id/api/attendance/tap"; // Sesuaikan domain/IP server PHP Anda
-const char* apiKey      = "KUNCI_API_PRESENSI_V1_2026";              // Harus sama dengan SECRET_API_KEY di PHP
-const char* deviceId    = "PRESENSI-V1";                             // ID unik mesin presensi ini
-const char* otaPassword = "wahid123";                                // Password proteksi upload firmware via WiFi (OTA)
-const char* webUsername = "admin";                                   // Username login portal Web ESP32
-const char* webPassword = "admin123";                                // Password login portal Web ESP32
+const char* serverUrl            = "https://absensi.smartapps.my.id/api/attendance/tap"; // Sesuaikan domain/IP server PHP Anda
+const char* apiKey               = "KUNCI_API_PRESENSI_V1_2026";              // Harus sama dengan SECRET_API_KEY di PHP
+const char* deviceId             = "PRESENSI-V1";                             // ID unik mesin presensi ini
+const char* deviceHostNamePrefix = "siakadponpes.com";                        // Prefix nama perangkat di router WiFi (misal: siakadponpes.com-5F2AE4)
+String      deviceHostName       = "";                                        // Otomatis dibuat dari prefix + 3 byte terakhir MAC
+const char* otaPassword          = "wahid123";                                // Password proteksi upload firmware via WiFi (OTA)
+const char* webUsername          = "admin";                                   // Username login portal Web ESP32
+const char* webPassword          = "admin123";                                // Password login portal Web ESP32
 
 // Konfigurasi NTP Server
 const char* ntpServer = "pool.ntp.org";
@@ -1619,12 +1621,13 @@ void printNetworkInfo() {
   Serial.println("         INFORMASI JARINGAN & AKSES ESP32              ");
   Serial.println("=======================================================");
   Serial.printf ("  * Device ID        : %s\n", deviceId);
+  Serial.printf ("  * Hostname (DHCP)  : %s\n", deviceHostName.c_str());
   Serial.printf ("  * WiFi SSID        : %s\n", WiFi.SSID().c_str());
   Serial.printf ("  * IP Address       : %s\n", WiFi.localIP().toString().c_str());
   Serial.printf ("  * Web Dashboard    : http://%s/\n", WiFi.localIP().toString().c_str());
   Serial.printf ("  * Signal (RSSI)    : %d dBm\n", WiFi.RSSI());
   Serial.printf ("  * MAC Address      : %s\n", WiFi.macAddress().c_str());
-  Serial.printf ("  * Arduino IDE OTA  : %s (Port Jaringan, Pass: %s)\n", deviceId, otaPassword);
+  Serial.printf ("  * Arduino IDE OTA  : %s (Port Jaringan, Pass: %s)\n", deviceHostName.c_str(), otaPassword);
   Serial.println("=======================================================\n");
 }
 
@@ -1993,6 +1996,7 @@ void handleWebRoot() {
   html += "<div class='grid'>";
   html += "<div class='box'><strong>IP ADDRESS</strong><span>" + WiFi.localIP().toString() + "</span></div>";
   html += "<div class='box'><strong>STATUS WIFI</strong><span>" + String(WiFi.SSID()) + " (" + String(WiFi.RSSI()) + " dBm)</span></div>";
+  html += "<div class='box'><strong>HOSTNAME (DHCP)</strong><span>" + deviceHostName + "</span></div>";
   html += "<div class='box'><strong>SIDIK JARI TERDAFTAR</strong><span>" + String(totalJari) + " / " + String(MAX_FINGERPRINTS) + " Slot</span></div>";
   html += "<div class='box'><strong>FREE HEAP RAM</strong><span>" + String(ESP.getFreeHeap() / 1024) + " KB</span></div>";
   html += "</div>";
@@ -2121,7 +2125,7 @@ void setupWebServer() {
 }
 
 void setupOTA() {
-  ArduinoOTA.setHostname(deviceId);
+  ArduinoOTA.setHostname(deviceHostName.c_str());
   ArduinoOTA.setPassword(otaPassword); // Proteksi password OTA
   ArduinoOTA.onStart([]() {
     String type;
@@ -2253,7 +2257,15 @@ void setup() {
   String savedJadwal = preferences.getString("jadwal_json", "");
   if (savedJadwal != "") parseJadwal(savedJadwal);
   
+  // Inisialisasi Hostname DHCP unik berbasis prefix & 3 byte terakhir MAC (misal: siakadponpes.com-5F2AE4)
   WiFi.mode(WIFI_STA);
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  char macSuffix[10];
+  sprintf(macSuffix, "%02X%02X%02X", mac[3], mac[4], mac[5]);
+  deviceHostName = String(deviceHostNamePrefix) + "-" + String(macSuffix);
+  WiFi.setHostname(deviceHostName.c_str());
+
   WiFi.begin(ssid, password);
   int wifiAttempts = 0;
   // Timeout max 5 detik saat boot agar tidak macet jika tidak ada WiFi
