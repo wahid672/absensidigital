@@ -2260,11 +2260,11 @@ void setup() {
   
   // Inisialisasi Hostname DHCP unik berbasis prefix & 3 byte terakhir MAC (misal: siakadponpes.com-5F2AE4)
   WiFi.mode(WIFI_STA);
-  uint8_t mac[6];
-  WiFi.macAddress(mac);
-  char macSuffix[10];
-  sprintf(macSuffix, "%02X%02X%02X", mac[3], mac[4], mac[5]);
-  deviceHostName = String(deviceHostNamePrefix) + "-" + String(macSuffix);
+  String macClean = WiFi.macAddress();
+  macClean.replace(":", "");
+  macClean.toUpperCase();
+  String macSuffix = (macClean.length() >= 6) ? macClean.substring(macClean.length() - 6) : "5F2AE4";
+  deviceHostName = String(deviceHostNamePrefix) + "-" + macSuffix;
   WiFi.setHostname(deviceHostName.c_str());
 
   WiFi.begin(ssid, password);
