@@ -22,16 +22,24 @@ import {
   ShieldCheck,
   Smartphone,
   ExternalLink,
-  MessageSquare
+  MessageSquare,
+  Bot,
+  BellRing,
+  UserCheck,
+  CheckCircle,
+  X
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 
 export default function TelegramView({ settings = {}, onSettingsUpdated, appMode = 'pesantren' }) {
   const isPesantren = appMode !== 'umum';
+  const labelSiswa = isPesantren ? 'Santri' : 'Siswa';
+  const labelWali = isPesantren ? 'Wali Santri' : 'Wali Siswa';
+  const labelGuru = isPesantren ? 'Asatidz / Pegawai' : 'Guru / Pegawai';
 
-  // Sub-view navigation: 'main' | 'template' | 'chat_id'
-  const [subView, setSubView] = useState('main');
+  // Sub-view tab navigation: 'main' (Konfigurasi Bot) | 'template' (Template Pesan) | 'chat_id' (Manajemen Chat ID)
+  const [activeTab, setActiveTab] = useState('main');
 
   // Telegram Config State
   const [botToken, setBotToken] = useState('');
@@ -41,17 +49,19 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
   const [notifyIn, setNotifyIn] = useState(true);
   const [notifyOut, setNotifyOut] = useState(true);
   const [telegramEnabled, setTelegramEnabled] = useState(true);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   // Template State
   const [templateIn, setTemplateIn] = useState('');
   const [templateOut, setTemplateOut] = useState('');
   const [templateLate, setTemplateLate] = useState('');
-  const [activeTemplateTab, setActiveTemplateTab] = useState('in');
+  const [activeTemplateType, setActiveTemplateType] = useState('in');
+  const [savingTemplates, setSavingTemplates] = useState(false);
 
   // Chat ID Management State
   const [members, setMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [memberTypeTab, setMemberTypeTab] = useState('siswa'); // 'siswa' (Wali Santri) | 'guru' (Pegawai)
+  const [memberTypeTab, setMemberTypeTab] = useState('siswa'); // 'siswa' | 'guru'
   const [searchQuery, setSearchQuery] = useState('');
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -63,7 +73,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
   const [editChatID, setEditChatID] = useState('');
   const [savingChatID, setSavingChatID] = useState(false);
 
-  // Test Send Message Modal State (matching Screenshot 3)
+  // Test Send Message Modal State
   const [testModalOpen, setTestModalOpen] = useState(false);
   const [testTargetChatID, setTestTargetChatID] = useState('');
   const [testTargetNama, setTestTargetNama] = useState('');
@@ -156,7 +166,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
         Swal.fire({
           icon: 'success',
           title: 'Bot Aktif & Terhubung!',
-          html: `<b>${json.bot_info}</b><br><p class="text-sm text-slate-400 mt-2">Koneksi ke server Telegram Bot API berhasil.</p>`,
+          html: `<div class="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-sm font-semibold">${json.bot_info}</div><p class="text-xs text-slate-500 mt-2">Koneksi ke server Telegram Bot API berhasil.</p>`,
           confirmButtonColor: '#2563eb'
         });
       } else {
@@ -175,6 +185,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
   // Save Bot Token Settings
   const handleSaveBotSettings = async () => {
+    setSavingSettings(true);
     try {
       const res = await apiFetch('/api/telegram/settings', {
         method: 'POST',
@@ -191,12 +202,11 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
       const json = await res.json();
       if (json.status === 'success') {
         Swal.fire({
-          toast: true,
-          position: 'top-end',
           icon: 'success',
-          title: 'Pengaturan Bot berhasil disimpan!',
-          showConfirmButton: false,
-          timer: 2500
+          title: 'Berhasil Disimpan',
+          text: 'Konfigurasi Bot Telegram berhasil disimpan.',
+          timer: 1500,
+          showConfirmButton: false
         });
         loadTelegramStatus();
         if (onSettingsUpdated) onSettingsUpdated();
@@ -205,11 +215,14 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
       }
     } catch (err) {
       Swal.fire('Error', 'Gagal menyimpan pengaturan ke server.', 'error');
+    } finally {
+      setSavingSettings(false);
     }
   };
 
   // Save Templates
   const handleSaveTemplates = async () => {
+    setSavingTemplates(true);
     try {
       const res = await apiFetch('/api/telegram/settings', {
         method: 'POST',
@@ -227,9 +240,9 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
       if (json.status === 'success') {
         Swal.fire({
           icon: 'success',
-          title: 'Berhasil!',
+          title: 'Template Tersimpan',
           text: 'Template pesan notifikasi Telegram berhasil disimpan.',
-          timer: 2000,
+          timer: 1500,
           showConfirmButton: false
         });
         loadTelegramStatus();
@@ -238,6 +251,8 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
       }
     } catch (err) {
       Swal.fire('Error', 'Terjadi kesalahan saat menyimpan template.', 'error');
+    } finally {
+      setSavingTemplates(false);
     }
   };
 
@@ -245,7 +260,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
   const handleResetTemplates = () => {
     Swal.fire({
       title: 'Reset Template ke Default?',
-      text: 'Semua kustomisasi template pesan masuk dan pulang akan dikembalikan ke teks standar bawaan.',
+      text: 'Semua template notifikasi pesan masuk dan pulang akan dikembalikan ke format standar bawaan.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Ya, Reset',
@@ -260,7 +275,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
           toast: true,
           position: 'top-end',
           icon: 'info',
-          title: 'Template di-reset. Jangan lupa klik Simpan!',
+          title: 'Template di-reset. Jangan lupa klik Simpan Template!',
           showConfirmButton: false,
           timer: 3000
         });
@@ -270,9 +285,9 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
   // Insert tag helper at cursor
   const insertTag = (tag) => {
-    if (activeTemplateTab === 'in') {
+    if (activeTemplateType === 'in') {
       setTemplateIn(prev => prev + ' ' + tag);
-    } else if (activeTemplateTab === 'out') {
+    } else if (activeTemplateType === 'out') {
       setTemplateOut(prev => prev + ' ' + tag);
     } else {
       setTemplateLate(prev => prev + ' ' + tag);
@@ -323,7 +338,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
     }
   };
 
-  // Open Test Send Message Modal (Screenshot 3)
+  // Open Test Send Message Modal
   const openTestModal = (targetChatID = '', targetNama = '') => {
     setTestTargetChatID(targetChatID);
     setTestTargetNama(targetNama);
@@ -360,15 +375,15 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
         setTestModalOpen(false);
         Swal.fire({
           icon: 'success',
-          title: 'Pesan Berhasil Terkirim! ✈️',
-          html: `<p class="text-sm text-slate-300">Pesan notifikasi berhasil dikirim ke Chat ID: <b>${testTargetChatID}</b>.</p>`,
+          title: 'Pesan Terkirim! ✈️',
+          html: `<p class="text-sm text-slate-600">Pesan notifikasi berhasil dikirim ke Chat ID: <b>${testTargetChatID}</b>.</p>`,
           confirmButtonColor: '#2563eb'
         });
       } else {
         Swal.fire({
           icon: 'error',
           title: 'Gagal Kirim Pesan',
-          text: json.message || 'Pastikan pengguna sudah menekan tombol START di bot Telegram.',
+          text: json.message || 'Pastikan penerima sudah menekan tombol START di bot Telegram.',
           confirmButtonColor: '#ef4444'
         });
       }
@@ -399,97 +414,130 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
   // Variable tags helper
   const availableTags = [
-    { tag: '{nama}', desc: 'Nama Santri/Guru' },
+    { tag: '{nama}', desc: 'Nama Lengkap' },
     { tag: '{nis}', desc: 'NIS/NIP' },
     { tag: '{tipe}', desc: 'Siswa / Guru' },
     { tag: '{kelas}', desc: 'Kelas / Jabatan' },
     { tag: '{tanggal}', desc: 'Tgl (YYYY-MM-DD)' },
     { tag: '{waktu}', desc: 'Jam (HH:MM:SS)' },
     { tag: '{status}', desc: 'Tepat / Terlambat' },
-    { tag: '{instansi}', desc: 'Nama Pondok/Sekolah' },
+    { tag: '{instansi}', desc: 'Nama Instansi' },
     { tag: '{nama_ortu}', desc: 'Nama Wali/Ortu' }
   ];
 
   return (
-    <div className="space-y-6 animate-fade-in text-slate-100">
+    <section className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto animate-fade-in">
 
       {/* ========================================================================= */}
-      {/* 1. MAIN TELEGRAM VIEW (MATCHING SCREENSHOT 1) */}
+      {/* 1. PAGE HEADER & NAVIGATION TABS */}
       {/* ========================================================================= */}
-      {subView === 'main' && (
-        <>
-          {/* Header Title */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-black text-white flex items-center gap-3">
-                <Send className="w-7 h-7 text-primary-400" />
-                Telegram
-              </h1>
-              <p className="text-xs text-slate-400 mt-1">
-                Konfigurasi Bot Telegram Resmi untuk Notifikasi Presensi Otomatis ke Wali Santri & Asatidz
-              </p>
-            </div>
-
-            {/* Quick Test Message Button */}
-            <button
-              onClick={() => openTestModal('', '')}
-              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-sm self-start sm:self-auto"
-            >
-              <Send className="w-4 h-4 text-sky-400" />
-              <span>Test Kirim Pesan Bebas</span>
-            </button>
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 shadow-inner">
+            <Send className="w-6 h-6" />
           </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              Notifikasi Telegram
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 border border-sky-200">
+                Bot Auto-Push
+              </span>
+            </h2>
+            <p className="text-xs text-slate-500">
+              Konfigurasi Bot Telegram untuk mengirim notifikasi presensi otomatis ke {labelWali} & {labelGuru}
+            </p>
+          </div>
+        </div>
 
-          {/* Blue Info Box: Cara Menggunakan Fitur (Matches Screenshot 1) */}
-          <div className="bg-sky-950/40 border border-sky-800/60 rounded-2xl p-5 text-sky-100 shadow-md">
-            <h3 className="font-bold text-sm text-sky-300 flex items-center gap-2 mb-3">
-              <Info className="w-4 h-4 text-sky-400" />
-              Cara Menggunakan Fitur:
+        {/* Action Header Button: Test Kirim */}
+        <button
+          type="button"
+          onClick={() => openTestModal('', '')}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl transition-all shadow-sm self-start lg:self-auto"
+        >
+          <Send className="w-3.5 h-3.5 text-sky-300" />
+          <span>Test Kirim Pesan</span>
+        </button>
+      </div>
+
+      {/* MAIN NAVIGATION TABS (Pills Matching App Design) */}
+      <div className="flex items-center gap-2 bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200 w-fit">
+        <button
+          type="button"
+          onClick={() => setActiveTab('main')}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'main'
+              ? 'bg-white text-primary-600 shadow-sm border border-slate-200/80'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+          }`}
+        >
+          <Bot className="w-4 h-4" />
+          <span>1. Konfigurasi Bot</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('template')}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'template'
+              ? 'bg-white text-rose-600 shadow-sm border border-slate-200/80'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+          }`}
+        >
+          <Settings className="w-4 h-4" />
+          <span>2. Setting Template Pesan</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('chat_id')}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'chat_id'
+              ? 'bg-white text-sky-600 shadow-sm border border-slate-200/80'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>3. Manajemen Chat ID</span>
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 2. TAB 1: KONFIGURASI BOT TELEGRAM */}
+      {/* ========================================================================= */}
+      {activeTab === 'main' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Blue Info Box: Cara Menggunakan Fitur */}
+          <div className="bg-sky-50 border border-sky-200 rounded-2xl p-5 text-sky-900 shadow-sm">
+            <h3 className="font-bold text-sm text-sky-950 flex items-center gap-2 mb-2.5">
+              <Info className="w-4 h-4 text-sky-600" />
+              Cara Menggunakan Fitur Notifikasi:
             </h3>
-            <ol className="list-decimal list-inside space-y-1.5 text-xs text-sky-200/90 leading-relaxed pl-1">
-              <li>Pastikan <b>Bot Token</b> sudah diisi dan status API <b>Aktif</b>.</li>
-              <li>User/Penerima pesan harus membuka bot Telegram yang telah dibuat.</li>
-              <li>Klik tombol <b>'START'</b> atau kirim pesan <b>'/start'</b> pada bot tersebut.</li>
-              <li>Hal ini diperlukan agar sistem dapat mengirimkan notifikasi melalui Telegram.</li>
-              <li>Setiap pesan notifikasi absensi akan otomatis dikirimkan saat santri/pegawai tap kartu RFID atau sidik jari di mesin ESP32.</li>
+            <ol className="list-decimal list-inside space-y-1 text-xs text-sky-800 leading-relaxed pl-1">
+              <li>Pastikan <b>Telegram Bot Token</b> sudah diisi dengan benar dan berstatus <b>Aktif</b>.</li>
+              <li>Wali santri / Pegawai harus membuka bot Telegram yang telah dibuat.</li>
+              <li>Klik tombol <b>'START'</b> atau kirim perintah <b>'/start'</b> pada bot tersebut agar bot memiliki izin mengirim pesan.</li>
+              <li>Masukkan nomor <b>Chat ID</b> penerima pada menu <b>Manajemen Chat ID Telegram</b>.</li>
+              <li>Setiap ada santri/pegawai yang melakukan scan kartu RFID atau sidik jari di mesin ESP32, notifikasi otomatis terkirim secara instan.</li>
             </ol>
           </div>
 
-          {/* Navigation Action Buttons (Matches Screenshot 1: Red & Blue Buttons) */}
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => setSubView('template')}
-              className="px-5 py-2.5 bg-rose-700 hover:bg-rose-600 text-white rounded-xl text-xs font-bold flex items-center gap-2.5 transition shadow-lg shadow-rose-900/30 hover:scale-[1.02] active:scale-95"
-            >
-              <Settings className="w-4 h-4" />
-              <span>Setting Template Pesan</span>
-            </button>
-
-            <button
-              onClick={() => setSubView('chat_id')}
-              className="px-5 py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold flex items-center gap-2.5 transition shadow-lg shadow-primary-900/30 hover:scale-[1.02] active:scale-95"
-            >
-              <Users className="w-4 h-4" />
-              <span>Manajemen Chat ID Telegram</span>
-            </button>
-          </div>
-
-          {/* Card: Default / Bot Token Settings (Matches Screenshot 1) */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          {/* Settings Card */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-primary-400">
-                  <Key className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700">
+                  <Key className="w-5 h-5 text-primary-600" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-white">Default</h2>
-                  <p className="text-[11px] text-slate-400">Pengaturan Kunci API Bot Telegram Utama</p>
+                  <h3 className="text-base font-bold text-slate-800">Telegram Bot Token</h3>
+                  <p className="text-xs text-slate-500">Kunci otentikasi API bot Telegram resmi dari @BotFather</p>
                 </div>
               </div>
 
               {botStatus.botInfo && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold rounded-xl">
-                  <CheckCircle2 className="w-4 h-4" />
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold rounded-xl self-start sm:self-auto">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                   <span>{botStatus.botInfo}</span>
                 </div>
               )}
@@ -497,25 +545,25 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
             {/* Input Bot Token */}
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-600">
                 TELEGRAM BOT TOKEN
               </label>
-              
+
               <div className="relative flex items-center">
                 <input
                   type={showToken ? 'text' : 'password'}
                   value={botToken}
                   onChange={(e) => setBotToken(e.target.value)}
                   placeholder="Contoh: 8668444866:AAE4IhFH4BIMd1kXTqHRPFQELsfk5upcDFo"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-primary-500 pr-24"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white pr-24"
                 />
 
-                <div className="absolute right-2 flex items-center gap-1.5">
+                <div className="absolute right-2 flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => setShowToken(!showToken)}
                     title={showToken ? 'Sembunyikan' : 'Tampilkan'}
-                    className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+                    className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition"
                   >
                     {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -524,122 +572,101 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                     type="button"
                     onClick={handleCopyToken}
                     title="Salin Token"
-                    className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+                    className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition"
                   >
-                    {tokenCopied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                    {tokenCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-500">
                 Token API yang didapatkan dari @BotFather. Setiap unit/instansi dapat memakai bot yang terdaftar.
               </p>
             </div>
 
-            {/* Blue Info Box: Cara Mendapatkan Bot Token (Matches Screenshot 1) */}
-            <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 text-xs text-slate-300 space-y-2">
-              <h4 className="font-bold text-sky-400 flex items-center gap-2">
-                <HelpCircle className="w-4 h-4" />
+            {/* Panduan @BotFather Box */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-700 space-y-2">
+              <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-primary-600" />
                 Cara Mendapatkan Bot Token:
               </h4>
-              <ol className="list-decimal list-inside space-y-1 text-slate-400 pl-1">
-                <li>Buka aplikasi Telegram dan cari <b className="text-white">@BotFather</b>.</li>
-                <li>Kirim perintah <code className="text-sky-300 bg-slate-900 px-1.5 py-0.5 rounded">/newbot</code> dan ikuti instruksi untuk mengatur nama dan username bot Anda.</li>
-                <li>Salin <b>API Token</b> yang diberikan oleh @BotFather dan tempelkan pada kolom di atas.</li>
+              <ol className="list-decimal list-inside space-y-1 text-slate-600 pl-1">
+                <li>Buka aplikasi Telegram dan cari <b className="text-slate-800">@BotFather</b>.</li>
+                <li>Kirim perintah <code className="text-primary-700 bg-primary-50 border border-primary-200 px-1.5 py-0.5 rounded font-bold">/newbot</code> dan ikuti instruksi untuk menentukan nama dan username bot.</li>
+                <li>Salin <b>API Token</b> yang diberikan dan tempelkan pada kolom di atas.</li>
               </ol>
             </div>
 
-            {/* Notification Trigger Checkboxes */}
-            <div className="pt-2 border-t border-slate-800/80 space-y-3">
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+            {/* Pemicu Notifikasi Switches */}
+            <div className="pt-2 border-t border-slate-100 space-y-3">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                <BellRing className="w-4 h-4 text-slate-500" />
                 Pemicu Notifikasi Otomatis:
               </h4>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label className="flex items-center gap-3 p-3 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer hover:border-slate-700 transition">
+                <label className="flex items-center gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:border-slate-300 transition">
                   <input
                     type="checkbox"
                     checked={notifyIn}
                     onChange={(e) => setNotifyIn(e.target.checked)}
-                    className="w-4 h-4 rounded text-primary-600 bg-slate-900 border-slate-700 focus:ring-primary-500"
+                    className="w-4 h-4 rounded text-primary-600 border-slate-300 focus:ring-primary-500"
                   />
                   <div>
-                    <p className="text-xs font-bold text-white">Notifikasi Presensi Masuk</p>
-                    <p className="text-[10px] text-slate-400">Kirim pesan otomatis saat santri/pegawai tap masuk</p>
+                    <p className="text-xs font-bold text-slate-800">Notifikasi Presensi Masuk</p>
+                    <p className="text-[11px] text-slate-500">Kirim pesan otomatis saat santri/pegawai tap masuk</p>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 p-3 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer hover:border-slate-700 transition">
+                <label className="flex items-center gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:border-slate-300 transition">
                   <input
                     type="checkbox"
                     checked={notifyOut}
                     onChange={(e) => setNotifyOut(e.target.checked)}
-                    className="w-4 h-4 rounded text-primary-600 bg-slate-900 border-slate-700 focus:ring-primary-500"
+                    className="w-4 h-4 rounded text-primary-600 border-slate-300 focus:ring-primary-500"
                   />
                   <div>
-                    <p className="text-xs font-bold text-white">Notifikasi Presensi Pulang</p>
-                    <p className="text-[10px] text-slate-400">Kirim pesan otomatis saat santri/pegawai tap pulang</p>
+                    <p className="text-xs font-bold text-slate-800">Notifikasi Presensi Pulang</p>
+                    <p className="text-[11px] text-slate-500">Kirim pesan otomatis saat santri/pegawai tap pulang</p>
                   </div>
                 </label>
               </div>
             </div>
 
-            {/* Action Buttons: Save & Verify */}
-            <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center gap-3">
+            {/* Actions: Save & Verify */}
+            <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={handleSaveBotSettings}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-lg shadow-emerald-900/30 hover:scale-[1.02] active:scale-95"
+                disabled={savingSettings}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
               >
                 <Save className="w-4 h-4" />
-                <span>Simpan</span>
+                <span>{savingSettings ? 'Menyimpan...' : 'Simpan Pengaturan'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleTestBot}
                 disabled={botStatus.loading}
-                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-2 transition disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold transition disabled:opacity-50"
               >
-                <RefreshCw className={`w-4 h-4 text-sky-400 ${botStatus.loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 text-slate-600 ${botStatus.loading ? 'animate-spin' : ''}`} />
                 <span>{botStatus.loading ? 'Memeriksa...' : 'Cek Status Bot'}</span>
               </button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {/* ========================================================================= */}
-      {/* 2. SETTING TEMPLATE PESAN VIEW */}
+      {/* 3. TAB 2: SETTING TEMPLATE PESAN */}
       {/* ========================================================================= */}
-      {subView === 'template' && (
-        <>
-          {/* Header & Back Button */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
-                <span>Home</span>
-                <span>/</span>
-                <span className="text-rose-400">Setting Template Pesan</span>
-              </div>
-              <h1 className="text-2xl font-black text-white flex items-center gap-3">
-                <Settings className="w-7 h-7 text-rose-500" />
-                Setting Template Pesan Telegram
-              </h1>
-            </div>
-
-            <button
-              onClick={() => setSubView('main')}
-              className="px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-md"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Kembali</span>
-            </button>
-          </div>
-
-          {/* Dynamic Variable Helper Badges */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-400" />
+      {activeTab === 'template' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Dynamic Variable Badges */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-500" />
               Tag Variabel Dinamis (Klik untuk Menambahkan ke Template):
             </h3>
             <div className="flex flex-wrap gap-2">
@@ -648,28 +675,30 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                   key={item.tag}
                   type="button"
                   onClick={() => insertTag(item.tag)}
-                  className="px-3 py-1.5 bg-slate-950 hover:bg-primary-950/60 border border-slate-800 hover:border-primary-500/50 rounded-lg text-xs font-mono text-primary-300 flex items-center gap-1.5 transition group"
+                  className="px-3 py-1.5 bg-slate-50 hover:bg-primary-50 border border-slate-200 hover:border-primary-300 rounded-lg text-xs font-mono text-primary-700 flex items-center gap-1.5 transition group shadow-2xs"
+                  title="Klik untuk menyisipkan tag"
                 >
                   <span className="font-bold">{item.tag}</span>
-                  <span className="text-[10px] text-slate-500 group-hover:text-slate-400">({item.desc})</span>
+                  <span className="text-[10px] text-slate-400 group-hover:text-primary-600">({item.desc})</span>
                 </button>
               ))}
             </div>
-            <p className="text-[11px] text-slate-400">
-              Format teks mendukung Markdown Telegram: <code className="text-white">*tebal*</code>, <code className="text-white">_miring_</code>, <code className="text-white">`kode`</code>.
+            <p className="text-[11px] text-slate-500">
+              Format teks mendukung Markdown Telegram: <code className="text-slate-800 bg-slate-100 px-1 py-0.5 rounded font-bold">*tebal*</code>, <code className="text-slate-800 bg-slate-100 px-1 py-0.5 rounded italic">_miring_</code>, <code className="text-slate-800 bg-slate-100 px-1 py-0.5 rounded font-mono">`kode`</code>.
             </p>
           </div>
 
-          {/* Template Tabs: Masuk | Pulang | Terlambat */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
-            <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+          {/* Template Editor Card */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+            {/* Sub-tabs: Masuk | Pulang | Terlambat */}
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
               <button
                 type="button"
-                onClick={() => setActiveTemplateTab('in')}
+                onClick={() => setActiveTemplateType('in')}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-                  activeTemplateTab === 'in'
-                    ? 'bg-primary-600 text-white shadow-md shadow-primary-900/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  activeTemplateType === 'in'
+                    ? 'bg-primary-50 text-primary-700 border border-primary-200'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
               >
                 <span>🔔 Template Presensi Masuk</span>
@@ -677,11 +706,11 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
               <button
                 type="button"
-                onClick={() => setActiveTemplateTab('out')}
+                onClick={() => setActiveTemplateType('out')}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-                  activeTemplateTab === 'out'
-                    ? 'bg-primary-600 text-white shadow-md shadow-primary-900/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  activeTemplateType === 'out'
+                    ? 'bg-primary-50 text-primary-700 border border-primary-200'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
               >
                 <span>🚪 Template Presensi Pulang</span>
@@ -689,156 +718,135 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
               <button
                 type="button"
-                onClick={() => setActiveTemplateTab('late')}
+                onClick={() => setActiveTemplateType('late')}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-                  activeTemplateTab === 'late'
-                    ? 'bg-primary-600 text-white shadow-md shadow-primary-900/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  activeTemplateType === 'late'
+                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
               >
                 <span>⚠️ Template Terlambat</span>
               </button>
             </div>
 
-            {/* Active Template Editor & Live Preview */}
+            {/* Editor & Live Preview Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Textarea Editor */}
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300">
-                  {activeTemplateTab === 'in' && 'Format Pesan Presensi Masuk:'}
-                  {activeTemplateTab === 'out' && 'Format Pesan Presensi Pulang:'}
-                  {activeTemplateTab === 'late' && 'Format Pesan Khusus Santri Terlambat:'}
+                <label className="text-xs font-bold text-slate-700">
+                  {activeTemplateType === 'in' && 'Format Pesan Presensi Masuk:'}
+                  {activeTemplateType === 'out' && 'Format Pesan Presensi Pulang:'}
+                  {activeTemplateType === 'late' && 'Format Pesan Peringatan Terlambat:'}
                 </label>
 
-                {activeTemplateTab === 'in' && (
+                {activeTemplateType === 'in' && (
                   <textarea
                     rows={10}
                     value={templateIn}
                     onChange={(e) => setTemplateIn(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-primary-500 leading-relaxed"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-4 text-xs font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white leading-relaxed"
                   />
                 )}
 
-                {activeTemplateTab === 'out' && (
+                {activeTemplateType === 'out' && (
                   <textarea
                     rows={10}
                     value={templateOut}
                     onChange={(e) => setTemplateOut(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-primary-500 leading-relaxed"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-4 text-xs font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white leading-relaxed"
                   />
                 )}
 
-                {activeTemplateTab === 'late' && (
+                {activeTemplateType === 'late' && (
                   <textarea
                     rows={10}
                     value={templateLate}
                     onChange={(e) => setTemplateLate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-primary-500 leading-relaxed"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-4 text-xs font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white leading-relaxed"
                   />
                 )}
               </div>
 
-              {/* Live Telegram Preview */}
+              {/* Realistic Telegram Live Preview */}
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300 flex items-center gap-2">
-                  <Smartphone className="w-4 h-4 text-sky-400" />
-                  Live Preview Pesan Telegram:
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-sky-600" />
+                  Live Preview Tampilan Pesan Telegram:
                 </label>
 
-                <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 min-h-[220px] flex flex-col justify-between">
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs text-slate-200 leading-relaxed whitespace-pre-wrap font-sans shadow-inner border-l-4 border-l-sky-500">
+                <div className="bg-slate-100 border border-slate-200 rounded-2xl p-5 min-h-[220px] flex flex-col justify-between shadow-inner">
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap font-sans shadow-sm border-l-4 border-l-sky-500">
                     {(() => {
-                      let raw = activeTemplateTab === 'in' ? templateIn : activeTemplateTab === 'out' ? templateOut : templateLate;
+                      let raw = activeTemplateType === 'in' ? templateIn : activeTemplateType === 'out' ? templateOut : templateLate;
                       return (raw || '')
                         .replace(/{nama}/g, 'Muhammad Rizky Pratama')
                         .replace(/{nis}/g, '20261001')
                         .replace(/{tipe}/g, 'Siswa')
                         .replace(/{kelas}/g, '10 IPA 1')
                         .replace(/{tanggal}/g, '2026-09-03')
-                        .replace(/{waktu}/g, activeTemplateTab === 'in' ? '06:45:10' : '15:05:22')
-                        .replace(/{status}/g, activeTemplateTab === 'late' ? 'Terlambat ⚠️' : 'Tepat Waktu ✅')
+                        .replace(/{waktu}/g, activeTemplateType === 'in' ? '06:45:10' : '15:05:22')
+                        .replace(/{status}/g, activeTemplateType === 'late' ? 'Terlambat ⚠️' : 'Tepat Waktu ✅')
                         .replace(/{instansi}/g, settings.instansi_nama || 'YAYASAN PONDOK PESANTREN DIGITAL')
                         .replace(/{nama_ortu}/g, 'Bp. Halim & Ibu Siti');
                     })()}
                   </div>
 
                   <p className="text-[10px] text-slate-500 mt-3 text-right">
-                    *Teks preview di atas menggunakan contoh data simulasi
+                    *Tampilan pesan di atas menggunakan data simulasi contoh
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Footer Buttons */}
-            <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+            {/* Action Buttons */}
+            <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
               <button
                 type="button"
                 onClick={handleResetTemplates}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-2 transition"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl border border-slate-300 transition"
               >
-                <RotateCcw className="w-4 h-4 text-amber-400" />
+                <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
                 <span>Reset ke Default</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleSaveTemplates}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-lg shadow-emerald-900/30 hover:scale-[1.02] active:scale-95"
+                disabled={savingTemplates}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
               >
                 <Save className="w-4 h-4" />
-                <span>Simpan Template Pesan</span>
+                <span>{savingTemplates ? 'Menyimpan...' : 'Simpan Template Pesan'}</span>
               </button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {/* ========================================================================= */}
-      {/* 3. MANAJEMEN CHAT ID TELEGRAM VIEW (MATCHING SCREENSHOT 2) */}
+      {/* 4. TAB 3: MANAJEMEN CHAT ID TELEGRAM */}
       {/* ========================================================================= */}
-      {subView === 'chat_id' && (
-        <>
-          {/* Header & Breadcrumb (Matches Screenshot 2) */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
-                <span>Home</span>
-                <span>/</span>
-                <span className="text-primary-400">Manajemen Chat Id Telegram</span>
-              </div>
-              <h1 className="text-2xl font-black text-white flex items-center gap-3">
-                <Users className="w-7 h-7 text-primary-500" />
-                Manajemen Chat Id Telegram
-              </h1>
-            </div>
-
-            <button
-              onClick={() => setSubView('main')}
-              className="px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-md"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Kembali</span>
-            </button>
-          </div>
-
-          {/* Info Box: Cara Mendapatkan Chat ID (Matches Screenshot 2) */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 text-slate-300 shadow-md space-y-2">
-            <h3 className="font-bold text-xs text-slate-200 flex items-center gap-2">
-              <Info className="w-4 h-4 text-primary-400" />
-              Cara Mendapatkan Chat ID:
+      {activeTab === 'chat_id' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Info Box: Cara Mendapatkan Chat ID */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-slate-700 shadow-sm space-y-2">
+            <h3 className="font-bold text-xs text-slate-800 flex items-center gap-2">
+              <Info className="w-4 h-4 text-primary-600" />
+              Cara Mendapatkan Chat ID Telegram Pengguna:
             </h3>
-            <ol className="list-decimal list-inside space-y-1 text-xs text-slate-400 leading-relaxed pl-1">
-              <li>Buka aplikasi Telegram dan cari bot <b className="text-white">@userinfobot</b> atau <b className="text-white">@getmyid_bot</b>.</li>
+            <ol className="list-decimal list-inside space-y-1 text-xs text-slate-600 leading-relaxed pl-1">
+              <li>Buka aplikasi Telegram dan cari bot <b className="text-slate-800">@userinfobot</b> atau <b className="text-slate-800">@getmyid_bot</b>.</li>
               <li>Klik tombol <b>'Start'</b> atau kirim pesan apa saja ke bot tersebut.</li>
-              <li>Bot akan membalas dengan <b>'ID'</b> atau <b>'Your User ID'</b>. Angka tersebut adalah Chat ID Anda.</li>
-              <li>Masukkan angka tersebut ke dalam kolom Chat ID pada sistem ini.</li>
+              <li>Bot akan membalas dengan <b>'ID'</b> atau <b>'Your User ID'</b> (angka angka). Angka tersebut adalah Chat ID.</li>
+              <li>Masukkan nomor tersebut ke dalam kolom Chat ID di bawah.</li>
             </ol>
           </div>
 
-          {/* Filter Tab & Search Bar (Matches Screenshot 2) */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              {/* Tabs: Wali Santri | Pegawai (Matches Screenshot 2) */}
+          {/* Table Container Card */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            {/* Table Header: Filters & Search */}
+            <div className="p-4 sm:px-6 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+              {/* Tabs: Wali Santri vs Pegawai */}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -846,13 +854,13 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                     setMemberTypeTab('siswa');
                     setCurrentPage(1);
                   }}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
                     memberTypeTab === 'siswa'
-                      ? 'bg-primary-600 text-white shadow-md shadow-primary-900/30'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                      ? 'bg-primary-50 text-primary-700 border border-primary-200'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
-                  {isPesantren ? 'Wali Santri' : 'Wali Siswa'}
+                  {labelWali}
                 </button>
 
                 <button
@@ -861,19 +869,19 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                     setMemberTypeTab('guru');
                     setCurrentPage(1);
                   }}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
                     memberTypeTab === 'guru'
-                      ? 'bg-primary-600 text-white shadow-md shadow-primary-900/30'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                      ? 'bg-primary-50 text-primary-700 border border-primary-200'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
-                  {isPesantren ? 'Asatidz / Pegawai' : 'Guru / Pegawai'}
+                  {labelGuru}
                 </button>
               </div>
 
-              {/* Search Bar */}
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 text-xs text-slate-400">
+              {/* Show Entries & Search Input */}
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
                   <span>Show</span>
                   <select
                     value={pageSize}
@@ -881,18 +889,17 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                       setPageSize(Number(e.target.value));
                       setCurrentPage(1);
                     }}
-                    className="bg-slate-950 border border-slate-700 text-white rounded-lg px-2 py-1 text-xs focus:outline-none"
+                    className="bg-slate-50 border border-slate-300 text-slate-800 rounded-lg px-2 py-1 text-xs focus:outline-none"
                   >
                     <option value={10}>10</option>
                     <option value={25}>25</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
                   </select>
-                  <span>entries</span>
                 </div>
 
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={searchQuery}
@@ -900,39 +907,39 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                       setSearchQuery(e.target.value);
                       setCurrentPage(1);
                     }}
-                    placeholder="Search..."
-                    className="bg-slate-950 border border-slate-700 text-white rounded-xl pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-primary-500 w-44 sm:w-56"
+                    placeholder="Cari nama, NIS, kelas, chat ID..."
+                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Table (Matches Screenshot 2) */}
-            <div className="overflow-x-auto rounded-xl border border-slate-800">
+            {/* Table */}
+            <div className="overflow-x-auto min-h-[320px]">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider text-[11px]">
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
                     <th className="py-3 px-4 w-12 text-center">No</th>
                     <th className="py-3 px-4 w-32">{memberTypeTab === 'siswa' ? 'NIS' : 'NIP / ID'}</th>
-                    <th className="py-3 px-4">Nama</th>
+                    <th className="py-3 px-4">Nama Lengkap</th>
                     <th className="py-3 px-4">
-                      {memberTypeTab === 'siswa' ? 'Nama Ayah & Ibu' : 'Jabatan / Posisi'}
+                      {memberTypeTab === 'siswa' ? 'Nama Ayah & Ibu / Wali' : 'Jabatan / Posisi'}
                     </th>
-                    <th className="py-3 px-4">Chat ID</th>
-                    <th className="py-3 px-4 w-28 text-center">Action</th>
+                    <th className="py-3 px-4">Telegram Chat ID</th>
+                    <th className="py-3 px-4 w-28 text-center">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 font-medium">
+                <tbody className="divide-y divide-slate-100 font-medium">
                   {loadingMembers ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-500">
+                      <td colSpan={6} className="py-12 text-center text-slate-500">
                         Memuat data anggota...
                       </td>
                     </tr>
                   ) : paginatedMembers.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-500">
-                        Tidak ada data yang cocok.
+                      <td colSpan={6} className="py-12 text-center text-slate-500">
+                        Tidak ada data anggota yang ditemukan.
                       </td>
                     </tr>
                   ) : (
@@ -941,48 +948,50 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                       const hasChatID = !!(m.telegram_chat_id && m.telegram_chat_id.trim());
 
                       return (
-                        <tr key={m.id} className="hover:bg-slate-800/40 transition">
+                        <tr key={m.id} className="hover:bg-slate-50/80 transition">
                           <td className="py-3 px-4 text-center text-slate-500">{rowNum}</td>
-                          <td className="py-3 px-4 font-mono text-slate-300">
+                          <td className="py-3 px-4 font-mono text-slate-600">
                             {m.nis_nip || m.uid || '-'}
                           </td>
-                          <td className="py-3 px-4 font-bold text-white uppercase">
+                          <td className="py-3 px-4 font-bold text-slate-800 uppercase">
                             {m.nama}
                           </td>
-                          <td className="py-3 px-4 text-slate-300">
+                          <td className="py-3 px-4 text-slate-600">
                             {memberTypeTab === 'siswa' 
-                              ? (m.nama_ortu || <span className="text-slate-600 italic">Belum diisi</span>)
-                              : (m.kelas || <span className="text-slate-600 italic">Guru</span>)
+                              ? (m.nama_ortu || <span className="text-slate-400 italic">Belum diisi</span>)
+                              : (m.kelas || <span className="text-slate-400 italic">Guru</span>)
                             }
                           </td>
                           <td className="py-3 px-4">
                             {hasChatID ? (
-                              <span className="font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded text-[11px]">
+                              <span className="font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[11px] font-semibold">
                                 {m.telegram_chat_id}
                               </span>
                             ) : (
-                              <span className="text-slate-600">-</span>
+                              <span className="text-slate-400">-</span>
                             )}
                           </td>
-                          <td className="py-3 px-4">
+                          <td className="py-3 px-4 text-center">
                             <div className="flex items-center justify-center gap-1.5">
                               {/* Edit Button (Amber) */}
                               <button
+                                type="button"
                                 onClick={() => openEditModal(m)}
                                 title="Edit Chat ID & Nama Ortu"
-                                className="p-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition shadow-sm"
+                                className="p-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition shadow-2xs"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
 
                               {/* Test Send Message Button (Blue Plane) */}
                               <button
+                                type="button"
                                 onClick={() => openTestModal(m.telegram_chat_id || '', m.nama)}
                                 title="Kirim Pesan Tes"
-                                className={`p-1.5 rounded-lg transition shadow-sm ${
+                                className={`p-1.5 rounded-lg transition shadow-2xs ${
                                   hasChatID 
-                                    ? 'bg-primary-600 hover:bg-primary-500 text-white' 
-                                    : 'bg-slate-800 text-slate-500 hover:text-white'
+                                    ? 'bg-sky-600 hover:bg-sky-700 text-white' 
+                                    : 'bg-slate-200 text-slate-400 hover:bg-slate-300 hover:text-slate-700'
                                 }`}
                               >
                                 <Send className="w-3.5 h-3.5" />
@@ -999,7 +1008,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
             {/* Pagination Controls */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between text-xs text-slate-400 pt-2">
+              <div className="p-4 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
                 <span>
                   Halaman {currentPage} dari {totalPages} ({filteredMembers.length} total data)
                 </span>
@@ -1007,14 +1016,14 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                   <button
                     disabled={currentPage === 1}
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg disabled:opacity-40"
+                    className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 disabled:opacity-40"
                   >
                     Prev
                   </button>
                   <button
                     disabled={currentPage === totalPages}
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg disabled:opacity-40"
+                    className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 disabled:opacity-40"
                   >
                     Next
                   </button>
@@ -1022,38 +1031,38 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
 
       {/* ========================================================================= */}
-      {/* 4. MODAL: EDIT CHAT ID & NAMA ORANG TUA */}
+      {/* 5. MODAL: EDIT CHAT ID & NAMA ORANG TUA */}
       {/* ========================================================================= */}
       {editModalOpen && selectedMember && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-up">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
-              <h3 className="font-bold text-sm text-white flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-amber-400" />
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-up">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-amber-500" />
                 Edit Chat ID Telegram
               </h3>
               <button
                 onClick={() => setEditModalOpen(false)}
-                className="text-slate-400 hover:text-white text-lg font-bold"
+                className="text-slate-400 hover:text-slate-700 text-lg font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleSaveMemberChatID} className="p-5 space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-400">Nama Anggota</label>
-                <p className="font-bold text-sm text-white">{selectedMember.nama}</p>
+            <form onSubmit={handleSaveMemberChatID} className="p-6 space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                <label className="text-xs font-semibold text-slate-500">Nama Anggota</label>
+                <p className="font-bold text-sm text-slate-800">{selectedMember.nama}</p>
                 <p className="text-[11px] text-slate-500 font-mono">NIS/UID: {selectedMember.nis_nip || selectedMember.uid}</p>
               </div>
 
               {selectedMember.tipe === 'siswa' && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">
+                  <label className="text-xs font-semibold text-slate-700">
                     Nama Ayah & Ibu / Wali Santri
                   </label>
                   <input
@@ -1061,13 +1070,13 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                     value={editNamaOrtu}
                     onChange={(e) => setEditNamaOrtu(e.target.value)}
                     placeholder="Contoh: Bp. Anwar & Ibu Nurhayati"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-primary-500"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white"
                   />
                 </div>
               )}
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300">
+                <label className="text-xs font-semibold text-slate-700">
                   Telegram Chat ID
                 </label>
                 <input
@@ -1075,25 +1084,25 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                   value={editChatID}
                   onChange={(e) => setEditChatID(e.target.value)}
                   placeholder="Contoh: 1234567890"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs font-mono text-emerald-400 placeholder-slate-600 focus:outline-none focus:border-primary-500"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-mono text-emerald-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white font-semibold"
                 />
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[10px] text-slate-500">
                   Dapatkan Chat ID via bot Telegram <b>@userinfobot</b> atau <b>@getmyid_bot</b>.
                 </p>
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2.5">
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setEditModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={savingChatID}
-                  className="px-5 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
+                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold transition shadow-sm disabled:opacity-50"
                 >
                   {savingChatID ? 'Menyimpan...' : 'Simpan Perubahan'}
                 </button>
@@ -1104,51 +1113,51 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
       )}
 
       {/* ========================================================================= */}
-      {/* 5. MODAL: TEST KIRIM PESAN TELEGRAM (MATCHING SCREENSHOT 3) */}
+      {/* 6. MODAL: TEST KIRIM PESAN TELEGRAM */}
       {/* ========================================================================= */}
       {testModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-scale-up">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-scale-up">
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
-              <h3 className="font-bold text-sm text-white flex items-center gap-2">
-                <Send className="w-4 h-4 text-sky-400" />
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                <Send className="w-4 h-4 text-sky-600" />
                 Test Kirim Pesan Telegram
               </h3>
               <button
                 onClick={() => setTestModalOpen(false)}
-                className="text-slate-400 hover:text-white text-lg font-bold"
+                className="text-slate-400 hover:text-slate-700 text-lg font-bold"
               >
                 ✕
               </button>
             </div>
 
             <form onSubmit={handleSendTestMessage} className="p-6 space-y-5">
-              {/* Yellow Warning Box (Matches Screenshot 3) */}
-              <div className="bg-amber-950/40 border border-amber-800/60 rounded-xl p-4 text-amber-200 text-xs flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              {/* Yellow Warning Box */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-900 text-xs flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                 <p className="leading-relaxed">
-                  Pastikan Chat ID yang digunakan sudah melakukan <b>'START'</b> pada bot agar dapat menerima pesan test ini.
+                  Pastikan Chat ID yang digunakan sudah menekan tombol <b>'START'</b> pada bot Telegram Anda agar bot memiliki izin untuk mengirimkan pesan test ini.
                 </p>
               </div>
 
-              {/* Chat ID Tujuan (Matches Screenshot 3) */}
+              {/* Chat ID Tujuan */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300">
+                <label className="text-xs font-bold text-slate-700">
                   Chat ID Tujuan
                 </label>
                 <input
                   type="text"
                   value={testTargetChatID}
                   onChange={(e) => setTestTargetChatID(e.target.value)}
-                  placeholder="Masukkan Chat ID"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono text-emerald-400 placeholder-slate-600 focus:outline-none focus:border-primary-500"
+                  placeholder="Masukkan nomor Chat ID"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-mono text-emerald-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white font-semibold"
                 />
               </div>
 
-              {/* Isi Pesan Test (Matches Screenshot 3) */}
+              {/* Isi Pesan Test */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300">
+                <label className="text-xs font-bold text-slate-700">
                   Isi Pesan Test
                 </label>
                 <textarea
@@ -1156,16 +1165,16 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                   value={testMessageText}
                   onChange={(e) => setTestMessageText(e.target.value)}
                   placeholder="Tulis pesan test di sini..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-xs font-sans text-white placeholder-slate-600 focus:outline-none focus:border-primary-500 leading-relaxed"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-4 text-xs font-sans text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white leading-relaxed"
                 />
               </div>
 
-              {/* Modal Footer (Matches Screenshot 3: Batal & Kirim Pesan) */}
-              <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3">
+              {/* Modal Footer */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setTestModalOpen(false)}
-                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
                 >
                   Batal
                 </button>
@@ -1173,7 +1182,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                 <button
                   type="submit"
                   disabled={sendingTest}
-                  className="px-6 py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-lg shadow-primary-900/30 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-6 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
                 >
                   <Send className={`w-4 h-4 ${sendingTest ? 'animate-spin' : ''}`} />
                   <span>{sendingTest ? 'Mengirim...' : 'Kirim Pesan'}</span>
@@ -1184,6 +1193,6 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
         </div>
       )}
 
-    </div>
+    </section>
   );
 }
