@@ -407,6 +407,21 @@ func parseDateTime(reqDate, reqTime, reqTimestamp string) (string, string, int, 
 	return tDate, tTime, tHour, tMin
 }
 
+// parseTimeToSeconds parses "HH:MM:SS" or "HH:MM" into seconds from midnight
+func parseTimeToSeconds(tStr string) int {
+	parts := strings.Split(strings.TrimSpace(tStr), ":")
+	if len(parts) >= 2 {
+		h, _ := strconv.Atoi(parts[0])
+		m, _ := strconv.Atoi(parts[1])
+		s := 0
+		if len(parts) >= 3 {
+			s, _ = strconv.Atoi(parts[2])
+		}
+		return h*3600 + m*60 + s
+	}
+	return 0
+}
+
 func getThresholdTimes() (int, int, int, int) {
 	inH, inM := 7, 0
 	outH, outM := 15, 0
@@ -1336,7 +1351,13 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		actionMessage = fmt.Sprintf("Absen Masuk Berhasil (%s - %s)", member.Nama, statusMasuk)
 
 	} else if existing.WaktuKeluar == "-" || existing.WaktuKeluar == "" {
-		if req.TipeScan == "masuk" {
+		secNow := parseTimeToSeconds(tTime)
+		secIn := parseTimeToSeconds(existing.WaktuMasuk)
+		diffSec := secNow - secIn
+
+		// Jeda minimal antara absen masuk dan keluar adalah minimal 2 menit (120 detik)
+		// Jika scan dalam kurun < 2 menit dan bukan perintah paksa 'keluar', anggap sebagai dobel tap / sudah absen masuk
+		if (diffSec >= 0 && diffSec < 120 && req.TipeScan != "keluar") || req.TipeScan == "masuk" {
 			statusResult = "already_attended"
 			actionType = "already_check_in"
 			alreadyRecorded = true
@@ -1429,12 +1450,18 @@ func processSingleTap(deviceID, rfidTag string, fingerprintID int, recordedAt st
 			VALUES (?, ?, ?, ?, ?, ?, ?, '-', '-', ?)`,
 			member.UID, member.Nama, member.Tipe, member.Kelas, tDate, tTime, statusMasuk, deviceID)
 	} else if existing.WaktuKeluar == "-" || existing.WaktuKeluar == "" {
-		statusKeluar := "tepat"
-		if tHour < outH || (tHour == outH && tMin < outM) {
-			statusKeluar = "cepat"
+		secNow := parseTimeToSeconds(tTime)
+		secIn := parseTimeToSeconds(existing.WaktuMasuk)
+		diffSec := secNow - secIn
+
+		if diffSec >= 120 { // Jeda minimal 2 menit
+			statusKeluar := "tepat"
+			if tHour < outH || (tHour == outH && tMin < outM) {
+				statusKeluar = "cepat"
+			}
+			db.Exec(`UPDATE attendances SET waktu_keluar = ?, status_keluar = ?, id_mesin = ? WHERE id = ?`,
+				tTime, statusKeluar, deviceID, existing.ID)
 		}
-		db.Exec(`UPDATE attendances SET waktu_keluar = ?, status_keluar = ?, id_mesin = ? WHERE id = ?`,
-			tTime, statusKeluar, deviceID, existing.ID)
 	}
 }
 

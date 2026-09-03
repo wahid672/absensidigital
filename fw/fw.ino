@@ -931,9 +931,9 @@ void checkFingerprintScan() {
   
   uint8_t p = finger.getImage();
   if (p != FINGERPRINT_OK) {
-    // Reset debounce ID jika jari sudah diangkat dari sensor
+    // Reset debounce ID hanya jika jari sudah diangkat dari sensor lebih dari 3 detik
     if (p == FINGERPRINT_NOFINGER) {
-      if (millis() - lastFingerScanTime > 1200) {
+      if (millis() - lastFingerScanTime > 3000) {
         lastScannedFingerID = -1;
       }
     }
@@ -943,19 +943,19 @@ void checkFingerprintScan() {
   if (finger.image2Tz() != FINGERPRINT_OK) return;
 
   if (finger.fingerSearch() == FINGERPRINT_OK) {
-    // Debounce: jika ID jari yang sama masih menempel dalam kurun 1.5 detik, abaikan agar tidak dobel
-    if (finger.fingerID == lastScannedFingerID && (millis() - lastFingerScanTime < 1500)) {
+    // Debounce: jika ID jari yang sama masih menempel / discan ulang dalam kurun 6 detik, abaikan agar tidak dobel masuk & keluar
+    if (finger.fingerID == lastScannedFingerID && (millis() - lastFingerScanTime < 6000)) {
       return;
     }
 
     lastScannedFingerID = finger.fingerID;
     lastFingerScanTime = millis();
 
-    // Kirim dan tampilkan data presensi lengkap tanpa jeda
+    // Kirim dan tampilkan data presensi
     kirimPresensiFingerprint(finger.fingerID);
   } else {
     // Jari tidak dikenal
-    if (millis() - lastFingerScanTime < 1200) return;
+    if (millis() - lastFingerScanTime < 2000) return;
     lastFingerScanTime = millis();
     lastScannedFingerID = -1;
 
@@ -1038,8 +1038,8 @@ void checkRFID() {
   readRFID(mfrc522.uid.uidByte, mfrc522.uid.size);
   mfrc522.PICC_HaltA(); 
 
-  // Debounce kartu yang sama dalam kurun 1.5 detik
-  if (ID_TAG == lastScannedRfid && (millis() - lastRfidScanTime < 1500)) {
+  // Debounce kartu yang sama dalam kurun 6 detik
+  if (ID_TAG == lastScannedRfid && (millis() - lastRfidScanTime < 6000)) {
     return;
   }
   lastScannedRfid = ID_TAG;
