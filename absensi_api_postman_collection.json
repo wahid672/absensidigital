@@ -1,8 +1,8 @@
 {
 	"info": {
 		"_postman_id": "8f28b2a1-e408-4e89-a2bf-a720dc274941",
-		"name": "Absensi Digital - Golang REST API & ESP32 (SQLite + Backdate Sync)",
-		"description": "Koleksi Postman REST API Resmi untuk Sistem Presensi Digital IoT ESP32.\n\n🌟 Fitur Utama API:\n1. Autentikasi JWT Bearer.\n2. Tap Absensi Realtime dari ESP32 dengan deteksi Masuk/Keluar otomatis.\n3. Respon khusus 'already_attended' jika kartu sudah pernah absen pada hari tersebut.\n4. Sinkronisasi Data Offline / Backdate jika koneksi internet ESP32 sempat terputus.\n5. CRUD Lengkap Data Master Anggota & Presensi Manual.\n6. Reset & Import Data Dummy.",
+		"name": "Absensi Digital - Golang REST API & ESP32 (Lengkap 2026)",
+		"description": "Koleksi Postman REST API Resmi untuk Sistem Presensi Digital Pondok Pesantren & Sekolah (IoT ESP32 + Golang + SQLite).\n\n🌟 Fitur & Modul API:\n1. Autentikasi JWT Admin.\n2. Integrasi IoT ESP32 (RFID + Sensor Sidik Jari R503, Sync Booting, Upload Template .bin, Offline Batch Flush).\n3. Manajemen Sidik Jari (Daftar Slot, Mapping Anggota, Hapus Remote dengan instruksi restart sensor).\n4. Data Master Anggota (Santri / Guru, Bulk Import Excel).\n5. Data Master Kelas & Jabatan.\n6. Laporan & Rekapitulasi Presensi (Harian, Bulanan, Summary).\n7. Pengaturan Sistem, Logo Instansi, Batas Jam, dan Reset Database.\n8. Server-Sent Events (SSE) Realtime Stream & Health Check.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -55,22 +55,26 @@
 			]
 		},
 		{
-			"name": "2. Integrasi Mesin ESP32 & Sync Offline",
-			"description": "Endpoint yang digunakan oleh mesin ESP32 (RFID / Fingerprint). Endpoint ini bersifat publik (tanpa JWT) agar mikrokontroler dapat mengirim data dengan cepat.",
+			"name": "2. Integrasi Mesin ESP32 (IoT Actions)",
+			"description": "Endpoint publik yang digunakan oleh mikrokontroler ESP32 untuk presensi RFID, sidik jari, sinkronisasi booting, upload template, dan flush log offline.",
 			"item": [
 				{
-					"name": "1. Tap Absen Masuk (Realtime)",
+					"name": "1. Tap Absensi Sidik Jari (Fingerprint Scan)",
 					"request": {
 						"method": "POST",
 						"header": [
 							{
 								"key": "Content-Type",
 								"value": "application/json"
+							},
+							{
+								"key": "X-API-KEY",
+								"value": "KUNCI_API_PRESENSI_V1_2026"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"device_id\": \"ESP32-GATE-01\",\n    \"rfid_uid\": \"A1B2C301\",\n    \"tipe_scan\": \"auto\"\n}"
+							"raw": "{\n    \"device_id\": \"PRESENSI-V1\",\n    \"fingerprint_id\": 1,\n    \"tipe_scan\": \"auto\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/attendance/tap",
@@ -83,23 +87,27 @@
 								"tap"
 							]
 						},
-						"description": "Simulasi tap kartu pertama pada hari ini. Backend akan otomatis mencatat sebagai ABSEN MASUK dan menentukan status tepat/telat."
+						"description": "Simulasi scan jari pada sensor R503. Backend otomatis mendeteksi apakah santri/guru tersebut masuk atau pulang dan mengecek batas jeda 2 menit untuk mencegah dobel absen."
 					},
 					"response": []
 				},
 				{
-					"name": "2. Tap Absen Keluar / Pulang (Realtime)",
+					"name": "2. Tap Absensi RFID (Card Scan)",
 					"request": {
 						"method": "POST",
 						"header": [
 							{
 								"key": "Content-Type",
 								"value": "application/json"
+							},
+							{
+								"key": "X-API-KEY",
+								"value": "KUNCI_API_PRESENSI_V1_2026"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"device_id\": \"ESP32-GATE-01\",\n    \"rfid_uid\": \"A1B2C301\",\n    \"tipe_scan\": \"keluar\"\n}"
+							"raw": "{\n    \"device_id\": \"PRESENSI-V1\",\n    \"rfid_tag\": \"0104830615\",\n    \"tipe_scan\": \"auto\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/attendance/tap",
@@ -112,23 +120,27 @@
 								"tap"
 							]
 						},
-						"description": "Simulasi tap kedua saat pulang. Backend akan mencatat WAKTU KELUAR dan menentukan status tepat/cepat."
+						"description": "Simulasi tap kartu RFID pada reader RC522. Backend mencatat riwayat kehadiran atau auto-register jika kartu belum terdaftar."
 					},
 					"response": []
 				},
 				{
-					"name": "3. Tap Saat Sudah Absen Lengkap (Respon Sudah Absen)",
+					"name": "3. Booting Sync & Sensor Purge (Action: sync)",
 					"request": {
 						"method": "POST",
 						"header": [
 							{
 								"key": "Content-Type",
 								"value": "application/json"
+							},
+							{
+								"key": "X-API-KEY",
+								"value": "KUNCI_API_PRESENSI_V1_2026"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"device_id\": \"ESP32-GATE-01\",\n    \"rfid_uid\": \"A1B2C301\",\n    \"tipe_scan\": \"auto\"\n}"
+							"raw": "{\n    \"action\": \"sync\",\n    \"device_id\": \"PRESENSI-V1\",\n    \"active_fingerprints\": [1, 2, 3, 4, 5],\n    \"total_fingerprints\": 5\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/attendance/tap",
@@ -141,23 +153,27 @@
 								"tap"
 							]
 						},
-						"description": "Menguji respon ketika pengguna sudah melakukan absen masuk dan keluar. Respon akan mengembalikan status: 'already_attended' dan already_recorded: true agar ESP32 bisa menampilkan pesan 'SUDAH ABSEN' di layar."
+						"description": "Dipanggil saat ESP32 pertama kali booting. Server mencatat seluruh slot aktif dan merespon dengan daftar 'delete_fingerprints' jika ada slot yang telah dihapus admin melalui web."
 					},
 					"response": []
 				},
 				{
-					"name": "4. Sync Offline / Backdate (Format Timestamp ISO8601)",
+					"name": "4. Upload Seluruh Template Sidik Jari (Action: upload_templates)",
 					"request": {
 						"method": "POST",
 						"header": [
 							{
 								"key": "Content-Type",
 								"value": "application/json"
+							},
+							{
+								"key": "X-API-KEY",
+								"value": "KUNCI_API_PRESENSI_V1_2026"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"device_id\": \"ESP32-GATE-01\",\n    \"rfid_uid\": \"A1B2C306\",\n    \"timestamp\": \"2026-09-01T06:45:00+07:00\",\n    \"tipe_scan\": \"auto\"\n}"
+							"raw": "{\n    \"action\": \"upload_templates\",\n    \"device_id\": \"PRESENSI-V1\",\n    \"templates\": [\n        {\n            \"fingerprint_id\": 1,\n            \"template_data\": \"010203040506070809...\"\n        },\n        {\n            \"fingerprint_id\": 2,\n            \"template_data\": \"010203040506070809...\"\n        }\n    ]\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/attendance/tap",
@@ -170,23 +186,27 @@
 								"tap"
 							]
 						},
-						"description": "Digunakan saat ESP32 sempat offline / mati internet dan menyimpan data tap lokal di SD Card/Flash. Saat internet kembali online, ESP32 mengirim timestamp asli kejadian untuk dicatat secara backdate."
+						"description": "Dipanggil otomatis oleh ESP32 setelah selesai merestore file backup .bin agar server database memiliki salinan seluruh template sidik jari."
 					},
 					"response": []
 				},
 				{
-					"name": "5. Sync Offline / Backdate (Format Tanggal & Waktu Terpisah)",
+					"name": "5. Batch Flush Antrean Presensi Offline (Action: offline_sync)",
 					"request": {
 						"method": "POST",
 						"header": [
 							{
 								"key": "Content-Type",
 								"value": "application/json"
+							},
+							{
+								"key": "X-API-KEY",
+								"value": "KUNCI_API_PRESENSI_V1_2026"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"device_id\": \"ESP32-GATE-02\",\n    \"rfid_uid\": \"A1B2C307\",\n    \"tanggal\": \"2026-08-30\",\n    \"waktu\": \"06:35:10\",\n    \"tipe_scan\": \"auto\"\n}"
+							"raw": "{\n    \"action\": \"offline_sync\",\n    \"device_id\": \"PRESENSI-V1\",\n    \"logs\": [\n        \"{\\\"fingerprint_id\\\": 1, \\\"rfid_tag\\\": \\\"\\\", \\\"recorded_at\\\": \\\"2026-09-03 06:45:10\\\"}\",\n        \"{\\\"fingerprint_id\\\": 0, \\\"rfid_tag\\\": \\\"0104830615\\\", \\\"recorded_at\\\": \\\"2026-09-03 06:46:20\\\"}\"\n    ]\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/attendance/tap",
@@ -199,14 +219,167 @@
 								"tap"
 							]
 						},
-						"description": "Format alternatif pengiriman backdate dengan memisahkan kolom 'tanggal' (YYYY-MM-DD) dan 'waktu' (HH:MM:SS)."
+						"description": "Mengirimkan seluruh data antrean presensi yang disimpan di flash SPIFFS ESP32 saat jaringan WiFi sempat terputus."
 					},
 					"response": []
 				}
 			]
 		},
 		{
-			"name": "3. Data Master Anggota (CRUD)",
+			"name": "3. Manajemen Sidik Jari (Fingerprints)",
+			"item": [
+				{
+					"name": "Get Semua Slot Sidik Jari & Relasi Anggota",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/fingerprints",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"fingerprints"
+							]
+						},
+						"description": "Mengambil seluruh slot sidik jari yang terdaftar di database server beserta status mapping (mapped/unmapped) dan data santri/guru terkait."
+					},
+					"response": []
+				},
+				{
+					"name": "Hubungkan (Map) Sidik Jari ke Anggota",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fingerprint_id\": 1,\n    \"member_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/fingerprints/map",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"fingerprints",
+								"map"
+							]
+						},
+						"description": "Menghubungkan slot sensor sidik jari tertentu ke profil santri atau guru di database."
+					},
+					"response": []
+				},
+				{
+					"name": "Lepas Hubungan (Unmap) Sidik Jari",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fingerprint_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/fingerprints/unmap",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"fingerprints",
+								"unmap"
+							]
+						},
+						"description": "Melepaskan kaitan slot sidik jari sehingga menjadi 'unmapped' tanpa menghapus model sidik jarinya."
+					},
+					"response": []
+				},
+				{
+					"name": "Hapus Sidik Jari dari Server & Antrean Sensor ESP32",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"url": {
+							"raw": "{{baseUrl}}/api/fingerprints?id=1&fingerprint_id=1&device_id=PRESENSI-V1",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"fingerprints"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "1"
+								},
+								{
+									"key": "fingerprint_id",
+									"value": "1"
+								},
+								{
+									"key": "device_id",
+									"value": "PRESENSI-V1"
+								}
+							]
+						},
+						"description": "Menghapus data sidik jari dari database server dan memasukkannya ke antrean penghapusan fisik sensor R503 saat ESP32 dinyalakan ulang (restart)."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Data Master Anggota (Santri & Guru)",
 			"item": [
 				{
 					"name": "Get Semua Anggota (Filter Tipe & Search)",
@@ -240,7 +413,7 @@
 								{
 									"key": "search",
 									"value": "",
-									"description": "Cari nama, UID, atau kelas"
+									"description": "Cari nama, UID, NISN, atau kelas"
 								}
 							]
 						},
@@ -270,7 +443,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"uid\": \"E2801199\",\n    \"nama\": \"Abdullah Al-Mansur\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"no_hp\": \"081234567800\"\n}"
+							"raw": "{\n    \"uid\": \"0104830615\",\n    \"fingerprint_id\": 0,\n    \"nis_nip\": \"20261001\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"no_hp\": \"081234567801\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/members",
@@ -282,7 +455,46 @@
 								"members"
 							]
 						},
-						"description": "Mendaftarkan kartu RFID santri atau guru baru ke dalam sistem."
+						"description": "Mendaftarkan anggota baru ke database."
+					},
+					"response": []
+				},
+				{
+					"name": "Import Anggota Bulk dari Excel (Bulk Import)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"members\": [\n        {\n            \"uid\": \"0104830616\",\n            \"nis_nip\": \"20261002\",\n            \"nama\": \"Aisyah Nurul Hidayah\",\n            \"tipe\": \"siswa\",\n            \"kelas\": \"10 IPA 2\",\n            \"no_hp\": \"081234567802\"\n        },\n        {\n            \"uid\": \"0104830617\",\n            \"nis_nip\": \"20261003\",\n            \"nama\": \"Fajar Dwi Santoso\",\n            \"tipe\": \"siswa\",\n            \"kelas\": \"11 IPA 1\",\n            \"no_hp\": \"081234567803\"\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/members/bulk",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"members",
+								"bulk"
+							]
+						},
+						"description": "Menyimpan banyak data anggota sekaligus hasil parsing file Excel (.xlsx)."
 					},
 					"response": []
 				},
@@ -308,7 +520,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"id\": 1,\n    \"uid\": \"A1B2C301\",\n    \"nama\": \"Muhammad Rizky Pratama, S.Pd\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"12 IPA 1\",\n    \"no_hp\": \"081299887766\"\n}"
+							"raw": "{\n    \"id\": 1,\n    \"uid\": \"0104830615\",\n    \"fingerprint_id\": 1,\n    \"nis_nip\": \"20261001\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"12 IPA 1\",\n    \"no_hp\": \"081299887766\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/members",
@@ -320,7 +532,7 @@
 								"members"
 							]
 						},
-						"description": "Mengubah informasi nama, kelas, atau kontak anggota."
+						"description": "Mengubah informasi nama, UID kartu, NIS/NIP, kelas, atau nomor telepon anggota."
 					},
 					"response": []
 				},
@@ -361,7 +573,212 @@
 			]
 		},
 		{
-			"name": "4. Laporan & Presensi (CRUD)",
+			"name": "5. Data Master Kelas & Jabatan",
+			"item": [
+				{
+					"name": "Get Semua Kelas",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/classes",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"classes"
+							]
+						},
+						"description": "Mengambil daftar master nama kelas santri."
+					},
+					"response": []
+				},
+				{
+					"name": "Tambah Kelas Baru",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"nama\": \"10 IPA 3\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/classes",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"classes"
+							]
+						},
+						"description": "Menambahkan data kelas baru."
+					},
+					"response": []
+				},
+				{
+					"name": "Hapus Kelas",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"url": {
+							"raw": "{{baseUrl}}/api/classes?id=1",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"classes"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Menghapus master data kelas."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Semua Jabatan Guru/Staf",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/positions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"positions"
+							]
+						},
+						"description": "Mengambil daftar master jabatan guru dan staf pondok."
+					},
+					"response": []
+				},
+				{
+					"name": "Tambah Jabatan Baru",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"nama\": \"Guru Tahfidz\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/positions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"positions"
+							]
+						},
+						"description": "Menambahkan jabatan guru baru."
+					},
+					"response": []
+				},
+				{
+					"name": "Hapus Jabatan",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"url": {
+							"raw": "{{baseUrl}}/api/positions?id=1",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"positions"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Menghapus data master jabatan."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "6. Laporan & Presensi",
 			"item": [
 				{
 					"name": "Get Laporan Harian (Tanggal)",
@@ -378,7 +795,7 @@
 						},
 						"method": "GET",
 						"url": {
-							"raw": "{{baseUrl}}/api/attendance?tanggal=2026-09-02&tipe=all",
+							"raw": "{{baseUrl}}/api/attendance?tanggal=2026-09-03&tipe=all",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -389,11 +806,12 @@
 							"query": [
 								{
 									"key": "tanggal",
-									"value": "2026-09-02"
+									"value": "2026-09-03"
 								},
 								{
 									"key": "tipe",
-									"value": "all"
+									"value": "all",
+									"description": "all | siswa | guru"
 								}
 							]
 						},
@@ -440,6 +858,41 @@
 					"response": []
 				},
 				{
+					"name": "Get Summary Kehadiran (Statistik Cepat)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/attendance/summary?tanggal=2026-09-03",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"attendance",
+								"summary"
+							],
+							"query": [
+								{
+									"key": "tanggal",
+									"value": "2026-09-03"
+								}
+							]
+						},
+						"description": "Mengambil ringkasan jumlah hadir, telat, tepat, dan belum hadir."
+					},
+					"response": []
+				},
+				{
 					"name": "Tambah Presensi Manual (Admin)",
 					"request": {
 						"auth": {
@@ -461,7 +914,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"uid\": \"A1B2C301\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"tanggal\": \"2026-09-02\",\n    \"waktu_masuk\": \"06:40:00\",\n    \"status_masuk\": \"tepat\",\n    \"waktu_keluar\": \"15:00:00\",\n    \"status_keluar\": \"tepat\",\n    \"id_mesin\": \"MANUAL\"\n}"
+							"raw": "{\n    \"uid\": \"0104830615\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"tanggal\": \"2026-09-03\",\n    \"waktu_masuk\": \"06:40:00\",\n    \"status_masuk\": \"tepat\",\n    \"waktu_keluar\": \"15:00:00\",\n    \"status_keluar\": \"tepat\",\n    \"id_mesin\": \"MANUAL\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/attendance",
@@ -473,7 +926,7 @@
 								"attendance"
 							]
 						},
-						"description": "Input manual data presensi oleh administrator jika santri/guru lupa kartu atau berstatus izin/sakit."
+						"description": "Input manual data presensi oleh administrator jika santri/guru berhalangan tap kartu."
 					},
 					"response": []
 				},
@@ -499,7 +952,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"id\": 1,\n    \"uid\": \"A1B2C301\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"tanggal\": \"2026-09-02\",\n    \"waktu_masuk\": \"06:30:00\",\n    \"status_masuk\": \"tepat\",\n    \"waktu_keluar\": \"15:15:00\",\n    \"status_keluar\": \"tepat\",\n    \"id_mesin\": \"ESP32-GATE-01\"\n}"
+							"raw": "{\n    \"id\": 1,\n    \"uid\": \"0104830615\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"tanggal\": \"2026-09-03\",\n    \"waktu_masuk\": \"06:30:00\",\n    \"status_masuk\": \"tepat\",\n    \"waktu_keluar\": \"15:15:00\",\n    \"status_keluar\": \"tepat\",\n    \"id_mesin\": \"PRESENSI-V1\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/attendance",
@@ -552,10 +1005,72 @@
 			]
 		},
 		{
-			"name": "5. Pengaturan Sistem & Reset",
+			"name": "7. Dashboard & Statistik",
 			"item": [
 				{
-					"name": "Get Pengaturan Profil Instansi & Jam",
+					"name": "Get Statistik Realtime Dashboard",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/stats/dashboard",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"stats",
+								"dashboard"
+							]
+						},
+						"description": "Mengambil data statistik realtime: total santri, total guru, jumlah hadir hari ini, persentase kehadiran, dan daftar 10 aktivitas presensi terakhir."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Daftar Perangkat Mesin IoT",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/devices",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"devices"
+							]
+						},
+						"description": "Mengambil status online/offline mesin presensi ESP32."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "8. Pengaturan Sistem & Reset",
+			"item": [
+				{
+					"name": "Get Pengaturan Sistem, Profil & Logo",
 					"request": {
 						"auth": {
 							"type": "bearer",
@@ -578,12 +1093,12 @@
 								"settings"
 							]
 						},
-						"description": "Mengambil data profil instansi, alamat, dan batas jam masuk/pulang."
+						"description": "Mengambil data profil instansi, logo base64, alamat, kontak, dan batas jam masuk/pulang."
 					},
 					"response": []
 				},
 				{
-					"name": "Simpan Pengaturan Profil Instansi & Jam",
+					"name": "Simpan Pengaturan Sistem & Logo Instansi",
 					"request": {
 						"auth": {
 							"type": "bearer",
@@ -604,7 +1119,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"instansi_nama\": \"YAYASAN PONDOK PESANTREN DIGITAL\",\n    \"instansi_alamat\": \"Jl. Pesantren Digital No. 01\",\n    \"jam_masuk_batas\": \"07:00\",\n    \"jam_pulang_batas\": \"15:00\",\n    \"kepala_nama\": \"KH. Ahmad Zaki, Lc., M.Ag\"\n}"
+							"raw": "{\n    \"instansi_nama\": \"YAYASAN PONDOK PESANTREN DIGITAL\",\n    \"instansi_sub_header\": \"AKREDITASI A - KEMENAG RI\",\n    \"instansi_alamat\": \"Jl. Pesantren Digital No. 01\",\n    \"instansi_kota\": \"Jawa Timur\",\n    \"instansi_telepon\": \"(031) 88997766\",\n    \"instansi_email\": \"info@siakadponpes.com\",\n    \"instansi_logo\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...\",\n    \"jam_masuk_batas\": \"07:00\",\n    \"jam_pulang_batas\": \"15:00\",\n    \"kepala_nama\": \"KH. Ahmad Zaki, Lc., M.Ag\",\n    \"kepala_nip\": \"198001012005011001\",\n    \"auto_register_rfid\": \"1\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/settings",
@@ -616,7 +1131,7 @@
 								"settings"
 							]
 						},
-						"description": "Menyimpan pengaturan profil instansi dan batas jam presensi ke SQLite."
+						"description": "Menyimpan pengaturan profil instansi, logo, batas jam presensi, dan kebijakan auto-register RFID ke database SQLite."
 					},
 					"response": []
 				},
@@ -674,7 +1189,7 @@
 								"reset-attendance"
 							]
 						},
-						"description": "Mengosongkan riwayat kehadiran tanpa menghapus data santri/guru."
+						"description": "Mengosongkan riwayat kehadiran tanpa menghapus data santri/guru/sidik jari."
 					},
 					"response": []
 				},
@@ -703,10 +1218,15 @@
 								"reset-all"
 							]
 						},
-						"description": "Mengosongkan seluruh database (data anggota dan absensi) agar kembali bersih."
+						"description": "Mengosongkan seluruh database (data anggota, sidik jari, dan absensi) agar kembali seperti awal."
 					},
 					"response": []
-				},
+				}
+			]
+		},
+		{
+			"name": "9. Realtime & Health Check",
+			"item": [
 				{
 					"name": "Health Check Backend",
 					"request": {
@@ -722,6 +1242,24 @@
 							]
 						},
 						"description": "Mengecek status kesehatan server dan koneksi database SQLite."
+					},
+					"response": []
+				},
+				{
+					"name": "Server-Sent Events (SSE) Stream",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/realtime",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"realtime"
+							]
+						},
+						"description": "Membuka koneksi streaming HTTP SSE untuk menerima event realtime (attendance_tap, fingerprint_event, device_status)."
 					},
 					"response": []
 				}
