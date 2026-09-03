@@ -16,6 +16,8 @@
  ***********************************/
 
 #include <WiFi.h>
+#include <esp_wifi.h>
+#include <esp_system.h>
 #include <time.h>
 #include <SPI.h>
 #include <FS.h>
@@ -2258,13 +2260,13 @@ void setup() {
   String savedJadwal = preferences.getString("jadwal_json", "");
   if (savedJadwal != "") parseJadwal(savedJadwal);
   
-  // Inisialisasi Hostname DHCP unik berbasis prefix & 3 byte terakhir MAC (misal: siakadponpes.com-5F2AE4)
+  // Inisialisasi Hostname DHCP unik dari eFuse Hardware MAC (misal: siakadponpes.com-5F2AE4)
   WiFi.mode(WIFI_STA);
-  String macClean = WiFi.macAddress();
-  macClean.replace(":", "");
-  macClean.toUpperCase();
-  String macSuffix = (macClean.length() >= 6) ? macClean.substring(macClean.length() - 6) : "5F2AE4";
-  deviceHostName = String(deviceHostNamePrefix) + "-" + macSuffix;
+  uint8_t baseMac[6];
+  esp_read_mac(baseMac, ESP_MAC_WIFI_STA);
+  char macSuffix[10];
+  snprintf(macSuffix, sizeof(macSuffix), "%02X%02X%02X", baseMac[3], baseMac[4], baseMac[5]);
+  deviceHostName = String(deviceHostNamePrefix) + "-" + String(macSuffix);
   WiFi.setHostname(deviceHostName.c_str());
 
   WiFi.begin(ssid, password);
@@ -2279,6 +2281,15 @@ void setup() {
     printCentered("WiFi Terhubung!", 0);
     printCentered("Sinkronisasi...", 1);
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
+
+    // Pastikan Hostname ter-update dengan format MAC resmi setelah terhubung
+    String macClean = WiFi.macAddress();
+    macClean.replace(":", "");
+    macClean.toUpperCase();
+    if (macClean.length() >= 6 && !macClean.startsWith("000000")) {
+      deviceHostName = String(deviceHostNamePrefix) + "-" + macClean.substring(macClean.length() - 6);
+      WiFi.setHostname(deviceHostName.c_str());
+    }
 
     // Tampilkan informasi IP lengkap di Serial Monitor
     printNetworkInfo();
