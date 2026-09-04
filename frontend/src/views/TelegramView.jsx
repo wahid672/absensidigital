@@ -636,7 +636,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                     }
                     setBotToken(e.target.value);
                   }}
-                  placeholder="Contoh: 8668444866:AAE4IhFH4BIMd1kXTqHRPFQELsfk5upcDFo"
+                  placeholder="Contoh: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz123456789"
                   className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white pr-24"
                 />
 
