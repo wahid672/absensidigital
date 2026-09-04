@@ -30,8 +30,10 @@ import {
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch, getAuthToken, getApiBaseUrl } from '../api';
+import { isDemo, showDemoAlert } from '../utils/demo';
 
 export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
+  const isDemoActive = isDemo(settings);
   // Active Tab state: 'profil' (Profil & Lembaga) | 'iot' (Kebijakan & Mesin IoT) | 'database' (Database & Cadangan)
   const [activeTab, setActiveTab] = useState('profil');
 
@@ -67,6 +69,11 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   }, [settings]);
 
   const handleLogoUpload = (e) => {
+    if (isDemoActive) {
+      showDemoAlert('Mengunggah logo lembaga');
+      e.target.value = '';
+      return;
+    }
     const file = e.target.files[0];
     if (!file) return;
 
@@ -112,11 +119,19 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   };
 
   const handleRemoveLogo = () => {
+    if (isDemoActive) {
+      showDemoAlert('Menghapus logo lembaga');
+      return;
+    }
     setFormData(prev => ({ ...prev, instansi_logo: '' }));
   };
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (isDemoActive) {
+      showDemoAlert('Menyimpan perubahan pengaturan');
+      return;
+    }
     setSaving(true);
     try {
       const res = await apiFetch('/api/settings', {
@@ -144,6 +159,10 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   };
 
   const handleToggleAutoRegister = async () => {
+    if (isDemoActive) {
+      showDemoAlert('Mengubah kebijakan pendaftaran kartu baru');
+      return;
+    }
     const newVal = formData.auto_register_card === '1' ? '0' : '1';
     setFormData(prev => ({ ...prev, auto_register_card: newVal }));
     try {
@@ -159,6 +178,10 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
 
   // Regenerate Unique Hash API Key
   const handleRegenerateKey = () => {
+    if (isDemoActive) {
+      showDemoAlert('Regenerate IoT Secret API Key');
+      return;
+    }
     Swal.fire({
       title: 'Regenerate API Key Baru?',
       text: 'Kunci lama tidak akan berlaku lagi. Anda harus mengunggah ulang firmware ESP32 dengan API Key baru ini agar mesin presensi tetap terhubung.',
@@ -195,6 +218,10 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   };
 
   const handleSeedDummy = () => {
+    if (isDemoActive) {
+      showDemoAlert('Import sample data contoh');
+      return;
+    }
     Swal.fire({
       title: 'Import Data Dummy?',
       text: 'Sistem akan memasukkan data contoh santri/siswa, guru, kelas, jabatan, dan riwayat presensi demo.',
@@ -220,6 +247,10 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   };
 
   const handleResetAttendance = () => {
+    if (isDemoActive) {
+      showDemoAlert('Mereset riwayat data absensi');
+      return;
+    }
     Swal.fire({
       title: 'Hapus Semua Data Absensi?',
       text: 'Seluruh riwayat kehadiran akan dikosongkan. Data master santri/siswa, guru, kelas, dan jabatan TIDAK akan terhapus.',
@@ -244,6 +275,10 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   };
 
   const handleResetAll = () => {
+    if (isDemoActive) {
+      showDemoAlert('Reset total database');
+      return;
+    }
     Swal.fire({
       title: 'Reset Total Database?',
       html: '<span class="text-rose-600 font-bold">PERINGATAN!</span> Tindakan ini akan menghapus SEMUA data santri/siswa, guru, kelas, jabatan, dan riwayat absensi. Database akan kembali kosong.',
@@ -274,6 +309,10 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
 
   // 1. Download Backup Database (.db)
   const handleDownloadBackup = async () => {
+    if (isDemoActive) {
+      showDemoAlert('Mengunduh file backup database');
+      return;
+    }
     setDownloadingBackup(true);
     try {
       const token = getAuthToken();
@@ -323,6 +362,11 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
 
   // 2. Restore Database (.db)
   const handleRestoreFileSelected = (e) => {
+    if (isDemoActive) {
+      showDemoAlert('Memulihkan (restore) database cadangan');
+      e.target.value = '';
+      return;
+    }
     const file = e.target.files[0];
     if (!file) return;
 
@@ -390,7 +434,9 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   const isPesantren = formData.app_mode === 'pesantren';
   const currentBaseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://absensi.smartapps.my.id';
   const tapEndpointUrl = `${currentBaseUrl}/api/attendance/tap`;
-  const currentApiKey = formData.iot_api_key || settings.iot_api_key || 'KUNCI_API_PRESENSI_V1_2026';
+  const currentApiKey = isDemoActive 
+    ? '••••••••••••••••••••••••••••••••••••••••••••••••' 
+    : (formData.iot_api_key || settings.iot_api_key || 'KUNCI_API_PRESENSI_V1_2026');
 
   return (
     <section className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto animate-fade-in">
@@ -746,6 +792,10 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                   <button
                     type="button"
                     onClick={() => {
+                      if (isDemoActive) {
+                        showDemoAlert('Menyalin IoT Secret API Key');
+                        return;
+                      }
                       navigator.clipboard.writeText(currentApiKey);
                       Swal.fire({ icon: 'success', title: 'Tersalin', text: 'IoT Secret API Key disalin ke clipboard!', timer: 1200, showConfirmButton: false });
                     }}

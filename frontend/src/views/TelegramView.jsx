@@ -31,8 +31,10 @@ import {
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
+import { isDemo, showDemoAlert } from '../utils/demo';
 
 export default function TelegramView({ settings = {}, onSettingsUpdated, appMode = 'pesantren' }) {
+  const isDemoActive = isDemo(settings);
   const isPesantren = appMode !== 'umum';
   const labelSiswa = isPesantren ? 'Santri' : 'Siswa';
   const labelWali = isPesantren ? 'Wali Santri' : 'Wali Siswa';
@@ -193,6 +195,10 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
   // Save Bot Token & Admin Settings
   const handleSaveBotSettings = async () => {
+    if (isDemoActive) {
+      showDemoAlert('Menyimpan pengaturan Bot Telegram');
+      return;
+    }
     setSavingSettings(true);
     try {
       const res = await apiFetch('/api/telegram/settings', {
@@ -233,6 +239,10 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
   // Save Templates
   const handleSaveTemplates = async () => {
+    if (isDemoActive) {
+      showDemoAlert('Menyimpan template pesan Telegram');
+      return;
+    }
     setSavingTemplates(true);
     try {
       const res = await apiFetch('/api/telegram/settings', {
@@ -272,6 +282,10 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
   // Reset Templates to Default
   const handleResetTemplates = () => {
+    if (isDemoActive) {
+      showDemoAlert('Reset template pesan Telegram');
+      return;
+    }
     Swal.fire({
       title: 'Reset Template ke Default?',
       text: 'Semua template notifikasi pesan masuk, pulang, terlambat, dan admin lembaga akan dikembalikan ke format standar bawaan.',
@@ -313,6 +327,10 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
   // Open Edit Chat ID Modal
   const openEditModal = (m) => {
+    if (isDemoActive) {
+      showDemoAlert('Mengubah Chat ID Telegram penerima');
+      return;
+    }
     setSelectedMember(m);
     setEditNamaOrtu(m.nama_ortu || '');
     setEditChatID(m.telegram_chat_id || '');

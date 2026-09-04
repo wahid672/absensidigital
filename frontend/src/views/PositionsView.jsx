@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Briefcase, Plus, Search, PenSquare, Trash2, Loader2, X, Award } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
+import { isDemo, showDemoAlert } from '../utils/demo';
 
-export default function PositionsView({ onUpdated }) {
+export default function PositionsView({ settings = {}, onUpdated }) {
+  const isDemoActive = isDemo(settings);
   const [positions, setPositions] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -33,12 +35,20 @@ export default function PositionsView({ onUpdated }) {
   }, []);
 
   const openAdd = () => {
+    if (isDemoActive) {
+      showDemoAlert('Menambah data jabatan baru');
+      return;
+    }
     setEditItem(null);
     setFormData({ id: '', nama: '', keterangan: '' });
     setModalOpen(true);
   };
 
   const openEdit = (p) => {
+    if (isDemoActive) {
+      showDemoAlert('Mengubah data jabatan');
+      return;
+    }
     setEditItem(p);
     setFormData({ id: p.id, nama: p.nama, keterangan: p.keterangan || '' });
     setModalOpen(true);
@@ -81,6 +91,10 @@ export default function PositionsView({ onUpdated }) {
   };
 
   const handleDelete = (id, nama) => {
+    if (isDemoActive) {
+      showDemoAlert('Menghapus data jabatan');
+      return;
+    }
     Swal.fire({
       title: 'Hapus Jabatan?',
       html: `Apakah Anda yakin ingin menghapus jabatan <b>${nama}</b>?`,

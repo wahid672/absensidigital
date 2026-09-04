@@ -23,6 +23,7 @@ import {
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 import ModalAttendance from '../components/ModalAttendance';
+import { isDemo, showDemoAlert } from '../utils/demo';
 
 export default function DashboardView({ 
   members = [], 
@@ -31,6 +32,7 @@ export default function DashboardView({
   settings = {},
   realtimeEvent = null 
 }) {
+  const isDemoActive = isDemo(settings);
   const isPesantren = (settings.app_mode || 'pesantren') !== 'umum';
   const labelSiswa = isPesantren ? 'Santri' : 'Siswa';
   const labelGuru = isPesantren ? 'Guru / Asatidz' : 'Guru';
@@ -109,6 +111,10 @@ export default function DashboardView({
 
   // Delete handler
   const handleDelete = (id, nama) => {
+    if (isDemoActive) {
+      showDemoAlert('Menghapus data presensi');
+      return;
+    }
     Swal.fire({
       title: 'Hapus Data Presensi?',
       html: `Apakah Anda yakin ingin menghapus data absensi <b>${nama}</b>?`,
@@ -591,7 +597,14 @@ export default function DashboardView({
                       <td className="py-3.5 px-4 text-center">
                         <div className="inline-flex items-center gap-1.5">
                           <button 
-                            onClick={() => { setEditItem(item); setModalOpen(true); }}
+                            onClick={() => { 
+                              if (isDemoActive) {
+                                showDemoAlert('Mengubah data presensi');
+                                return;
+                              }
+                              setEditItem(item); 
+                              setModalOpen(true); 
+                            }}
                             className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" 
                             title="Edit Jam Presensi"
                           >

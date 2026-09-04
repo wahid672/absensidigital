@@ -18,6 +18,7 @@ services:
       - ADMIN_USER=admin
       - ADMIN_PASS=admin123
       - TZ=Asia/Jakarta
+      - DEMO_MODE=false # Ubah ke 'true' untuk mengaktifkan Versi Demo (read-only master data & pengaturan)
 
 networks:
   caddy_net:

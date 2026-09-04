@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
+import { isDemo, showDemoAlert } from '../utils/demo';
 
 export default function FingerprintsView({ 
   members = [], 
@@ -26,6 +27,7 @@ export default function FingerprintsView({
   appMode = 'pesantren',
   onUpdated 
 }) {
+  const isDemoActive = isDemo(settings);
   const isPesantren = appMode !== 'umum';
   const labelSiswa = isPesantren ? 'Santri' : 'Siswa';
   const labelGuru = isPesantren ? 'Guru / Asatidz' : 'Guru';
@@ -63,6 +65,10 @@ export default function FingerprintsView({
 
   // Open Modal Map
   const openMapModal = (fp) => {
+    if (isDemoActive) {
+      showDemoAlert('Menghubungkan sidik jari anggota');
+      return;
+    }
     setSelectedFp(fp);
     setSelectedMemberId(fp.member_id > 0 ? String(fp.member_id) : '');
     setTargetMemberType(fp.member?.tipe || 'siswa');
@@ -112,6 +118,10 @@ export default function FingerprintsView({
 
   // Unmap
   const handleUnmap = (fp) => {
+    if (isDemoActive) {
+      showDemoAlert('Melepas hubungan sidik jari');
+      return;
+    }
     Swal.fire({
       title: `Lepas Hubungan Sidik Jari Slot #${fp.fingerprint_id}?`,
       text: `Sidik jari tidak lagi terhubung ke ${fp.member?.nama || 'anggota'}.`,
@@ -144,6 +154,10 @@ export default function FingerprintsView({
 
   // Delete Fingerprint Record
   const handleDelete = (fp) => {
+    if (isDemoActive) {
+      showDemoAlert('Menghapus data sidik jari');
+      return;
+    }
     Swal.fire({
       title: `Hapus Sidik Jari Slot #${fp.fingerprint_id}?`,
       html: `Data sidik jari slot <b>#${fp.fingerprint_id}</b> (${fp.member?.nama || 'Belum Terhubung'}) akan dihapus dari server database.`,

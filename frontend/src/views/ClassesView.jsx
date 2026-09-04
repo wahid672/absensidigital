@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { School, Plus, Search, PenSquare, Trash2, Loader2, X, BookOpen } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
+import { isDemo, showDemoAlert } from '../utils/demo';
 
-export default function ClassesView({ onUpdated }) {
+export default function ClassesView({ settings = {}, onUpdated }) {
+  const isDemoActive = isDemo(settings);
   const [classes, setClasses] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -33,12 +35,20 @@ export default function ClassesView({ onUpdated }) {
   }, []);
 
   const openAdd = () => {
+    if (isDemoActive) {
+      showDemoAlert('Menambah data kelas baru');
+      return;
+    }
     setEditItem(null);
     setFormData({ id: '', nama: '', tingkat: '10', keterangan: '' });
     setModalOpen(true);
   };
 
   const openEdit = (c) => {
+    if (isDemoActive) {
+      showDemoAlert('Mengubah data kelas');
+      return;
+    }
     setEditItem(c);
     setFormData({ id: c.id, nama: c.nama, tingkat: c.tingkat || '10', keterangan: c.keterangan || '' });
     setModalOpen(true);
@@ -82,6 +92,10 @@ export default function ClassesView({ onUpdated }) {
   };
 
   const handleDelete = (id, nama) => {
+    if (isDemoActive) {
+      showDemoAlert('Menghapus data kelas');
+      return;
+    }
     Swal.fire({
       title: 'Hapus Kelas?',
       html: `Apakah Anda yakin ingin menghapus kelas <b>${nama}</b>?`,

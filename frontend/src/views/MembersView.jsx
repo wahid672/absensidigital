@@ -19,6 +19,7 @@ import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 import ModalMember from '../components/ModalMember';
+import { isDemo, showDemoAlert } from '../utils/demo';
 
 export default function MembersView({ 
   tipe = 'siswa', 
@@ -28,6 +29,7 @@ export default function MembersView({
   appMode = 'pesantren',
   onMembersUpdated 
 }) {
+  const isDemoActive = isDemo(settings);
   const isGuru = tipe === 'guru';
   const isPesantren = appMode !== 'umum';
   
@@ -66,6 +68,10 @@ export default function MembersView({
   }, [tipe, search]);
 
   const handleDelete = (id, nama) => {
+    if (isDemoActive) {
+      showDemoAlert(`Menghapus data ${labelMember}`);
+      return;
+    }
     Swal.fire({
       title: `Hapus Data ${labelMember}?`,
       html: `Apakah Anda yakin ingin menghapus <b>${nama}</b> dari sistem?`,
@@ -254,6 +260,12 @@ export default function MembersView({
     const file = e.target.files[0];
     if (!file) return;
 
+    if (isDemoActive) {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      showDemoAlert(`Import data ${labelMember} dari Excel`);
+      return;
+    }
+
     setImporting(true);
     const reader = new FileReader();
 
@@ -412,7 +424,14 @@ export default function MembersView({
 
           {/* Add Manual */}
           <button 
-            onClick={() => { setEditMember(null); setModalOpen(true); }}
+            onClick={() => { 
+              if (isDemoActive) {
+                showDemoAlert(`Menambah ${labelMember} baru`);
+                return;
+              }
+              setEditMember(null); 
+              setModalOpen(true); 
+            }}
             className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-white text-xs font-semibold rounded-xl shadow transition-all ${
               isGuru ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-primary-600 hover:bg-primary-700'
             }`}
@@ -512,7 +531,14 @@ export default function MembersView({
                     <td className="py-3.5 px-4 text-center">
                       <div className="inline-flex items-center gap-1.5">
                         <button 
-                          onClick={() => { setEditMember(m); setModalOpen(true); }}
+                          onClick={() => { 
+                            if (isDemoActive) {
+                              showDemoAlert(`Mengubah data ${labelMember}`);
+                              return;
+                            }
+                            setEditMember(m); 
+                            setModalOpen(true); 
+                          }}
                           className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" 
                           title="Edit"
                         >

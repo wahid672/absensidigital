@@ -838,6 +838,11 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPut:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Pengeditan data absensi dinonaktifkan dalam Versi Demo.")
+			return
+		}
+
 		var a AttendanceRecord
 		if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -864,6 +869,11 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodDelete:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Penghapusan data absensi dinonaktifkan dalam Versi Demo.")
+			return
+		}
+
 		idStr := r.URL.Query().Get("id")
 		id, err := strconv.Atoi(idStr)
 		if err != nil || id <= 0 {
@@ -1633,6 +1643,11 @@ func handleMapFingerprint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Hubungkan sidik jari dinonaktifkan dalam Versi Demo.")
+		return
+	}
+
 	var req struct {
 		FingerprintID int    `json:"fingerprint_id"`
 		DeviceID      string `json:"device_id"`
@@ -1687,6 +1702,11 @@ func handleMapFingerprint(w http.ResponseWriter, r *http.Request) {
 func handleUnmapFingerprint(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Lepas hubungan sidik jari dinonaktifkan dalam Versi Demo.")
 		return
 	}
 
@@ -1756,6 +1776,11 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPost:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Penambahan data anggota dinonaktifkan dalam Versi Demo.")
+			return
+		}
+
 		var m Member
 		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -1792,6 +1817,11 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPut:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Pengeditan data anggota dinonaktifkan dalam Versi Demo.")
+			return
+		}
+
 		var m Member
 		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -1819,6 +1849,11 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodDelete:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Penghapusan data anggota dinonaktifkan dalam Versi Demo.")
+			return
+		}
+
 		idStr := r.URL.Query().Get("id")
 		id, err := strconv.Atoi(idStr)
 		if err != nil || id <= 0 {
@@ -1846,6 +1881,11 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Import data anggota dinonaktifkan dalam Versi Demo.")
 		return
 	}
 
@@ -1947,6 +1987,10 @@ func handleClasses(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPost:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Penambahan data kelas dinonaktifkan dalam Versi Demo.")
+			return
+		}
 		var c ClassRoom
 		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -1972,6 +2016,10 @@ func handleClasses(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPut:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Pengeditan data kelas dinonaktifkan dalam Versi Demo.")
+			return
+		}
 		var c ClassRoom
 		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -1994,6 +2042,10 @@ func handleClasses(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodDelete:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Penghapusan data kelas dinonaktifkan dalam Versi Demo.")
+			return
+		}
 		idStr := r.URL.Query().Get("id")
 		id, err := strconv.Atoi(idStr)
 		if err != nil || id <= 0 {
@@ -2039,6 +2091,10 @@ func handlePositions(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPost:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Penambahan data jabatan dinonaktifkan dalam Versi Demo.")
+			return
+		}
 		var p Position
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -2064,6 +2120,10 @@ func handlePositions(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPut:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Pengeditan data jabatan dinonaktifkan dalam Versi Demo.")
+			return
+		}
 		var p Position
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -2086,6 +2146,10 @@ func handlePositions(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodDelete:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Penghapusan data jabatan dinonaktifkan dalam Versi Demo.")
+			return
+		}
 		idStr := r.URL.Query().Get("id")
 		id, err := strconv.Atoi(idStr)
 		if err != nil || id <= 0 {
@@ -2189,12 +2253,24 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 			settings[k] = v
 		}
 
+		if isDemoMode() {
+			settings["demo_mode"] = "true"
+			settings["iot_api_key"] = "••••••••••••••••••••••••••••••••••••••••••••••••"
+		} else {
+			settings["demo_mode"] = "false"
+		}
+
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status": "success",
 			"data":   settings,
 		})
 
 	case http.MethodPost:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Pengaturan tidak dapat diubah dalam Versi Demo.")
+			return
+		}
+
 		var payload map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -2219,6 +2295,11 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 func handleRegenerateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Regenerate API Key dinonaktifkan dalam Versi Demo.")
 		return
 	}
 
@@ -2250,6 +2331,11 @@ func handleResetAttendance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Reset data absensi dinonaktifkan dalam Versi Demo.")
+		return
+	}
+
 	_, err := db.Exec("DELETE FROM attendances")
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "Gagal mereset data absensi.")
@@ -2265,6 +2351,11 @@ func handleResetAttendance(w http.ResponseWriter, r *http.Request) {
 func handleResetAll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Reset total database dinonaktifkan dalam Versi Demo.")
 		return
 	}
 
@@ -2285,6 +2376,11 @@ func handleSeedDummy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Seed dummy data dinonaktifkan dalam Versi Demo.")
+		return
+	}
+
 	seedInitialData()
 	seedDummyData()
 
@@ -2298,6 +2394,11 @@ func handleSeedDummy(w http.ResponseWriter, r *http.Request) {
 func handleBackupDB(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method GET yang diizinkan.")
+		return
+	}
+
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Download backup database dinonaktifkan dalam Versi Demo.")
 		return
 	}
 
@@ -2342,6 +2443,11 @@ func handleBackupDB(w http.ResponseWriter, r *http.Request) {
 func handleRestoreDB(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Restore database dinonaktifkan dalam Versi Demo.")
 		return
 	}
 
@@ -2879,6 +2985,11 @@ func handleTelegramSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Pengaturan Telegram dinonaktifkan dalam Versi Demo.")
+		return
+	}
+
 	var req struct {
 		BotToken      string `json:"bot_token"`
 		Enabled       bool   `json:"enabled"`
@@ -2947,6 +3058,11 @@ func handleTelegramSettings(w http.ResponseWriter, r *http.Request) {
 func handleUpdateMemberChatID(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut && r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
+		return
+	}
+
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Pengeditan Chat ID anggota dinonaktifkan dalam Versi Demo.")
 		return
 	}
 
@@ -3041,6 +3157,11 @@ func getEnv(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+func isDemoMode() bool {
+	val := strings.ToLower(strings.TrimSpace(getEnv("DEMO_MODE", "false")))
+	return val == "true" || val == "1" || val == "yes"
 }
 
 // -------------------------------------------------------------

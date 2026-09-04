@@ -41,9 +41,9 @@ const char* password   = "ridawahid123";
 
 // Konfigurasi API Endpoint & Perangkat (IoT Server)
 const char* serverUrl            = "https://absensi.smartapps.my.id/api/attendance/tap"; // Sesuaikan domain/IP server PHP Anda
-const char* apiKey               = "KUNCI_API_PRESENSI_V1_2026";              // Harus sama dengan SECRET_API_KEY di PHP
+const char* apiKey               = "38b6661f20b376c37554ecc9b2f99eb643c85cefe0fe8a72";  // Harus sama dengan SECRET_API_KEY di PHP
 const char* deviceId             = "PRESENSI-V1";                             // ID unik mesin presensi ini
-const char* deviceHostNamePrefix = "siakadponpes.com";                        // Prefix nama perangkat di router WiFi (misal: siakadponpes.com-5F2AE4)
+const char* deviceHostNamePrefix = "siakadponpes";                        // Prefix nama perangkat di router WiFi (misal: siakadponpes.com-5F2AE4)
 String      deviceHostName       = "";                                        // Otomatis dibuat dari prefix + 3 byte terakhir MAC
 const char* otaPassword          = "wahid123";                                // Password proteksi upload firmware via WiFi (OTA)
 const char* webUsername          = "admin";                                   // Username login portal Web ESP32
@@ -59,7 +59,7 @@ const int   daylightOffset_sec = 0;
 // true  = Aktif (Tampil jadwal berjalan di LCD, countdown sholat, dan sync ke server)
 // false = Nonaktif Total (Tidak tampil di LCD dan tidak request ke server jadwal sholat)
 // =========================================================================
-const bool ENABLE_JADWAL_SHOLAT = true; // Ubah ke false untuk menonaktifkan fitur sholat
+const bool ENABLE_JADWAL_SHOLAT = false; // Ubah ke false untuk menonaktifkan fitur sholat
 
 // Konfigurasi Koreksi Waktu Sholat
 const int KOREKSI_IMSAK   = -2;

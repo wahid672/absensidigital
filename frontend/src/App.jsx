@@ -263,6 +263,7 @@ export default function App() {
 
           {currentTab === 'kelas' && (
             <ClassesView 
+              settings={settings}
               onUpdated={() => {
                 loadClasses();
                 loadMembersCache();
@@ -272,6 +273,7 @@ export default function App() {
 
           {currentTab === 'jabatan' && (
             <PositionsView 
+              settings={settings}
               onUpdated={() => {
                 loadPositions();
                 loadMembersCache();
