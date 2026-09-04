@@ -34,10 +34,10 @@
 WebServer webServer(80); 
 
 // Konfigurasi WiFi
-// const char* ssid       = "ridawahid.web.id";
-// const char* password   = "ridawahid123";
-const char* ssid       = "SIAKADPONPES";
-const char* password   = "123456789";
+const char* ssid       = "ridawahid.web.id";
+const char* password   = "ridawahid123";
+// const char* ssid       = "SIAKADPONPES";
+// const char* password   = "123456789";
 
 // Konfigurasi API Endpoint & Perangkat (IoT Server)
 const char* serverUrl            = "https://absensi.smartapps.my.id/api/attendance/tap"; // Sesuaikan domain/IP server PHP Anda
@@ -53,6 +53,13 @@ const char* webPassword          = "admin123";                                //
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 7 * 3600; 
 const int   daylightOffset_sec = 0;
+
+// =========================================================================
+// KONFIGURASI FITUR JADWAL SHOLAT
+// true  = Aktif (Tampil jadwal berjalan di LCD, countdown sholat, dan sync ke server)
+// false = Nonaktif Total (Tidak tampil di LCD dan tidak request ke server jadwal sholat)
+// =========================================================================
+const bool ENABLE_JADWAL_SHOLAT = true; // Ubah ke false untuk menonaktifkan fitur sholat
 
 // Konfigurasi Koreksi Waktu Sholat
 const int KOREKSI_IMSAK   = -2;
@@ -1160,6 +1167,8 @@ void parseJadwal(String json) {
 }
 
 void fetchJadwal() {
+  if (!ENABLE_JADWAL_SHOLAT) return; // Fitur sholat dimatikan: jangan hubungi API server
+
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
     String url = "https://api.myquran.com/v3/sholat/jadwal/b3e3e393c77e35a4a3f3cbd1e429b5dc/today?tz=Asia%2FJakarta";
@@ -1212,6 +1221,7 @@ String getCountdownString(struct tm *timeinfo) {
 }
 
 void checkAdhan(struct tm *timeinfo) {
+  if (!ENABLE_JADWAL_SHOLAT) return; // Fitur sholat dimatikan: abaikan waktu adhan
   if (currentMode == ADHAN || currentMode == ENROLL_FINGER || currentMode == MASTER_TAPPING || currentMode == DELETE_FINGER) return; 
   
   int curMins = timeinfo->tm_hour * 60 + timeinfo->tm_min;
@@ -2122,7 +2132,7 @@ void setupWebServer() {
   });
 
   webServer.begin();
-  Serial.println("[WEB] Web Server Portal aktif terlindungi otentikasi (admin:admin123) di port 80!");
+  Serial.println("[WEB] Web Server Portal aktif");
 }
 
 void setupOTA() {
@@ -2149,7 +2159,7 @@ void setupOTA() {
     else if (error == OTA_END_ERROR) Serial.println("End Failed");
   });
   ArduinoOTA.begin();
-  Serial.printf("[OTA] Arduino OTA aktif & terlindungi password ('%s').\n", otaPassword);
+  Serial.printf("[OTA] Arduino OTA aktif");
 }
 
 void checkSerialCommand() {
@@ -2352,7 +2362,7 @@ void handleAdhanUI() {
 void handleStandbyUI() {
   if (millis() - lastScrollTime >= 300) {
     lastScrollTime = millis();
-    String currentScrollText = isScrollingTopMessage ? topMessage : jadwalScrollString;
+    String currentScrollText = (ENABLE_JADWAL_SHOLAT && !isScrollingTopMessage) ? jadwalScrollString : topMessage;
     int maxIndex = currentScrollText.length() - 16;
     if (maxIndex < 0) maxIndex = 0;
     
@@ -2364,14 +2374,19 @@ void handleStandbyUI() {
     scrollIndex++;
     if (scrollIndex > maxIndex) {
       scrollIndex = 0;
-      isScrollingTopMessage = !isScrollingTopMessage; 
+      if (ENABLE_JADWAL_SHOLAT) {
+        isScrollingTopMessage = !isScrollingTopMessage; 
+      } else {
+        isScrollingTopMessage = true; 
+      }
     }
   }
 
   if (millis() - lastAltTime >= 5000) {
     lastAltTime = millis();
     altState++;
-    if (altState > 3) altState = 0; 
+    int maxAlt = ENABLE_JADWAL_SHOLAT ? 3 : 2;
+    if (altState > maxAlt) altState = 0; 
     lcd.setCursor(0, 1); lcd.print("                ");
   }
 
@@ -2390,7 +2405,7 @@ void handleStandbyUI() {
       printCentered(String(timeStringBuff), 1);
     } else if (altState == 2) {
       printCentered("Tap Kartu / Jari", 1); 
-    } else if (altState == 3) {
+    } else if (altState == 3 && ENABLE_JADWAL_SHOLAT) {
       if(timeValid) printCentered(getCountdownString(&timeinfo), 1);
       else printCentered("Tunggu Waktu", 1);
     }

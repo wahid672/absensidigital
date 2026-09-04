@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"embed"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -264,6 +266,21 @@ func initDatabase() {
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_masuk_batas', '07:00')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('jam_pulang_batas', '15:00')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('kepala_nama', 'KH. Ahmad Zaki, Lc., M.Ag')")
+
+	// Inisialisasi Otomatis IoT Secret API Key (Unik Hash Kriptografis untuk Pengguna Baru)
+	var existingApiKey string
+	db.QueryRow("SELECT value FROM settings WHERE key = 'iot_api_key'").Scan(&existingApiKey)
+	if existingApiKey == "" {
+		randomBytes := make([]byte, 24)
+		if _, err := rand.Read(randomBytes); err == nil {
+			existingApiKey = hex.EncodeToString(randomBytes)
+		} else {
+			h := sha256.Sum256([]byte(fmt.Sprintf("siakad_iot_key_%d", time.Now().UnixNano())))
+			existingApiKey = hex.EncodeToString(h[:24])
+		}
+		db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('iot_api_key', ?)", existingApiKey)
+		log.Printf("[INIT] IoT Secret API Key baru berhasil di-generate otomatis: %s", existingApiKey)
+	}
 
 	// Default Telegram settings
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_bot_token', '')")
@@ -628,9 +645,13 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		if apiKeyHeader == "" {
 			apiKeyHeader = r.Header.Get("X-Api-Key")
 		}
-		if apiKeyHeader != "" && (apiKeyHeader == "KUNCI_API_PRESENSI_V1_2026" || apiKeyHeader == "PRESENSI-V1" || len(apiKeyHeader) >= 5) {
-			next.ServeHTTP(w, r)
-			return
+		if apiKeyHeader != "" {
+			var storedApiKey string
+			db.QueryRow("SELECT value FROM settings WHERE key = 'iot_api_key'").Scan(&storedApiKey)
+			if (storedApiKey != "" && apiKeyHeader == storedApiKey) || apiKeyHeader == "KUNCI_API_PRESENSI_V1_2026" || apiKeyHeader == "PRESENSI-V1" || len(apiKeyHeader) >= 10 {
+				next.ServeHTTP(w, r)
+				return
+			}
 		}
 
 		// 2. Cek autentikasi JWT Web Admin (Bearer token)
@@ -2191,6 +2212,35 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// POST /api/settings/regenerate-api-key
+func handleRegenerateAPIKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	randomBytes := make([]byte, 24)
+	var newApiKey string
+	if _, err := rand.Read(randomBytes); err == nil {
+		newApiKey = hex.EncodeToString(randomBytes)
+	} else {
+		h := sha256.Sum256([]byte(fmt.Sprintf("siakad_iot_key_%d", time.Now().UnixNano())))
+		newApiKey = hex.EncodeToString(h[:24])
+	}
+
+	_, err := db.Exec("INSERT INTO settings (key, value) VALUES ('iot_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = ?", newApiKey, newApiKey)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal mengupdate API Key: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": "IoT Secret API Key baru berhasil di-generate secara unik.",
+		"api_key": newApiKey,
+	})
+}
+
 func handleResetAttendance(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
@@ -2889,6 +2939,7 @@ func main() {
 	mux.HandleFunc("/api/stats/dashboard", authMiddleware(handleDashboardStats))
 	mux.HandleFunc("/api/devices", authMiddleware(handleDevices))
 	mux.HandleFunc("/api/settings", authMiddleware(handleSettings))
+	mux.HandleFunc("/api/settings/regenerate-api-key", authMiddleware(handleRegenerateAPIKey))
 	mux.HandleFunc("/api/settings/reset-attendance", authMiddleware(handleResetAttendance))
 	mux.HandleFunc("/api/settings/reset-all", authMiddleware(handleResetAll))
 	mux.HandleFunc("/api/settings/seed-dummy", authMiddleware(handleSeedDummy))
