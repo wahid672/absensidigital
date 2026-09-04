@@ -847,14 +847,6 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                   *Endpoint resmi untuk menerima sinyal tap kartu RFID & sidik jari dari mesin presensi.
                 </p>
               </div>
-
-              {/* Cuplikan Baris fw.ino */}
-              <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 text-xs font-mono space-y-1 text-slate-300 shadow-inner">
-                <p className="text-slate-500 font-sans font-bold text-[11px] pb-1 border-b border-slate-800">// Salin nilai berikut ke baris 43-45 pada file fw.ino:</p>
-                <p className="text-sky-400">const char* serverUrl = "{tapEndpointUrl}";</p>
-                <p className="text-emerald-400 break-all">const char* apiKey    = "{currentApiKey}";</p>
-                <p className="text-amber-400">const char* deviceId  = "PRESENSI-V1";</p>
-              </div>
             </div>
           </div>
         </div>

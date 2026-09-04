@@ -2848,10 +2848,15 @@ func handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
 		isValid, botInfo, _ = testTelegramBot(botToken)
 	}
 
+	displayBotToken := botToken
+	if isDemoMode() && strings.TrimSpace(displayBotToken) != "" {
+		displayBotToken = "••••••••••••••••••••••••••••••••••••••••••••••••"
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
-			"bot_token":      botToken,
+			"bot_token":      displayBotToken,
 			"enabled":        enabled == "1" || strings.ToLower(enabled) == "true",
 			"notify_in":      notifyIn == "1" || strings.ToLower(notifyIn) == "true",
 			"notify_out":     notifyOut == "1" || strings.ToLower(notifyOut) == "true",
@@ -2879,7 +2884,7 @@ func handleTelegramTestBot(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&req)
 
 	token := strings.TrimSpace(req.BotToken)
-	if token == "" {
+	if token == "" || (isDemoMode() && strings.Contains(token, "•")) {
 		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_bot_token'").Scan(&token)
 	}
 

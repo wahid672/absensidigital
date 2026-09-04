@@ -140,6 +140,10 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
   // Copy Bot Token to Clipboard
   const handleCopyToken = () => {
+    if (isDemoActive) {
+      showDemoAlert('Menyalin Telegram Bot Token');
+      return;
+    }
     if (!botToken) return;
     navigator.clipboard.writeText(botToken);
     setTokenCopied(true);
@@ -622,9 +626,16 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
 
               <div className="relative flex items-center">
                 <input
-                  type={showToken ? 'text' : 'password'}
-                  value={botToken}
-                  onChange={(e) => setBotToken(e.target.value)}
+                  type={isDemoActive ? 'password' : (showToken ? 'text' : 'password')}
+                  value={isDemoActive ? '••••••••••••••••••••••••••••••••••••••••••••••••' : botToken}
+                  readOnly={isDemoActive}
+                  onChange={(e) => {
+                    if (isDemoActive) {
+                      showDemoAlert('Mengubah Telegram Bot Token');
+                      return;
+                    }
+                    setBotToken(e.target.value);
+                  }}
                   placeholder="Contoh: 8668444866:AAE4IhFH4BIMd1kXTqHRPFQELsfk5upcDFo"
                   className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white pr-24"
                 />
@@ -632,11 +643,17 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                 <div className="absolute right-2 flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => setShowToken(!showToken)}
+                    onClick={() => {
+                      if (isDemoActive) {
+                        showDemoAlert('Melihat Telegram Bot Token');
+                        return;
+                      }
+                      setShowToken(!showToken);
+                    }}
                     title={showToken ? 'Sembunyikan' : 'Tampilkan'}
                     className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition"
                   >
-                    {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showToken && !isDemoActive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
 
                   <button
