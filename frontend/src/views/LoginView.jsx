@@ -28,7 +28,7 @@ export default function LoginView({ onLoginSuccess }) {
         Swal.fire({
           icon: 'success',
           title: 'Login Berhasil!',
-          text: 'Selamat datang di SIAKAD Absensi IoT',
+          text: 'Selamat datang di PresensiRFID',
           timer: 1500,
           showConfirmButton: false
         });
@@ -63,9 +63,9 @@ export default function LoginView({ onLoginSuccess }) {
         <div className="text-center mb-8 flex flex-col items-center">
           <AppLogo className="w-20 h-20 mb-3" glowing={true} />
           <h1 className="text-2xl font-black text-white tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
-            SIAKAD Absensi Digital
+            PresensiRFID
           </h1>
-          <p className="text-slate-400 text-xs mt-1 font-medium">Sistem Pemantauan Absensi IoT ESP32 & SQLite</p>
+          <p className="text-slate-400 text-xs mt-1 font-medium">Sistem Absensi Fingerprint & RFID</p>
         </div>
 
         <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-white/20">
@@ -138,7 +138,7 @@ export default function LoginView({ onLoginSuccess }) {
 
           <div className="mt-6 pt-6 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-400">
             <Database className="w-4 h-4 text-emerald-500" />
-            <span>Tersimpan di SQLite Database Permanen</span>
+            <span>Database Terintegrasi & Aman</span>
           </div>
         </div>
       </div>

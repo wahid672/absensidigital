@@ -139,7 +139,7 @@ export default function App() {
           position: 'top-end',
           icon: isAlready ? 'info' : 'success',
           title: isAlready ? `ℹ️ ${rec.nama || 'Anggota'}` : `🎉 ${rec.nama || 'Anggota'}`,
-          text: `${payload.message} (${rec.id_mesin || payload.method || 'ESP32'})`,
+          text: `${payload.message} (${rec.id_mesin || payload.method || 'Mesin Presensi'})`,
           showConfirmButton: false,
           timer: 4000,
           timerProgressBar: true
@@ -159,7 +159,7 @@ export default function App() {
           toast: true,
           position: 'top-end',
           icon: 'info',
-          title: '✨ Sidik Jari Sensor ESP32',
+          title: '✨ Perekaman Sidik Jari Sensor',
           text: payload.message || 'Perekaman sidik jari terdeteksi',
           showConfirmButton: false,
           timer: 4500,

@@ -28,7 +28,7 @@ export default function ModalAttendance({
     status_masuk: item?.status_masuk || 'tepat',
     waktu_keluar: (item?.waktu_keluar && item?.waktu_keluar !== '-') ? item.waktu_keluar : '',
     status_keluar: item?.status_keluar || '-',
-    id_mesin: item?.id_mesin || (isEdit ? 'ESP32-GATE-01' : 'MANUAL')
+    id_mesin: item?.id_mesin || (isEdit ? 'GATE-01' : 'MANUAL')
   });
 
   const [loading, setLoading] = useState(false);
@@ -307,7 +307,7 @@ export default function ModalAttendance({
                 type="text" 
                 value={formData.id_mesin} 
                 onChange={(e) => setFormData({ ...formData, id_mesin: e.target.value })}
-                placeholder="ESP32-GATE-01 / Manual" 
+                placeholder="GATE-01 / Manual" 
                 className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-primary-500"
               />
             </div>

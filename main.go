@@ -1035,7 +1035,7 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 		// Response status online untuk tes koneksi
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status":    "online",
-			"message":   "SIAKAD Absensi Digital API Server Ready",
+			"message":   "PresensiRFID API Server Ready",
 			"device_id": deviceID,
 			"timestamp": time.Now().Format("2006-01-02 15:04:05"),
 		})
@@ -2474,7 +2474,7 @@ func handleRestoreDB(w http.ResponseWriter, r *http.Request) {
 	headerBytes := make([]byte, 16)
 	n, err := file.Read(headerBytes)
 	if err != nil || n < 16 || string(headerBytes) != "SQLite format 3\x00" {
-		writeJSONError(w, http.StatusBadRequest, "Format file tidak valid! File harus berupa database SQLite 3 (.db).")
+		writeJSONError(w, http.StatusBadRequest, "Format file tidak valid! File harus berupa database sistem yang valid (.db).")
 		return
 	}
 
@@ -2582,9 +2582,9 @@ func handleDevices(w http.ResponseWriter, r *http.Request) {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":    "ok",
-		"database":  "sqlite3",
+		"database":  "connected",
 		"timestamp": time.Now().Format(time.RFC3339),
-		"app":       "SIAKAD Absensi Digital IoT ESP32 (Backdate, Master Kelas/Jabatan, Dashboard Charts, Telegram)",
+		"app":       "PresensiRFID - Sistem Absensi Fingerprint & RFID",
 	})
 }
 
@@ -2936,7 +2936,7 @@ func handleTelegramSendTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Pesan == "" {
-		req.Pesan = "🔔 *TES NOTIFIKASI TELEGRAM*\nAssalamu'alaikum Wr. Wb.\nIni adalah pesan uji coba (test) notifikasi absensi dari sistem SIAKAD PONPES.\n\nStatus: *Berhasil Terhubung! ✅*"
+		req.Pesan = "🔔 *TES NOTIFIKASI TELEGRAM*\nAssalamu'alaikum Wr. Wb.\nIni adalah pesan uji coba (test) notifikasi absensi dari sistem PresensiRFID.\n\nStatus: *Berhasil Terhubung! ✅*"
 	}
 
 	chatIDs := parseTelegramChatIDs(req.ChatID)
@@ -3209,7 +3209,7 @@ func main() {
 	handler := corsMiddleware(mux)
 
 	log.Printf("===============================================================")
-	log.Printf("🚀 SIAKAD Absensi Digital - Fullstack Golang + React Vite + SQLite")
+	log.Printf("🚀 PresensiRFID - Sistem Absensi Fingerprint & RFID")
 	log.Printf("📡 Server: http://0.0.0.0:%s", serverPort)
 	log.Printf("🗄️ Database: %s", dbPath)
 	log.Printf("🔐 Admin Login: %s / %s", adminUser, adminPass)

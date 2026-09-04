@@ -175,7 +175,7 @@ export default function FingerprintsView({
             Swal.fire({ 
               icon: 'success', 
               title: 'Sidik Jari Dihapus!', 
-              html: `Data sidik jari slot <b>#${fp.fingerprint_id}</b> telah berhasil dihapus dari server.<br><br><div class="p-3 bg-amber-50 text-amber-800 rounded-xl text-xs text-left border border-amber-200"><strong>⚠️ PENTING: Silakan RESTART Mesin ESP32</strong><br>Agar slot sidik jari ini otomatis terhapus dari memori fisik sensor R503 saat booting sinkronisasi.</div>`,
+              html: `Data sidik jari slot <b>#${fp.fingerprint_id}</b> telah berhasil dihapus dari server.<br><br><div class="p-3 bg-amber-50 text-amber-800 rounded-xl text-xs text-left border border-amber-200"><strong>⚠️ PENTING: Silakan RESTART Mesin Presensi</strong><br>Agar slot sidik jari ini otomatis terhapus dari memori fisik sensor saat booting sinkronisasi.</div>`,
               confirmButtonColor: '#0284c7',
               confirmButtonText: 'Mengerti'
             });
@@ -350,7 +350,7 @@ export default function FingerprintsView({
                     <Fingerprint className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                     <p>Tidak ada data slot sidik jari yang sesuai filter.</p>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      Rekam sidik jari baru melalui mesin ESP32 (Tap Master 1x) untuk menambahkan data ke sistem.
+                      Rekam sidik jari baru melalui mesin presensi (Tap Master 1x) untuk menambahkan data ke sistem.
                     </p>
                   </td>
                 </tr>

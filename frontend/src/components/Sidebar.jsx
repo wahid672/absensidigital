@@ -97,8 +97,8 @@ export default function Sidebar({
           <div className="flex items-center gap-3">
             <AppLogo className="w-9 h-9" glowing={false} />
             <div>
-              <h1 className="font-bold text-sm tracking-tight text-white leading-tight">SIAKAD ABSENSI</h1>
-              <p className="text-[10px] text-primary-400 font-mono">IoT ESP32 & SQLite</p>
+              <h1 className="font-bold text-sm tracking-tight text-white leading-tight">PresensiRFID</h1>
+              <p className="text-[10px] text-primary-400 font-medium">Fingerprint & RFID</p>
             </div>
           </div>
 

@@ -378,7 +378,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
     setTestTargetChatID(targetChatID);
     setTestTargetNama(targetNama);
     setTestMessageText(
-      `🔔 *TES NOTIFIKASI TELEGRAM*\nAssalamu'alaikum Wr. Wb.\nYth. ${targetNama ? `Wali dari *${targetNama}*` : 'Pengguna'}\n\nIni adalah pesan uji coba (test) notifikasi absensi dari sistem ${settings.instansi_nama || 'SIAKAD ABSENSI'}.\n\nStatus: *Berhasil Terhubung! ✅*`
+      `🔔 *TES NOTIFIKASI TELEGRAM*\nAssalamu'alaikum Wr. Wb.\nYth. ${targetNama ? `Wali dari *${targetNama}*` : 'Pengguna'}\n\nIni adalah pesan uji coba (test) notifikasi absensi dari sistem ${settings.instansi_nama || 'PresensiRFID'}.\n\nStatus: *Berhasil Terhubung! ✅*`
     );
     setTestModalOpen(true);
   };
@@ -457,7 +457,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
     { tag: '{tanggal}', desc: 'Tgl (YYYY-MM-DD)' },
     { tag: '{waktu}', desc: 'Jam (HH:MM:SS)' },
     { tag: '{status}', desc: 'Tepat / Terlambat' },
-    { tag: '{id_mesin}', desc: 'ID Mesin ESP32' },
+    { tag: '{id_mesin}', desc: 'ID Mesin Presensi' },
     { tag: '{instansi}', desc: 'Nama Instansi' },
     { tag: '{nama_ortu}', desc: 'Nama Wali/Ortu' }
   ];
@@ -589,7 +589,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
               <li>User/Penerima pesan harus membuka bot Telegram yang telah dibuat.</li>
               <li>Klik tombol <b>'START'</b> atau kirim pesan <b>'/start'</b> pada bot tersebut.</li>
               <li>Hal ini diperlukan agar sistem dapat mengirimkan notifikasi melalui Telegram.</li>
-              <li>Setiap pesan notifikasi absensi akan otomatis dikirimkan saat santri/pegawai tap kartu RFID atau sidik jari di mesin ESP32.</li>
+              <li>Setiap pesan notifikasi absensi akan otomatis dikirimkan saat santri/pegawai tap kartu RFID atau sidik jari di mesin presensi.</li>
             </ol>
           </div>
 

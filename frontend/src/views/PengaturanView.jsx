@@ -184,7 +184,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     }
     Swal.fire({
       title: 'Regenerate API Key Baru?',
-      text: 'Kunci lama tidak akan berlaku lagi. Anda harus mengunggah ulang firmware ESP32 dengan API Key baru ini agar mesin presensi tetap terhubung.',
+      text: 'Kunci lama tidak akan berlaku lagi. Anda harus memperbarui konfigurasi mesin presensi dengan API Key baru ini agar tetap terhubung.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#2563eb',
@@ -371,13 +371,13 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     if (!file) return;
 
     if (!file.name.endsWith('.db') && !file.name.endsWith('.sqlite') && !file.name.endsWith('.sqlite3')) {
-      Swal.fire('Format Salah', 'File yang diunggah harus berekstensi .db atau .sqlite', 'warning');
+      Swal.fire('Format Salah', 'File yang diunggah harus berupa file database (.db / .sqlite)', 'warning');
       e.target.value = '';
       return;
     }
 
     Swal.fire({
-      title: 'Restore Database SQLite?',
+      title: 'Restore Database Sistem?',
       html: `<div class="text-left text-xs text-slate-600 space-y-2">
         <p class="font-bold text-rose-600">⚠️ PERINGATAN PENTING:</p>
         <p>Proses ini akan menimpa seluruh data sistem (santri/siswa, guru, kelas, jabatan, sidik jari, dan riwayat presensi) dengan data dari file: <b>${file.name}</b> (${(file.size / 1024).toFixed(1)} KB).</p>
@@ -451,7 +451,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
             <span>Pengaturan Sistem</span>
           </h3>
           <p className="text-xs text-slate-500">
-            Kelola profil instansi, logo kop surat, kebijakan kartu IoT ESP32, serta backup & restore database
+            Kelola profil instansi, logo kop surat, kebijakan kartu & sidik jari, serta backup & restore database
           </p>
         </div>
       </div>
@@ -773,7 +773,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                 <Cpu className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="font-bold text-sm text-slate-800">Konfigurasi Mesin ESP32 (IoT API)</h4>
+                <h4 className="font-bold text-sm text-slate-800">Konfigurasi Mesin Presensi (IoT API)</h4>
                 <p className="text-xs text-slate-400">Endpoint & Unique Hash API Key untuk dimasukkan ke file fw.ino</p>
               </div>
             </div>
@@ -844,7 +844,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  *Endpoint resmi untuk menerima sinyal tap kartu RFID & sidik jari dari ESP32.
+                  *Endpoint resmi untuk menerima sinyal tap kartu RFID & sidik jari dari mesin presensi.
                 </p>
               </div>
 
@@ -873,7 +873,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
               </div>
               <div>
                 <h4 className="font-bold text-sm text-slate-800">Backup & Restore Database (.db)</h4>
-                <p className="text-xs text-slate-400">Cadangkan seluruh data sistem atau pulihkan dari file backup SQLite</p>
+                <p className="text-xs text-slate-400">Cadangkan seluruh data sistem atau pulihkan dari file cadangan database</p>
               </div>
             </div>
 
@@ -937,7 +937,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
               </div>
               <div>
                 <h4 className="font-bold text-sm text-slate-800">Manajemen Data Contoh & Reset</h4>
-                <p className="text-xs text-slate-400">Generate data dummy atau bersihkan database SQLite</p>
+                <p className="text-xs text-slate-400">Generate data dummy atau bersihkan database sistem</p>
               </div>
             </div>
 

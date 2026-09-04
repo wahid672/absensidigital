@@ -24,7 +24,7 @@ export const showDemoAlert = (action = 'Aksi ini') => {
           Aplikasi ini sedang berjalan dalam mode demonstrasi (<i>read-only</i>). Seluruh perubahan data master, pengaturan sistem, dan pencadangan database dikunci untuk menjaga integritas data demo.
         </p>
         <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600">
-          💡 <b>Fitur yang tetap berfungsi normal:</b> Tambah presensi manual baru, uji coba kirim pesan Telegram, cetak PDF / ekspor data siswa & guru, serta seluruh endpoint mesin IoT ESP32.
+          💡 <b>Fitur yang tetap berfungsi normal:</b> Tambah presensi manual baru, uji coba kirim pesan Telegram, cetak PDF / ekspor data siswa & guru, serta seluruh endpoint mesin presensi IoT.
         </div>
       </div>
     `,

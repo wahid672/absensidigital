@@ -271,7 +271,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
                 {settings.instansi_nama || 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL'}
               </h1>
               <p className="text-xs font-semibold text-slate-700 mt-1">
-                Sistem Presensi & Kehadiran Otomatis Berbasis IoT ESP32 & RFID/Fingerprint
+                PresensiRFID - Sistem Absensi Fingerprint & RFID
               </p>
               <p className="text-[11px] text-slate-600 mt-0.5">
                 Alamat: {settings.instansi_alamat || 'Jl. Pesantren Digital No. 01'} • Wilayah: {kotaInstansi}
@@ -384,7 +384,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
                     <td className="py-2 px-3 text-center font-mono">{item.waktu_masuk || '-'}</td>
                     <td className="py-2 px-3 text-center capitalize">{item.status_masuk || '-'}</td>
                     <td className="py-2 px-3 text-center font-mono">{item.waktu_keluar || '-'}</td>
-                    <td className="py-2 px-3 text-center">{item.id_mesin || 'ESP32'}</td>
+                    <td className="py-2 px-3 text-center">{item.id_mesin || 'Mesin 01'}</td>
                   </tr>
                 ))
               )}

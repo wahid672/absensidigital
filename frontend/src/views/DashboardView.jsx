@@ -158,7 +158,7 @@ export default function DashboardView({
       item.status_masuk || '-',
       item.waktu_keluar || '-',
       item.status_keluar || '-',
-      item.id_mesin || 'ESP32'
+      item.id_mesin || 'Mesin 01'
     ]);
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -305,7 +305,7 @@ export default function DashboardView({
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-primary-600"></span> Hari Ini</span>
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-slate-500"></span> Hari Sebelumnya</span>
             </div>
-            <span className="text-[11px] text-slate-400 italic">Otomatis sinkron dengan database SQLite</span>
+            <span className="text-[11px] text-slate-400 italic">Otomatis sinkron dengan database sistem</span>
           </div>
         </div>
 
@@ -591,7 +591,7 @@ export default function DashboardView({
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[11px] text-slate-600">
-                          <Cpu className="w-3 h-3 text-slate-400" /> {item.id_mesin || 'ESP32'}
+                          <Cpu className="w-3 h-3 text-slate-400" /> {item.id_mesin || 'Mesin 01'}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-center">
