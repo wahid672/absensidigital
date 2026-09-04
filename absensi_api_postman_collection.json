@@ -1221,6 +1221,74 @@
 						"description": "Mengosongkan seluruh database (data anggota, sidik jari, dan absensi) agar kembali seperti awal."
 					},
 					"response": []
+				},
+				{
+					"name": "Download Backup Database (.db)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/settings/backup-db",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"settings",
+								"backup-db"
+							]
+						},
+						"description": "Mengunduh file snapshot database SQLite lengkap (.db) yang berisi data santri/siswa, guru, kelas, jabatan, sidik jari, dan absensi."
+					},
+					"response": []
+				},
+				{
+					"name": "Upload & Restore Database (.db)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{jwt_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "database",
+									"type": "file",
+									"src": ""
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/settings/restore-db",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"settings",
+								"restore-db"
+							]
+						},
+						"description": "Mengunggah file .db backup untuk memulihkan seluruh data sistem (database lama akan otomatis di-backup sebagai pengaman .bak di server)."
+					},
+					"response": []
 				}
 			]
 		},

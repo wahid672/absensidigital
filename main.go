@@ -10,10 +10,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +35,7 @@ var (
 	serverPort = getEnv("PORT", "8080")
 	dbPath     = getEnv("DB_PATH", "data/absensi.db")
 	db         *sql.DB
+	dbMutex    sync.RWMutex
 	sseClients = make(map[chan string]bool)
 	sseMutex   sync.Mutex
 )
@@ -2238,6 +2241,162 @@ func handleSeedDummy(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GET /api/settings/backup-db
+func handleBackupDB(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method GET yang diizinkan.")
+		return
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	backupFilename := fmt.Sprintf("backup_absensi_%s.db", timestamp)
+
+	// Buat file snapshot sementara menggunakan VACUUM INTO
+	tempDir := os.TempDir()
+	tempBackupPath := filepath.Join(tempDir, backupFilename)
+	_ = os.Remove(tempBackupPath)
+	defer os.Remove(tempBackupPath)
+
+	cleanPath := strings.ReplaceAll(tempBackupPath, "\\", "/")
+	_, err := db.Exec(fmt.Sprintf("VACUUM INTO '%s'", cleanPath))
+	if err != nil {
+		// Fallback jika VACUUM INTO gagal: baca file dbPath secara langsung
+		data, readErr := os.ReadFile(dbPath)
+		if readErr != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Gagal membuat backup database: "+readErr.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-sqlite3")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", backupFilename))
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		w.Write(data)
+		return
+	}
+
+	data, err := os.ReadFile(tempBackupPath)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal membaca file snapshot backup: "+err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-sqlite3")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", backupFilename))
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.Write(data)
+}
+
+// POST /api/settings/restore-db
+func handleRestoreDB(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	// Batasi ukuran file upload maksimal 100 MB
+	err := r.ParseMultipartForm(100 << 20)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Gagal memproses file upload: "+err.Error())
+		return
+	}
+
+	file, header, err := r.FormFile("database")
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "File database (.db) wajib diunggah.")
+		return
+	}
+	defer file.Close()
+
+	if header.Size == 0 {
+		writeJSONError(w, http.StatusBadRequest, "File database yang diunggah kosong.")
+		return
+	}
+
+	// Validasi Magic Header SQLite 3 ("SQLite format 3\000")
+	headerBytes := make([]byte, 16)
+	n, err := file.Read(headerBytes)
+	if err != nil || n < 16 || string(headerBytes) != "SQLite format 3\x00" {
+		writeJSONError(w, http.StatusBadRequest, "Format file tidak valid! File harus berupa database SQLite 3 (.db).")
+		return
+	}
+
+	// Reset read pointer
+	if _, err := file.Seek(0, 0); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal membaca ulang file: "+err.Error())
+		return
+	}
+
+	// Simpan ke file sementara
+	tempRestorePath := dbPath + ".restore_tmp"
+	_ = os.Remove(tempRestorePath)
+	defer os.Remove(tempRestorePath)
+
+	out, err := os.Create(tempRestorePath)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal membuat file penampung sementara: "+err.Error())
+		return
+	}
+
+	_, err = io.Copy(out, file)
+	out.Close()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal menyimpan file restore: "+err.Error())
+		return
+	}
+
+	// Validasi integritas database file yang diunggah
+	testDb, err := sql.Open("sqlite", tempRestorePath)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "File database korup atau tidak dapat dibuka: "+err.Error())
+		return
+	}
+	var integrity string
+	err = testDb.QueryRow("PRAGMA integrity_check;").Scan(&integrity)
+	testDb.Close()
+	if err != nil || integrity != "ok" {
+		writeJSONError(w, http.StatusBadRequest, "Pemeriksaan integritas database gagal: "+integrity)
+		return
+	}
+
+	// Kunci dan lakukan penggantian database
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
+	// Tutup koneksi aktif
+	if db != nil {
+		_ = db.Close()
+	}
+
+	// Buat backup database lama sebagai pengaman (.bak)
+	backupOldPath := dbPath + ".bak"
+	_ = os.Remove(backupOldPath)
+	_ = os.Rename(dbPath, backupOldPath)
+
+	// Ganti dbPath dengan file yang baru di-upload
+	err = os.Rename(tempRestorePath, dbPath)
+	if err != nil {
+		// Rollback jika terjadi kesalahan
+		_ = os.Rename(backupOldPath, dbPath)
+		db, _ = sql.Open("sqlite", dbPath)
+		writeJSONError(w, http.StatusInternalServerError, "Gagal mengganti database aktif: "+err.Error())
+		return
+	}
+
+	// Buka kembali connection pool database SQLite
+	var openErr error
+	db, openErr = sql.Open("sqlite", dbPath)
+	if openErr != nil {
+		log.Printf("Peringatan: Gagal membuka kembali database: %v", openErr)
+	}
+
+	// Jalankan inisialisasi skema & migrasi otomatis pada database yang baru dipulihkan
+	initDatabase()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": fmt.Sprintf("Database berhasil dipulihkan dari file '%s'. Seluruh data telah diperbarui.", header.Filename),
+	})
+}
+
 // 9. GET /api/devices
 func handleDevices(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query("SELECT id, device_id, nama, lokasi, last_seen FROM devices ORDER BY last_seen DESC")
@@ -2733,6 +2892,8 @@ func main() {
 	mux.HandleFunc("/api/settings/reset-attendance", authMiddleware(handleResetAttendance))
 	mux.HandleFunc("/api/settings/reset-all", authMiddleware(handleResetAll))
 	mux.HandleFunc("/api/settings/seed-dummy", authMiddleware(handleSeedDummy))
+	mux.HandleFunc("/api/settings/backup-db", authMiddleware(handleBackupDB))
+	mux.HandleFunc("/api/settings/restore-db", authMiddleware(handleRestoreDB))
 	mux.HandleFunc("/api/telegram/status", authMiddleware(handleTelegramStatus))
 	mux.HandleFunc("/api/telegram/test-bot", authMiddleware(handleTelegramTestBot))
 	mux.HandleFunc("/api/telegram/send-test", authMiddleware(handleTelegramSendTest))

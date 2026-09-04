@@ -1,7 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { Database, School, CloudDownload, Broom, Trash2, Save, Loader2, MapPin, CreditCard, ShieldAlert, CheckCircle2, Sparkles, Building2, Cpu, Copy, Image as ImageIcon, Upload, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Database, 
+  School, 
+  CloudDownload, 
+  Broom, 
+  Trash2, 
+  Save, 
+  Loader2, 
+  MapPin, 
+  CreditCard, 
+  ShieldAlert, 
+  CheckCircle2, 
+  Sparkles, 
+  Building2, 
+  Cpu, 
+  Copy, 
+  Image as ImageIcon, 
+  Upload, 
+  XCircle,
+  HardDrive,
+  DownloadCloud,
+  UploadCloud,
+  FileArchive,
+  ShieldCheck
+} from 'lucide-react';
 import Swal from 'sweetalert2';
-import { apiFetch } from '../api';
+import { apiFetch, getAuthToken, getApiBaseUrl } from '../api';
 
 export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
   const [formData, setFormData] = useState({
@@ -189,6 +213,124 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     });
   };
 
+  const [downloadingBackup, setDownloadingBackup] = useState(false);
+  const [restoringDB, setRestoringDB] = useState(false);
+  const dbRestoreInputRef = useRef(null);
+
+  // 1. Download Backup Database (.db)
+  const handleDownloadBackup = async () => {
+    setDownloadingBackup(true);
+    try {
+      const token = getAuthToken();
+      const url = `${getApiBaseUrl()}/api/settings/backup-db`;
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || 'Gagal mengunduh file backup database');
+      }
+
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition');
+      let filename = 'backup_absensi.db';
+      if (disposition && disposition.includes('filename=')) {
+        const matches = disposition.match(/filename="?([^"]+)"?/);
+        if (matches && matches[1]) {
+          filename = matches[1];
+        }
+      }
+
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Backup Berhasil! 💾',
+        html: `<p class="text-xs text-slate-600">File backup database <b>${filename}</b> (${(blob.size / 1024).toFixed(1)} KB) berhasil diunduh dan tersimpan di komputer Anda.</p>`,
+        timer: 3000,
+        showConfirmButton: false
+      });
+    } catch (err) {
+      Swal.fire('Gagal Backup', err.message, 'error');
+    } finally {
+      setDownloadingBackup(false);
+    }
+  };
+
+  // 2. Restore Database (.db)
+  const handleRestoreFileSelected = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.db') && !file.name.endsWith('.sqlite') && !file.name.endsWith('.sqlite3')) {
+      Swal.fire('Format Salah', 'File yang diunggah harus berekstensi .db atau .sqlite', 'warning');
+      e.target.value = '';
+      return;
+    }
+
+    Swal.fire({
+      title: 'Restore Database SQLite?',
+      html: `<div class="text-left text-xs text-slate-600 space-y-2">
+        <p class="font-bold text-rose-600">⚠️ PERINGATAN PENTING:</p>
+        <p>Proses ini akan menimpa seluruh data sistem (santri/siswa, guru, kelas, jabatan, sidik jari, dan riwayat presensi) dengan data dari file: <b>${file.name}</b> (${(file.size / 1024).toFixed(1)} KB).</p>
+        <p class="text-slate-500 italic">*Database aktif saat ini akan otomatis dicadangkan sebagai file pengaman (.bak) di server.</p>
+      </div>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#e11d48',
+      confirmButtonText: 'Ya, Restore Sekarang',
+      cancelButtonText: 'Batal'
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        setRestoringDB(true);
+        try {
+          const formData = new FormData();
+          formData.append('database', file);
+
+          const token = getAuthToken();
+          const url = `${getApiBaseUrl()}/api/settings/restore-db`;
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            body: formData
+          });
+
+          const data = await res.json();
+          if (res.ok && data.status === 'success') {
+            await Swal.fire({
+              icon: 'success',
+              title: 'Restore Berhasil! 🎉',
+              html: `<p class="text-xs text-slate-600">${data.message}</p>`,
+              confirmButtonColor: '#2563eb'
+            });
+            if (onSettingsUpdated) onSettingsUpdated();
+            window.location.reload();
+          } else {
+            Swal.fire('Gagal Restore', data.message || 'Terjadi kesalahan saat memulihkan database.', 'error');
+          }
+        } catch (err) {
+          Swal.fire('Error', 'Gagal memproses unggahan file: ' + err.message, 'error');
+        } finally {
+          setRestoringDB(false);
+          if (dbRestoreInputRef.current) dbRestoreInputRef.current.value = '';
+        }
+      } else {
+        if (dbRestoreInputRef.current) dbRestoreInputRef.current.value = '';
+      }
+    });
+  };
+
   const isAutoRegisterOn = formData.auto_register_card === '1';
   const isPesantren = formData.app_mode === 'pesantren';
 
@@ -367,7 +509,71 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
             </div>
           </div>
 
-          {/* 4. DUMMY & RESET */}
+          {/* 4. BACKUP & RESTORE DATABASE SQLITE */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg">
+                <HardDrive className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-sm text-slate-800">Backup & Restore Database (.db)</h4>
+                <p className="text-xs text-slate-400">Cadangkan seluruh data atau pulihkan dari file backup SQLite</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 space-y-1">
+              <p className="font-semibold text-slate-700 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                Informasi Cadangan:
+              </p>
+              <p className="text-[11px] leading-relaxed">
+                File backup berekstensi <b>.db</b> mencakup data lengkap santri/siswa, guru, kartu RFID, kelas, jabatan, sidik jari IoT, dan riwayat presensi.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+              {/* Tombol Backup Database */}
+              <button 
+                type="button"
+                onClick={handleDownloadBackup}
+                disabled={downloadingBackup}
+                className="flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow transition-all disabled:opacity-50"
+              >
+                {downloadingBackup ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <DownloadCloud className="w-4 h-4" />
+                )}
+                <span>{downloadingBackup ? 'Mengunduh...' : 'Download Backup (.db)'}</span>
+              </button>
+
+              {/* Tombol Restore Database */}
+              <button 
+                type="button"
+                onClick={() => dbRestoreInputRef.current?.click()}
+                disabled={restoringDB}
+                className="flex items-center justify-center gap-2 py-2.5 px-4 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-semibold shadow transition-all disabled:opacity-50"
+              >
+                {restoringDB ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <UploadCloud className="w-4 h-4" />
+                )}
+                <span>{restoringDB ? 'Memulihkan...' : 'Restore Database (.db)'}</span>
+              </button>
+
+              {/* Hidden File Input for Restore */}
+              <input 
+                type="file" 
+                ref={dbRestoreInputRef}
+                onChange={handleRestoreFileSelected}
+                accept=".db, .sqlite, .sqlite3"
+                className="hidden" 
+              />
+            </div>
+          </div>
+
+          {/* 5. DUMMY & RESET */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg">
