@@ -189,7 +189,7 @@ export default function App() {
   };
 
   if (!isAuthenticated) {
-    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+    return <LoginView onLoginSuccess={handleLoginSuccess} demoMode={settings.demo_mode === 'true' || settings.demo_mode === true} />;
   }
 
   return (

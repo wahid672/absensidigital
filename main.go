@@ -2585,6 +2585,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		"database":  "connected",
 		"timestamp": time.Now().Format(time.RFC3339),
 		"app":       "PresensiRFID - Sistem Absensi Fingerprint & RFID",
+		"demo_mode": isDemoMode(),
 	})
 }
 

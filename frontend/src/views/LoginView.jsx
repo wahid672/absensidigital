@@ -1,14 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Lock, Eye, EyeOff, Loader2, Database } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch, setAuth } from '../api';
 import AppLogo from '../components/AppLogo';
 
-export default function LoginView({ onLoginSuccess }) {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+export default function LoginView({ onLoginSuccess, demoMode = null }) {
+  const [isDemo, setIsDemo] = useState(demoMode === true);
+  const [username, setUsername] = useState(demoMode ? 'admin' : '');
+  const [password, setPassword] = useState(demoMode ? 'admin123' : '');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    apiFetch('/api/health')
+      .then((res) => res.json())
+      .then((data) => {
+        const demoActive = data.demo_mode === true || data.demo_mode === 'true';
+        setIsDemo(demoActive);
+        if (demoActive) {
+          setUsername(prev => prev || 'admin');
+          setPassword(prev => prev || 'admin123');
+        } else {
+          setUsername('');
+          setPassword('');
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -74,6 +92,16 @@ export default function LoginView({ onLoginSuccess }) {
             <p className="text-sm text-slate-500 mt-1">Gunakan akun administrator untuk mengelola sistem.</p>
           </div>
 
+          {isDemo && (
+            <div className="mb-5 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-800 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                <span className="font-bold">Mode Demo Aktif</span>
+              </div>
+              <span className="text-[11px] text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded font-mono font-semibold">admin / admin123</span>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
@@ -88,7 +116,7 @@ export default function LoginView({ onLoginSuccess }) {
                   value={username} 
                   onChange={(e) => setUsername(e.target.value)}
                   required 
-                  placeholder="admin" 
+                  placeholder={isDemo ? "admin" : ""} 
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
               </div>
@@ -107,7 +135,7 @@ export default function LoginView({ onLoginSuccess }) {
                   value={password} 
                   onChange={(e) => setPassword(e.target.value)}
                   required 
-                  placeholder="••••••••" 
+                  placeholder={isDemo ? "••••••••" : ""} 
                   className="w-full pl-10 pr-11 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
                 <button 
