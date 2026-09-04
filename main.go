@@ -287,6 +287,9 @@ func initDatabase() {
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_enabled', '1')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_notify_in', '1')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_notify_out', '1')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_admin_chat_ids', '')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_notify_admin', '1')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_admin', '📋 *LIVE MONITOR PRESENSI ADMIN*\n👤 Nama: *{nama}*\n🏷️ Tipe: {tipe}\n🏫 Kelas/Jabatan: {kelas}\n🔄 Aksi: *{aksi}* ({status})\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📍 Mesin: {id_mesin}\n_{instansi}_')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_in', '🔔 *NOTIFIKASI PRESENSI MASUK*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nAlhamdulillah, santri telah tiba dan melakukan absensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_out', '🔔 *NOTIFIKASI PRESENSI PULANG*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri telah melakukan absensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_late', '⚠️ *PERINGATAN KETERLAMBATAN*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri tercatat terlambat melakukan absensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_')")
@@ -2550,6 +2553,23 @@ func testTelegramBot(token string) (bool, string, string) {
 	return true, botInfo, "Bot aktif dan terverifikasi"
 }
 
+func parseTelegramChatIDs(raw string) []string {
+	raw = strings.ReplaceAll(raw, "\r\n", ",")
+	raw = strings.ReplaceAll(raw, "\n", ",")
+	raw = strings.ReplaceAll(raw, ";", ",")
+	parts := strings.Split(raw, ",")
+	var result []string
+	seen := make(map[string]bool)
+	for _, p := range parts {
+		id := strings.TrimSpace(p)
+		if id != "" && !seen[id] {
+			seen[id] = true
+			result = append(result, id)
+		}
+	}
+	return result
+}
+
 func formatTelegramNotification(templateStr string, m Member, rec AttendanceRecord, instansi string) string {
 	if templateStr == "" {
 		templateStr = "🔔 *NOTIFIKASI PRESENSI*\nNama: *{nama}*\nTgl: {tanggal}\nJam: {waktu}\nStatus: {status}\n_{instansi}_"
@@ -2582,6 +2602,47 @@ func formatTelegramNotification(templateStr string, m Member, rec AttendanceReco
 	return out
 }
 
+func formatTelegramAdminNotification(templateStr string, m Member, rec AttendanceRecord, actionType, instansi string) string {
+	if templateStr == "" {
+		templateStr = "📋 *LIVE MONITOR PRESENSI ADMIN*\n👤 Nama: *{nama}*\n🏷️ Tipe: {tipe}\n🏫 Kelas/Jabatan: {kelas}\n🔄 Aksi: *{aksi}* ({status})\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📍 Mesin: {id_mesin}\n_{instansi}_"
+	}
+
+	statusText := rec.StatusMasuk
+	waktuText := rec.WaktuMasuk
+	aksiText := "Presensi Masuk"
+	if actionType == "check_out" || (rec.WaktuKeluar != "-" && rec.WaktuKeluar != "") {
+		statusText = rec.StatusKeluar
+		waktuText = rec.WaktuKeluar
+		aksiText = "Presensi Pulang"
+	}
+	if statusText == "tepat" {
+		statusText = "Tepat Waktu ✅"
+	} else if statusText == "telat" {
+		statusText = "Terlambat ⚠️"
+	} else if statusText == "cepat" {
+		statusText = "Pulang Cepat ⚠️"
+	}
+
+	devID := rec.DeviceID
+	if strings.TrimSpace(devID) == "" {
+		devID = "ESP32"
+	}
+
+	out := templateStr
+	out = strings.ReplaceAll(out, "{nama}", m.Nama)
+	out = strings.ReplaceAll(out, "{nis}", m.NISNIP)
+	out = strings.ReplaceAll(out, "{tipe}", strings.Title(m.Tipe))
+	out = strings.ReplaceAll(out, "{kelas}", m.Kelas)
+	out = strings.ReplaceAll(out, "{aksi}", aksiText)
+	out = strings.ReplaceAll(out, "{tanggal}", rec.Tanggal)
+	out = strings.ReplaceAll(out, "{waktu}", waktuText)
+	out = strings.ReplaceAll(out, "{status}", statusText)
+	out = strings.ReplaceAll(out, "{id_mesin}", devID)
+	out = strings.ReplaceAll(out, "{instansi}", instansi)
+	out = strings.ReplaceAll(out, "{nama_ortu}", m.NamaOrtu)
+	return out
+}
+
 func triggerTelegramAttendanceNotification(m Member, rec AttendanceRecord, actionType string) {
 	go func() {
 		defer func() {
@@ -2590,11 +2651,9 @@ func triggerTelegramAttendanceNotification(m Member, rec AttendanceRecord, actio
 			}
 		}()
 
-		if strings.TrimSpace(m.TelegramChatID) == "" {
-			return
-		}
-
 		var botToken, enabled, notifyIn, notifyOut, tIn, tOut, tLate, instansiNama string
+		var adminChatIDsRaw, notifyAdmin, tAdmin string
+
 		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_bot_token'").Scan(&botToken)
 		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_enabled'").Scan(&enabled)
 		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_notify_in'").Scan(&notifyIn)
@@ -2604,40 +2663,66 @@ func triggerTelegramAttendanceNotification(m Member, rec AttendanceRecord, actio
 		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_late'").Scan(&tLate)
 		db.QueryRow("SELECT value FROM settings WHERE key = 'instansi_nama'").Scan(&instansiNama)
 
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_admin_chat_ids'").Scan(&adminChatIDsRaw)
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_notify_admin'").Scan(&notifyAdmin)
+		db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_admin'").Scan(&tAdmin)
+
 		if strings.TrimSpace(botToken) == "" || enabled == "0" || strings.ToLower(enabled) == "false" {
 			return
 		}
 
-		var msg string
-		if actionType == "check_in" {
-			if notifyIn == "0" || strings.ToLower(notifyIn) == "false" {
-				return
+		// 1. Notifikasi ke Wali Santri / Guru (jika ada chat id terdaftar)
+		if strings.TrimSpace(m.TelegramChatID) != "" {
+			var msg string
+			var sendToUser bool
+			if actionType == "check_in" {
+				if notifyIn != "0" && strings.ToLower(notifyIn) != "false" {
+					sendToUser = true
+					if rec.StatusMasuk == "telat" && strings.TrimSpace(tLate) != "" {
+						msg = formatTelegramNotification(tLate, m, rec, instansiNama)
+					} else {
+						msg = formatTelegramNotification(tIn, m, rec, instansiNama)
+					}
+				}
+			} else if actionType == "check_out" {
+				if notifyOut != "0" && strings.ToLower(notifyOut) != "false" {
+					sendToUser = true
+					msg = formatTelegramNotification(tOut, m, rec, instansiNama)
+				}
 			}
-			if rec.StatusMasuk == "telat" && strings.TrimSpace(tLate) != "" {
-				msg = formatTelegramNotification(tLate, m, rec, instansiNama)
-			} else {
-				msg = formatTelegramNotification(tIn, m, rec, instansiNama)
+
+			if sendToUser && msg != "" {
+				ok, desc, err := sendTelegramMessage(botToken, m.TelegramChatID, msg)
+				if ok {
+					log.Printf("[TELEGRAM NOTIF SENT] Sukses kirim notif %s ke %s (Chat ID: %s)", actionType, m.Nama, m.TelegramChatID)
+				} else {
+					log.Printf("[TELEGRAM NOTIF FAILED] Gagal kirim notif ke %s (Chat ID: %s): %s (%v)", m.Nama, m.TelegramChatID, desc, err)
+				}
 			}
-		} else if actionType == "check_out" {
-			if notifyOut == "0" || strings.ToLower(notifyOut) == "false" {
-				return
-			}
-			msg = formatTelegramNotification(tOut, m, rec, instansiNama)
-		} else {
-			return
 		}
 
-		ok, desc, err := sendTelegramMessage(botToken, m.TelegramChatID, msg)
-		if ok {
-			log.Printf("[TELEGRAM NOTIF SENT] Sukses kirim notif %s ke %s (Chat ID: %s)", actionType, m.Nama, m.TelegramChatID)
-		} else {
-			log.Printf("[TELEGRAM NOTIF FAILED] Gagal kirim notif ke %s (Chat ID: %s): %s (%v)", m.Nama, m.TelegramChatID, desc, err)
+		// 2. Notifikasi Live Monitoring ke Seluruh Admin Lembaga (Bisa lebih dari 1 Admin ID)
+		if notifyAdmin != "0" && strings.ToLower(notifyAdmin) != "false" {
+			adminList := parseTelegramChatIDs(adminChatIDsRaw)
+			if len(adminList) > 0 {
+				adminMsg := formatTelegramAdminNotification(tAdmin, m, rec, actionType, instansiNama)
+				for _, adminChatID := range adminList {
+					ok, desc, err := sendTelegramMessage(botToken, adminChatID, adminMsg)
+					if ok {
+						log.Printf("[TELEGRAM ADMIN NOTIF SENT] Sukses kirim live monitor presensi %s (%s) ke Admin (Chat ID: %s)", m.Nama, actionType, adminChatID)
+					} else {
+						log.Printf("[TELEGRAM ADMIN NOTIF FAILED] Gagal kirim notif ke Admin (Chat ID: %s): %s (%v)", adminChatID, desc, err)
+					}
+				}
+			}
 		}
 	}()
 }
 
 func handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
 	var botToken, enabled, notifyIn, notifyOut, tIn, tOut, tLate string
+	var adminChatIDs, notifyAdmin, tAdmin string
+
 	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_bot_token'").Scan(&botToken)
 	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_enabled'").Scan(&enabled)
 	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_notify_in'").Scan(&notifyIn)
@@ -2645,6 +2730,10 @@ func handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
 	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_in'").Scan(&tIn)
 	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_out'").Scan(&tOut)
 	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_late'").Scan(&tLate)
+
+	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_admin_chat_ids'").Scan(&adminChatIDs)
+	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_notify_admin'").Scan(&notifyAdmin)
+	db.QueryRow("SELECT value FROM settings WHERE key = 'telegram_template_admin'").Scan(&tAdmin)
 
 	var botInfo string
 	var isValid bool
@@ -2655,15 +2744,18 @@ func handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
-			"bot_token":     botToken,
-			"enabled":       enabled == "1" || strings.ToLower(enabled) == "true",
-			"notify_in":     notifyIn == "1" || strings.ToLower(notifyIn) == "true",
-			"notify_out":    notifyOut == "1" || strings.ToLower(notifyOut) == "true",
-			"template_in":   tIn,
-			"template_out":  tOut,
-			"template_late": tLate,
-			"is_valid":      isValid,
-			"bot_info":      botInfo,
+			"bot_token":      botToken,
+			"enabled":        enabled == "1" || strings.ToLower(enabled) == "true",
+			"notify_in":      notifyIn == "1" || strings.ToLower(notifyIn) == "true",
+			"notify_out":     notifyOut == "1" || strings.ToLower(notifyOut) == "true",
+			"template_in":    tIn,
+			"template_out":   tOut,
+			"template_late":  tLate,
+			"admin_chat_ids": adminChatIDs,
+			"notify_admin":   notifyAdmin != "0" && strings.ToLower(notifyAdmin) != "false",
+			"template_admin": tAdmin,
+			"is_valid":       isValid,
+			"bot_info":       botInfo,
 		},
 	})
 }
@@ -2741,18 +2833,43 @@ func handleTelegramSendTest(w http.ResponseWriter, r *http.Request) {
 		req.Pesan = "🔔 *TES NOTIFIKASI TELEGRAM*\nAssalamu'alaikum Wr. Wb.\nIni adalah pesan uji coba (test) notifikasi absensi dari sistem SIAKAD PONPES.\n\nStatus: *Berhasil Terhubung! ✅*"
 	}
 
-	ok, desc, _ := sendTelegramMessage(token, req.ChatID, req.Pesan)
-	if !ok {
+	chatIDs := parseTelegramChatIDs(req.ChatID)
+	if len(chatIDs) == 0 {
+		writeJSONError(w, http.StatusBadRequest, "Chat ID Tujuan tidak valid.")
+		return
+	}
+
+	var successCount, failCount int
+	var lastErr string
+	for _, cid := range chatIDs {
+		ok, desc, _ := sendTelegramMessage(token, cid, req.Pesan)
+		if ok {
+			successCount++
+		} else {
+			failCount++
+			lastErr = desc
+		}
+	}
+
+	if successCount == 0 {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status":  "error",
-			"message": fmt.Sprintf("Gagal kirim pesan: %s", desc),
+			"message": fmt.Sprintf("Gagal kirim pesan ke %d Chat ID: %s", failCount, lastErr),
+		})
+		return
+	}
+
+	if failCount > 0 {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "warning",
+			"message": fmt.Sprintf("Pesan terkirim ke %d Chat ID, namun gagal pada %d Chat ID: %s", successCount, failCount, lastErr),
 		})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "success",
-		"message": fmt.Sprintf("Pesan tes berhasil dikirim ke Chat ID: %s!", req.ChatID),
+		"message": fmt.Sprintf("Pesan tes berhasil dikirim ke %d Chat ID (%s)!", successCount, strings.Join(chatIDs, ", ")),
 	})
 }
 
@@ -2763,13 +2880,16 @@ func handleTelegramSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		BotToken     string `json:"bot_token"`
-		Enabled      bool   `json:"enabled"`
-		NotifyIn     bool   `json:"notify_in"`
-		NotifyOut    bool   `json:"notify_out"`
-		TemplateIn   string `json:"template_in"`
-		TemplateOut  string `json:"template_out"`
-		TemplateLate string `json:"template_late"`
+		BotToken      string `json:"bot_token"`
+		Enabled       bool   `json:"enabled"`
+		NotifyIn      bool   `json:"notify_in"`
+		NotifyOut     bool   `json:"notify_out"`
+		TemplateIn    string `json:"template_in"`
+		TemplateOut   string `json:"template_out"`
+		TemplateLate  string `json:"template_late"`
+		AdminChatIDs  string `json:"admin_chat_ids"`
+		NotifyAdmin   bool   `json:"notify_admin"`
+		TemplateAdmin string `json:"template_admin"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
@@ -2798,6 +2918,13 @@ func handleTelegramSettings(w http.ResponseWriter, r *http.Request) {
 		setSetting("telegram_notify_out", "0")
 	}
 
+	if req.NotifyAdmin {
+		setSetting("telegram_notify_admin", "1")
+	} else {
+		setSetting("telegram_notify_admin", "0")
+	}
+	setSetting("telegram_admin_chat_ids", strings.TrimSpace(req.AdminChatIDs))
+
 	if strings.TrimSpace(req.TemplateIn) != "" {
 		setSetting("telegram_template_in", req.TemplateIn)
 	}
@@ -2806,6 +2933,9 @@ func handleTelegramSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.TemplateLate) != "" {
 		setSetting("telegram_template_late", req.TemplateLate)
+	}
+	if strings.TrimSpace(req.TemplateAdmin) != "" {
+		setSetting("telegram_template_admin", req.TemplateAdmin)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{

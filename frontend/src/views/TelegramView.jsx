@@ -55,8 +55,13 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
   const [templateIn, setTemplateIn] = useState('');
   const [templateOut, setTemplateOut] = useState('');
   const [templateLate, setTemplateLate] = useState('');
-  const [activeTemplateType, setActiveTemplateType] = useState('in');
+  const [templateAdmin, setTemplateAdmin] = useState('');
+  const [activeTemplateType, setActiveTemplateType] = useState('in'); // 'in' | 'out' | 'late' | 'admin'
   const [savingTemplates, setSavingTemplates] = useState(false);
+
+  // Admin Live Monitoring State
+  const [adminChatIDs, setAdminChatIDs] = useState('');
+  const [notifyAdmin, setNotifyAdmin] = useState(true);
 
   // Chat ID Management State
   const [members, setMembers] = useState([]);
@@ -95,6 +100,9 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
         setTemplateIn(d.template_in || '');
         setTemplateOut(d.template_out || '');
         setTemplateLate(d.template_late || '');
+        setTemplateAdmin(d.template_admin || '');
+        setAdminChatIDs(d.admin_chat_ids || '');
+        setNotifyAdmin(d.notify_admin !== false);
         setBotStatus({
           isValid: !!d.is_valid,
           botInfo: d.bot_info || '',
@@ -183,7 +191,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
     }
   };
 
-  // Save Bot Token Settings
+  // Save Bot Token & Admin Settings
   const handleSaveBotSettings = async () => {
     setSavingSettings(true);
     try {
@@ -194,9 +202,12 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
           enabled: telegramEnabled,
           notify_in: notifyIn,
           notify_out: notifyOut,
+          admin_chat_ids: adminChatIDs.trim(),
+          notify_admin: notifyAdmin,
           template_in: templateIn,
           template_out: templateOut,
-          template_late: templateLate
+          template_late: templateLate,
+          template_admin: templateAdmin
         })
       });
       const json = await res.json();
@@ -204,7 +215,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
         Swal.fire({
           icon: 'success',
           title: 'Berhasil Disimpan',
-          text: 'Konfigurasi Bot Telegram berhasil disimpan.',
+          text: 'Konfigurasi Bot Telegram & Admin Lembaga berhasil disimpan.',
           timer: 1500,
           showConfirmButton: false
         });
@@ -231,9 +242,12 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
           enabled: telegramEnabled,
           notify_in: notifyIn,
           notify_out: notifyOut,
+          admin_chat_ids: adminChatIDs.trim(),
+          notify_admin: notifyAdmin,
           template_in: templateIn,
           template_out: templateOut,
-          template_late: templateLate
+          template_late: templateLate,
+          template_admin: templateAdmin
         })
       });
       const json = await res.json();
@@ -260,7 +274,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
   const handleResetTemplates = () => {
     Swal.fire({
       title: 'Reset Template ke Default?',
-      text: 'Semua template notifikasi pesan masuk dan pulang akan dikembalikan ke format standar bawaan.',
+      text: 'Semua template notifikasi pesan masuk, pulang, terlambat, dan admin lembaga akan dikembalikan ke format standar bawaan.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Ya, Reset',
@@ -271,6 +285,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
         setTemplateIn("🔔 *NOTIFIKASI PRESENSI MASUK*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nAlhamdulillah, santri telah tiba dan melakukan absensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
         setTemplateOut("🔔 *NOTIFIKASI PRESENSI PULANG*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri telah melakukan absensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
         setTemplateLate("⚠️ *PERINGATAN KETERLAMBATAN*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri tercatat terlambat melakukan absensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_");
+        setTemplateAdmin("📋 *LIVE MONITOR PRESENSI ADMIN*\n👤 Nama: *{nama}*\n🏷️ Tipe: {tipe}\n🏫 Kelas/Jabatan: {kelas}\n🔄 Aksi: *{aksi}* ({status})\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📍 Mesin: {id_mesin}\n_{instansi}_");
         Swal.fire({
           toast: true,
           position: 'top-end',
@@ -289,8 +304,10 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
       setTemplateIn(prev => prev + ' ' + tag);
     } else if (activeTemplateType === 'out') {
       setTemplateOut(prev => prev + ' ' + tag);
-    } else {
+    } else if (activeTemplateType === 'late') {
       setTemplateLate(prev => prev + ' ' + tag);
+    } else if (activeTemplateType === 'admin') {
+      setTemplateAdmin(prev => prev + ' ' + tag);
     }
   };
 
@@ -418,9 +435,11 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
     { tag: '{nis}', desc: 'NIS/NIP' },
     { tag: '{tipe}', desc: 'Siswa / Guru' },
     { tag: '{kelas}', desc: 'Kelas / Jabatan' },
+    { tag: '{aksi}', desc: 'Presensi Masuk / Pulang' },
     { tag: '{tanggal}', desc: 'Tgl (YYYY-MM-DD)' },
     { tag: '{waktu}', desc: 'Jam (HH:MM:SS)' },
     { tag: '{status}', desc: 'Tepat / Terlambat' },
+    { tag: '{id_mesin}', desc: 'ID Mesin ESP32' },
     { tag: '{instansi}', desc: 'Nama Instansi' },
     { tag: '{nama_ortu}', desc: 'Nama Wali/Ortu' }
   ];
@@ -689,6 +708,121 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
               </button>
             </div>
           </div>
+
+          {/* Settings Card: Admin Lembaga (Multi-Admin Live Monitoring) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <span>Admin Lembaga & Pimpinan</span>
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                      Multi-Admin Live Monitoring
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Kirim notifikasi absensi realtime ke beberapa Chat ID Admin/Pimpinan sekaligus saat ada yang tap di mesin
+                  </p>
+                </div>
+              </div>
+
+              {(() => {
+                const count = adminChatIDs.split(/[,\n;]/).map(s => s.trim()).filter(Boolean).length;
+                return (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold rounded-xl self-start sm:self-auto">
+                    <Users className="w-4 h-4 text-blue-600" />
+                    <span>{count > 0 ? `${count} Admin Terdaftar` : 'Belum Ada Admin'}</span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Input Daftar Chat ID Admin */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <span>DAFTAR CHAT ID TELEGRAM ADMIN</span>
+                  <span className="text-[10px] text-primary-600 font-normal normal-case">(Bisa lebih dari 1 ID)</span>
+                </label>
+                <span className="text-[11px] text-slate-400">Pisahkan dengan koma (,) atau baris baru</span>
+              </div>
+
+              <textarea
+                rows={3}
+                value={adminChatIDs}
+                onChange={(e) => setAdminChatIDs(e.target.value)}
+                placeholder="Contoh: 123456789, 987654321, 555444333"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3.5 text-xs font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white leading-relaxed"
+              />
+              <p className="text-[11px] text-slate-500">
+                Masukkan ID Telegram Admin lembaga. Semua admin yang terdaftar di sini akan menerima update live absensi secara otomatis.
+              </p>
+            </div>
+
+            {/* Panduan Admin Box */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-700 space-y-2">
+              <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-primary-600" />
+                Cara Admin Mendapatkan ID & Mengaktifkan Bot:
+              </h4>
+              <ol className="list-decimal list-inside space-y-1 text-slate-600 pl-1">
+                <li>Buka bot Telegram Anda di aplikasi Telegram, lalu klik <b>'START'</b> (wajib agar bot dapat mengirim pesan ke admin).</li>
+                <li>Dapatkan Chat ID akun Telegram Anda melalui bot <b>@userinfobot</b> atau <b>@getmyid_bot</b>.</li>
+                <li>Salin angka ID tersebut dan masukkan ke kolom di atas. Jika lebih dari 1 admin, pisahkan dengan koma atau baris baru.</li>
+                <li>Klik tombol <b>Simpan</b>, lalu lakukan uji coba via tombol <b>Test Kirim ke Seluruh Admin</b>.</li>
+              </ol>
+            </div>
+
+            {/* Switch Notifikasi Admin */}
+            <div className="pt-2 border-t border-slate-100">
+              <label className="flex items-center gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:border-slate-300 transition">
+                <input
+                  type="checkbox"
+                  checked={notifyAdmin}
+                  onChange={(e) => setNotifyAdmin(e.target.checked)}
+                  className="w-4 h-4 rounded text-primary-600 border-slate-300 focus:ring-primary-500"
+                />
+                <div>
+                  <p className="text-xs font-bold text-slate-800">Notifikasi Realtime Admin Lembaga</p>
+                  <p className="text-[11px] text-slate-500">
+                    Kirim broadcast pesan live monitor ke seluruh Chat ID Admin di atas saat siapapun (santri/siswa/guru) tap presensi di mesin IoT
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* Actions: Save & Test Admin */}
+            <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSaveBotSettings}
+                disabled={savingSettings}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                <span>{savingSettings ? 'Menyimpan...' : 'Simpan Pengaturan Admin'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const cleaned = adminChatIDs.trim();
+                  if (!cleaned) {
+                    Swal.fire('Perhatian', 'Silakan isi kolom Daftar Chat ID Admin terlebih dahulu.', 'warning');
+                    return;
+                  }
+                  openTestModal(cleaned, 'Seluruh Admin Lembaga');
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-xl text-xs font-semibold transition"
+              >
+                <Send className="w-4 h-4 text-sky-600" />
+                <span>Test Kirim ke Seluruh Admin</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -761,6 +895,18 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
               >
                 <span>⚠️ Template Terlambat</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTemplateType('admin')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                  activeTemplateType === 'admin'
+                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <span>📋 Template Admin Lembaga</span>
+              </button>
             </div>
 
             {/* Editor & Live Preview Grid */}
@@ -771,6 +917,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                   {activeTemplateType === 'in' && 'Format Pesan Presensi Masuk:'}
                   {activeTemplateType === 'out' && 'Format Pesan Presensi Pulang:'}
                   {activeTemplateType === 'late' && 'Format Pesan Peringatan Terlambat:'}
+                  {activeTemplateType === 'admin' && 'Format Pesan Live Monitor Admin Lembaga:'}
                 </label>
 
                 {activeTemplateType === 'in' && (
@@ -799,6 +946,15 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl p-4 text-xs font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white leading-relaxed"
                   />
                 )}
+
+                {activeTemplateType === 'admin' && (
+                  <textarea
+                    rows={10}
+                    value={templateAdmin}
+                    onChange={(e) => setTemplateAdmin(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-4 text-xs font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white leading-relaxed"
+                  />
+                )}
               </div>
 
               {/* Realistic Telegram Live Preview */}
@@ -811,15 +967,23 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                 <div className="bg-slate-100 border border-slate-200 rounded-2xl p-5 min-h-[220px] flex flex-col justify-between shadow-inner">
                   <div className="bg-white border border-slate-200/80 rounded-2xl p-4 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap font-sans shadow-sm border-l-4 border-l-sky-500">
                     {(() => {
-                      let raw = activeTemplateType === 'in' ? templateIn : activeTemplateType === 'out' ? templateOut : templateLate;
+                      let raw = activeTemplateType === 'in' 
+                        ? templateIn 
+                        : activeTemplateType === 'out' 
+                        ? templateOut 
+                        : activeTemplateType === 'late' 
+                        ? templateLate 
+                        : templateAdmin;
                       return (raw || '')
                         .replace(/{nama}/g, 'Muhammad Rizky Pratama')
                         .replace(/{nis}/g, '20261001')
                         .replace(/{tipe}/g, 'Siswa')
                         .replace(/{kelas}/g, '10 IPA 1')
-                        .replace(/{tanggal}/g, '2026-09-03')
-                        .replace(/{waktu}/g, activeTemplateType === 'in' ? '06:45:10' : '15:05:22')
+                        .replace(/{aksi}/g, activeTemplateType === 'out' ? 'Presensi Pulang' : 'Presensi Masuk')
+                        .replace(/{tanggal}/g, '2026-09-04')
+                        .replace(/{waktu}/g, activeTemplateType === 'out' ? '15:05:22' : '06:45:10')
                         .replace(/{status}/g, activeTemplateType === 'late' ? 'Terlambat ⚠️' : 'Tepat Waktu ✅')
+                        .replace(/{id_mesin}/g, 'PRESENSI-V1')
                         .replace(/{instansi}/g, settings.instansi_nama || 'YAYASAN PONDOK PESANTREN DIGITAL')
                         .replace(/{nama_ortu}/g, 'Bp. Halim & Ibu Siti');
                     })()}
