@@ -1,0 +1,19 @@
+# Git & IDE
+.git
+.github
+.vscode
+.idea
+
+# Node / Frontend
+**/node_modules
+frontend/node_modules
+frontend/dist
+
+# Go binaries & DB
+*.exe
+absensidigital
+absensi-app
+data/
+*.db
+*.db-journal
+*.bin
