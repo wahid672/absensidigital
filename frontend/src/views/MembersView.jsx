@@ -238,7 +238,7 @@ export default function MembersView({
       'No': idx + 1,
       [labelIdNumber]: m.nis_nip || '-',
       'Nama Lengkap': m.nama,
-      'UID Kartu RFID': m.uid,
+      'UID Kartu RFID': m.uid && !m.uid.startsWith('PENDING-') && !m.uid.startsWith('UNASSIGNED-') ? m.uid : '-',
       [labelGroup]: m.kelas || '-',
       'No. WhatsApp': m.no_hp || '-',
       'Kategori': isUmum ? 'Pegawai' : m.tipe
@@ -315,9 +315,9 @@ export default function MembersView({
             }
           }
 
-          if (uid && nama) {
+          if (nama) {
             parsedMembers.push({
-              uid,
+              uid: uid || '',
               nis_nip,
               nama,
               tipe,
@@ -328,7 +328,7 @@ export default function MembersView({
         }
 
         if (parsedMembers.length === 0) {
-          Swal.fire('Gagal', 'Tidak ada baris data valid yang memiliki UID Kartu dan Nama Lengkap.', 'error');
+          Swal.fire('Gagal', 'Tidak ada baris data valid yang memiliki Nama Lengkap.', 'error');
           setImporting(false);
           return;
         }
@@ -515,9 +515,15 @@ export default function MembersView({
                     <td className="py-3.5 px-4">
                       <p className="font-semibold text-slate-800 text-sm">{m.nama}</p>
                       <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                        <span className="inline-flex items-center gap-1 font-mono text-[11px] text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-200">
-                          <CreditCard className="w-3 h-3 text-primary-500" /> RFID: {m.uid}
-                        </span>
+                        {m.uid && !m.uid.startsWith('PENDING-') && !m.uid.startsWith('UNASSIGNED-') ? (
+                          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-200">
+                            <CreditCard className="w-3 h-3 text-primary-500" /> RFID: {m.uid}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            <CreditCard className="w-3 h-3 text-slate-400" /> Belum Ada Kartu
+                          </span>
+                        )}
                         {m.fingerprint_id > 0 && (
                           <span className="inline-flex items-center gap-1 font-mono text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                             <Fingerprint className="w-3 h-3 text-amber-600" /> Finger: #{m.fingerprint_id}

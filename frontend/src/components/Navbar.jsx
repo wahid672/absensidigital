@@ -45,6 +45,14 @@ export default function Navbar({ currentTab, settings = {}, onOpenMobileSidebar 
         ? 'Kelola slot sidik jari yang terekam dari mesin dan hubungkan ke santri / asatidz'
         : 'Kelola slot sidik jari yang terekam dari mesin dan hubungkan ke siswa / guru'
     },
+    cards: {
+      title: 'Perekaman & Mapping Kartu RFID',
+      desc: isUmum
+        ? 'Kelola kartu RFID baru yang terekam dari mesin dan hubungkan ke pegawai'
+        : isPesantren
+        ? 'Kelola kartu RFID baru yang terekam dari mesin dan hubungkan ke santri / asatidz'
+        : 'Kelola kartu RFID baru yang terekam dari mesin dan hubungkan ke siswa / guru'
+    },
     telegram: {
       title: 'Notifikasi Telegram',
       desc: isUmum

@@ -87,6 +87,17 @@ type FingerprintRecord struct {
 	UpdatedAt     string  `json:"updated_at"`
 }
 
+type RFIDCardRecord struct {
+	ID        int     `json:"id"`
+	CardUID   string  `json:"card_uid"`
+	DeviceID  string  `json:"device_id"`
+	MemberID  int     `json:"member_id"`
+	Status    string  `json:"status"` // "unmapped" | "mapped"
+	Member    *Member `json:"member,omitempty"`
+	CreatedAt string  `json:"created_at"`
+	UpdatedAt string  `json:"updated_at"`
+}
+
 type TemplateItem struct {
 	FingerprintID int    `json:"fingerprint_id"`
 	TemplateData  string `json:"template_data"`
@@ -240,6 +251,16 @@ func initDatabase() {
 		value TEXT NOT NULL
 	);
 
+	CREATE TABLE IF NOT EXISTS rfid_cards (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		card_uid TEXT UNIQUE NOT NULL,
+		device_id TEXT DEFAULT 'PRESENSI-V1',
+		member_id INTEGER DEFAULT 0,
+		status TEXT DEFAULT 'unmapped',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE TABLE IF NOT EXISTS pending_deleted_fingerprints (
 		device_id TEXT NOT NULL,
 		fingerprint_id INTEGER NOT NULL,
@@ -250,6 +271,11 @@ func initDatabase() {
 	if _, err := db.Exec(schema); err != nil {
 		log.Fatalf("Gagal inisialisasi schema database: %v", err)
 	}
+
+	// Sinkronisasi awal data kartu anggota ke rfid_cards
+	db.Exec(`INSERT OR IGNORE INTO rfid_cards (card_uid, member_id, status)
+		SELECT uid, id, 'mapped' FROM members 
+		WHERE uid != '' AND uid NOT LIKE 'PENDING-%' AND uid NOT LIKE 'UNASSIGNED-%'`)
 
 	// Migrations for existing database
 	db.Exec("ALTER TABLE members ADD COLUMN nis_nip TEXT DEFAULT ''")
@@ -1340,16 +1366,44 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// Auto Register ON: Otomatis daftarkan kartu baru
-			member = Member{
-				UID:   req.RFIDTag,
-				Nama:  fmt.Sprintf("Kartu Baru (#%s)", req.RFIDTag),
-				Tipe:  "siswa",
-				Kelas: "Belum Ditentukan",
+			// Auto Register ON: Rekam kartu baru ke tabel rfid_cards (Belum Dimapping), TIDAK langsung catat presensi
+			devID := req.DeviceID
+			if devID == "" {
+				devID = "PRESENSI-V1"
 			}
-			db.Exec("INSERT OR IGNORE INTO members (uid, nama, tipe, kelas) VALUES (?, ?, ?, ?)",
-				member.UID, member.Nama, member.Tipe, member.Kelas)
-			memberFound = true
+			db.Exec(`INSERT INTO rfid_cards (card_uid, device_id, status, updated_at) 
+				VALUES (?, ?, 'unmapped', CURRENT_TIMESTAMP)
+				ON CONFLICT(card_uid) DO UPDATE SET updated_at = CURRENT_TIMESTAMP`,
+				req.RFIDTag, devID)
+
+			log.Printf("[RFID KARTU BARU TERDETEKSI] UID: %s | Mesin: %s", req.RFIDTag, devID)
+
+			broadcastSSE("attendance_tap", map[string]interface{}{
+				"action":           "card_unmapped",
+				"status":           "unmapped",
+				"already_recorded": false,
+				"card_uid":         req.RFIDTag,
+				"device_id":        devID,
+				"time":             tTime,
+				"message":          fmt.Sprintf("Kartu RFID baru (#%s) berhasil direkam. Silakan hubungkan ke anggota.", req.RFIDTag),
+			})
+
+			broadcastSSE("card_event", map[string]interface{}{
+				"action":    "new_card",
+				"card_uid":  req.RFIDTag,
+				"device_id": devID,
+				"message":   fmt.Sprintf("Kartu RFID baru (#%s) terdeteksi", req.RFIDTag),
+			})
+
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"status":           "unmapped",
+				"action":           "card_unmapped",
+				"message":          fmt.Sprintf("Kartu RFID (#%s) berhasil direkam (Belum Dimapping)", req.RFIDTag),
+				"card_uid":         req.RFIDTag,
+				"already_recorded": false,
+				"data":             nil,
+			})
+			return
 		}
 	}
 
@@ -1735,6 +1789,218 @@ func handleUnmapFingerprint(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// 3c. CRUD RFID CARDS & MAPPING (/api/cards, /api/cards/map, /api/cards/unmap)
+func handleCards(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		rows, err := db.Query(`
+			SELECT 
+				c.id, 
+				c.card_uid, 
+				c.device_id, 
+				c.member_id, 
+				c.status,
+				c.created_at, 
+				c.updated_at,
+				COALESCE(m.id, 0),
+				COALESCE(m.uid, ''),
+				COALESCE(m.nis_nip, ''),
+				COALESCE(m.nama, ''),
+				COALESCE(m.tipe, ''),
+				COALESCE(m.kelas, ''),
+				COALESCE(m.no_hp, '')
+			FROM rfid_cards c
+			LEFT JOIN members m ON c.member_id = m.id
+			ORDER BY c.updated_at DESC, c.id DESC
+		`)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Query rfid_cards gagal: %v", err))
+			return
+		}
+		defer rows.Close()
+
+		list := make([]RFIDCardRecord, 0)
+		for rows.Next() {
+			var card RFIDCardRecord
+			var m Member
+			rows.Scan(
+				&card.ID, &card.CardUID, &card.DeviceID, &card.MemberID, &card.Status, &card.CreatedAt, &card.UpdatedAt,
+				&m.ID, &m.UID, &m.NISNIP, &m.Nama, &m.Tipe, &m.Kelas, &m.NoHP,
+			)
+			if m.ID > 0 {
+				card.Member = &m
+				card.Status = "mapped"
+			} else {
+				card.Status = "unmapped"
+			}
+			list = append(list, card)
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status": "success",
+			"total":  len(list),
+			"data":   list,
+		})
+
+	case http.MethodDelete:
+		if isDemoMode() {
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Penghapusan kartu dinonaktifkan dalam Versi Demo.")
+			return
+		}
+
+		idStr := r.URL.Query().Get("id")
+		id, _ := strconv.Atoi(idStr)
+		cardUID := strings.TrimSpace(r.URL.Query().Get("card_uid"))
+
+		var targetUID string
+		var memberID int
+
+		if id > 0 {
+			db.QueryRow("SELECT card_uid, member_id FROM rfid_cards WHERE id = ?", id).Scan(&targetUID, &memberID)
+			db.Exec("DELETE FROM rfid_cards WHERE id = ?", id)
+		} else if cardUID != "" {
+			db.QueryRow("SELECT card_uid, member_id FROM rfid_cards WHERE card_uid = ?", cardUID).Scan(&targetUID, &memberID)
+			db.Exec("DELETE FROM rfid_cards WHERE card_uid = ?", cardUID)
+		}
+
+		if memberID > 0 && targetUID != "" {
+			// Lepas uid dari member
+			dummyUID := fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
+			db.Exec("UPDATE members SET uid = ? WHERE id = ?", dummyUID, memberID)
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "success",
+			"message": "Data kartu RFID berhasil dihapus.",
+		})
+
+	default:
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method tidak didukung.")
+	}
+}
+
+func handleMapCard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Hubungkan kartu dinonaktifkan dalam Versi Demo.")
+		return
+	}
+
+	var req struct {
+		CardUID  string `json:"card_uid"`
+		DeviceID string `json:"device_id"`
+		MemberID int    `json:"member_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+		return
+	}
+
+	req.CardUID = strings.TrimSpace(req.CardUID)
+	if req.CardUID == "" || req.MemberID <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "Parameter card_uid dan member_id wajib diisi.")
+		return
+	}
+	if req.DeviceID == "" {
+		req.DeviceID = "PRESENSI-V1"
+	}
+
+	// 1. Lepas kartu ini dari member lain jika sebelumnya terhubung
+	dummyUID := fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
+	db.Exec("UPDATE members SET uid = ? WHERE uid = ? AND id != ?", dummyUID, req.CardUID, req.MemberID)
+
+	// 2. Hubungkan ke member target
+	_, err := db.Exec("UPDATE members SET uid = ? WHERE id = ?", req.CardUID, req.MemberID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Gagal menghubungkan kartu ke member: %v", err))
+		return
+	}
+
+	// 3. Update status tabel rfid_cards
+	db.Exec(`INSERT INTO rfid_cards (card_uid, device_id, member_id, status, updated_at)
+		VALUES (?, ?, ?, 'mapped', CURRENT_TIMESTAMP)
+		ON CONFLICT(card_uid) DO UPDATE SET 
+			device_id = excluded.device_id,
+			member_id = excluded.member_id,
+			status = 'mapped',
+			updated_at = CURRENT_TIMESTAMP`,
+		req.CardUID, req.DeviceID, req.MemberID)
+
+	var memberNama string
+	db.QueryRow("SELECT nama FROM members WHERE id = ?", req.MemberID).Scan(&memberNama)
+
+	broadcastSSE("card_event", map[string]interface{}{
+		"action":      "mapped",
+		"card_uid":    req.CardUID,
+		"member_id":   req.MemberID,
+		"member_nama": memberNama,
+		"message":     fmt.Sprintf("Kartu RFID #%s berhasil dihubungkan ke %s", req.CardUID, memberNama),
+	})
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": fmt.Sprintf("Kartu RFID (#%s) berhasil dihubungkan ke %s.", req.CardUID, memberNama),
+	})
+}
+
+func handleUnmapCard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	if isDemoMode() {
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Lepas hubungan kartu dinonaktifkan dalam Versi Demo.")
+		return
+	}
+
+	var req struct {
+		CardUID  string `json:"card_uid"`
+		MemberID int    `json:"member_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+		return
+	}
+
+	req.CardUID = strings.TrimSpace(req.CardUID)
+	if req.CardUID == "" && req.MemberID <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "Parameter card_uid atau member_id wajib diisi.")
+		return
+	}
+
+	if req.CardUID != "" {
+		dummyUID := fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
+		db.Exec("UPDATE members SET uid = ? WHERE uid = ?", dummyUID, req.CardUID)
+		db.Exec("UPDATE rfid_cards SET member_id = 0, status = 'unmapped', updated_at = CURRENT_TIMESTAMP WHERE card_uid = ?", req.CardUID)
+	} else if req.MemberID > 0 {
+		var existingUID string
+		db.QueryRow("SELECT uid FROM members WHERE id = ?", req.MemberID).Scan(&existingUID)
+		dummyUID := fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
+		db.Exec("UPDATE members SET uid = ? WHERE id = ?", dummyUID, req.MemberID)
+		if existingUID != "" {
+			db.Exec("UPDATE rfid_cards SET member_id = 0, status = 'unmapped', updated_at = CURRENT_TIMESTAMP WHERE card_uid = ?", existingUID)
+		}
+	}
+
+	broadcastSSE("card_event", map[string]interface{}{
+		"action":   "unmapped",
+		"card_uid": req.CardUID,
+		"message":  fmt.Sprintf("Hubungan kartu RFID #%s telah dilepas.", req.CardUID),
+	})
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": fmt.Sprintf("Hubungan kartu RFID (#%s) berhasil dilepas.", req.CardUID),
+	})
+}
+
 // 4. CRUD MEMBERS (/api/members)
 func handleMembers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -1793,9 +2059,12 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		m.Tipe = strings.ToLower(strings.TrimSpace(m.Tipe))
 		m.TelegramChatID = strings.TrimSpace(m.TelegramChatID)
 
-		if m.UID == "" || m.Nama == "" {
-			writeJSONError(w, http.StatusBadRequest, "UID Kartu RFID dan Nama Lengkap wajib diisi.")
+		if m.Nama == "" {
+			writeJSONError(w, http.StatusBadRequest, "Nama Lengkap wajib diisi.")
 			return
+		}
+		if m.UID == "" || m.UID == "-" {
+			m.UID = fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
 		}
 		if m.Tipe != "siswa" && m.Tipe != "guru" {
 			m.Tipe = "siswa"
@@ -1810,6 +2079,15 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 
 		id, _ := res.LastInsertId()
 		m.ID = int(id)
+
+		// Sinkronisasi ke rfid_cards jika UID nyata diisi
+		if !strings.HasPrefix(m.UID, "PENDING-") && !strings.HasPrefix(m.UID, "UNASSIGNED-") {
+			db.Exec(`INSERT INTO rfid_cards (card_uid, member_id, status, updated_at)
+				VALUES (?, ?, 'mapped', CURRENT_TIMESTAMP)
+				ON CONFLICT(card_uid) DO UPDATE SET member_id = excluded.member_id, status = 'mapped', updated_at = CURRENT_TIMESTAMP`,
+				m.UID, m.ID)
+		}
+
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
 			"status":  "success",
 			"message": "Data berhasil ditambahkan",
@@ -1832,14 +2110,39 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		m.UID = strings.TrimSpace(m.UID)
+		m.NISNIP = strings.TrimSpace(m.NISNIP)
+		m.Nama = strings.TrimSpace(m.Nama)
 		m.NamaOrtu = strings.TrimSpace(m.NamaOrtu)
 		m.TelegramChatID = strings.TrimSpace(m.TelegramChatID)
+
+		if m.Nama == "" {
+			writeJSONError(w, http.StatusBadRequest, "Nama Lengkap wajib diisi.")
+			return
+		}
+
+		if m.UID == "" || m.UID == "-" {
+			var oldUID string
+			db.QueryRow("SELECT uid FROM members WHERE id = ?", m.ID).Scan(&oldUID)
+			if oldUID != "" && !strings.HasPrefix(oldUID, "PENDING-") && !strings.HasPrefix(oldUID, "UNASSIGNED-") {
+				db.Exec("UPDATE rfid_cards SET member_id = 0, status = 'unmapped', updated_at = CURRENT_TIMESTAMP WHERE card_uid = ?", oldUID)
+			}
+			m.UID = fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
+		}
 
 		_, err := db.Exec("UPDATE members SET uid = ?, fingerprint_id = ?, nis_nip = ?, nama = ?, nama_ortu = ?, tipe = ?, kelas = ?, no_hp = ?, telegram_chat_id = ? WHERE id = ?",
 			m.UID, m.FingerprintID, m.NISNIP, m.Nama, m.NamaOrtu, m.Tipe, m.Kelas, m.NoHP, m.TelegramChatID, m.ID)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "Gagal memperbarui data member.")
+			writeJSONError(w, http.StatusInternalServerError, "Gagal memperbarui data member (UID mungkin sudah terdaftar pada anggota lain).")
 			return
+		}
+
+		// Sinkronisasi ke rfid_cards jika UID nyata diisi
+		if !strings.HasPrefix(m.UID, "PENDING-") && !strings.HasPrefix(m.UID, "UNASSIGNED-") {
+			db.Exec(`INSERT INTO rfid_cards (card_uid, member_id, status, updated_at)
+				VALUES (?, ?, 'mapped', CURRENT_TIMESTAMP)
+				ON CONFLICT(card_uid) DO UPDATE SET member_id = excluded.member_id, status = 'mapped', updated_at = CURRENT_TIMESTAMP`,
+				m.UID, m.ID)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -3196,6 +3499,9 @@ func main() {
 	mux.HandleFunc("/api/fingerprints", authMiddleware(handleFingerprints))
 	mux.HandleFunc("/api/fingerprints/map", authMiddleware(handleMapFingerprint))
 	mux.HandleFunc("/api/fingerprints/unmap", authMiddleware(handleUnmapFingerprint))
+	mux.HandleFunc("/api/cards", authMiddleware(handleCards))
+	mux.HandleFunc("/api/cards/map", authMiddleware(handleMapCard))
+	mux.HandleFunc("/api/cards/unmap", authMiddleware(handleUnmapCard))
 	mux.HandleFunc("/api/members", authMiddleware(handleMembers))
 	mux.HandleFunc("/api/members/bulk", authMiddleware(handleBulkMembers))
 	mux.HandleFunc("/api/members/chat-id", authMiddleware(handleUpdateMemberChatID))

@@ -8,6 +8,7 @@ import LoginView from './views/LoginView';
 import DashboardView from './views/DashboardView';
 import MembersView from './views/MembersView';
 import FingerprintsView from './views/FingerprintsView';
+import CardsView from './views/CardsView';
 import ClassesView from './views/ClassesView';
 import PositionsView from './views/PositionsView';
 import CetakView from './views/CetakView';
@@ -17,7 +18,7 @@ import TelegramView from './views/TelegramView';
 export default function App() {
   const getTabFromPath = () => {
     const rawPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
-    const validTabs = ['dashboard', 'santri', 'guru', 'fingerprint', 'telegram', 'kelas', 'jabatan', 'cetak', 'pengaturan'];
+    const validTabs = ['dashboard', 'santri', 'guru', 'fingerprint', 'cards', 'telegram', 'kelas', 'jabatan', 'cetak', 'pengaturan'];
     if (validTabs.includes(rawPath)) {
       return rawPath;
     }
@@ -142,6 +143,20 @@ export default function App() {
         playChime();
         setRealtimeEvent(payload);
 
+        if (payload.action === 'card_unmapped') {
+          Swal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: 'info',
+            title: '💳 Kartu Baru Terekam',
+            text: payload.message || `Kartu #${payload.card_uid} berhasil dicatat ke antrean mapping.`,
+            showConfirmButton: false,
+            timer: 4500,
+            timerProgressBar: true
+          });
+          return;
+        }
+
         const rec = payload.record || {};
         const isAlready = payload.status === 'already_attended' || payload.already_recorded;
 
@@ -157,6 +172,27 @@ export default function App() {
         });
       } catch (err) {
         console.error('SSE Parse Error:', err);
+      }
+    });
+
+    eventSource.addEventListener('card_event', (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        playChime();
+        loadMembersCache();
+
+        Swal.fire({
+          toast: true,
+          position: 'top-end',
+          icon: 'info',
+          title: '💳 Update Kartu RFID',
+          text: payload.message || 'Perekaman kartu RFID terdeteksi',
+          showConfirmButton: false,
+          timer: 4500,
+          timerProgressBar: true
+        });
+      } catch (err) {
+        console.error('SSE Card Error:', err);
       }
     });
 
@@ -261,6 +297,18 @@ export default function App() {
               settings={settings}
               appMode={settings.app_mode || 'pesantren'}
               onUpdated={loadMembersCache}
+            />
+          )}
+
+          {currentTab === 'cards' && (
+            <CardsView 
+              members={membersCache}
+              settings={settings}
+              appMode={settings.app_mode || 'pesantren'}
+              onUpdated={() => {
+                loadMembersCache();
+                loadSettings();
+              }}
             />
           )}
 

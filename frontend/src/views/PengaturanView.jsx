@@ -762,48 +762,52 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
       {/* ========================================================================= */}
       {activeTab === 'iot' && (
         <div className="space-y-6 animate-fade-in max-w-4xl">
-          {/* 1. TOGGLE ON/OFF PENDAFTARAN KARTU BARU */}
+          {/* 1. INFORMASI & LINK KE MENU KARTU RFID (MAPPING) */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
-                isAutoRegisterOn ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
+                  isAutoRegisterOn ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                }`}>
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-800">Pendaftaran & Mapping Kartu RFID</h4>
+                  <p className="text-xs text-slate-400">Pengaturan izin kartu baru dan antrean mapping kartu dikelola langsung di menu khusus</p>
+                </div>
+              </div>
+
+              <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                isAutoRegisterOn ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'
               }`}>
-                <CreditCard className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="font-bold text-sm text-slate-800">Pendaftaran Kartu Baru Otomatis</h4>
-                <p className="text-xs text-slate-400">Respon sistem saat kartu RFID yang belum terdaftar di-tap pada mesin</p>
-              </div>
+                {isAutoRegisterOn ? 'Status: ON' : 'Status: OFF'}
+              </span>
             </div>
 
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-slate-800 block">
-                    Status: {isAutoRegisterOn ? 'ON (Izinkan Kartu Baru)' : 'OFF (Tolak Kartu Tidak Dikenal)'}
-                  </span>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    {isAutoRegisterOn 
-                      ? 'Kartu RFID baru yang di-tap akan otomatis tersimpan ke data anggota dan presensinya langsung dicatat.' 
-                      : 'Kartu yang belum terdaftar akan ditolak dengan notifikasi "Data kartu tidak ditemukan".'}
-                  </p>
-                </div>
-
-                {/* Modern Switch UI */}
-                <button
-                  type="button"
-                  onClick={handleToggleAutoRegister}
-                  className={`relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    isAutoRegisterOn ? 'bg-emerald-600' : 'bg-slate-300'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      isAutoRegisterOn ? 'translate-x-6' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <p className="text-xs text-slate-600 font-medium">
+                  {isAutoRegisterOn 
+                    ? 'Saat kartu RFID baru di-tap pada mesin, sistem akan merekamnya ke antrean Perekaman & Mapping Kartu RFID.' 
+                    : 'Kartu yang belum terdaftar akan ditolak oleh mesin presensi.'}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Toggle switch ON/OFF dan proses hubungkan kartu berada di menu sidebar: <b>Kartu RFID (Mapping)</b>.
+                </p>
               </div>
+
+              <a
+                href="/cards"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.history.pushState({ tab: 'cards' }, '', '/cards');
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-xl transition-all flex-shrink-0"
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>Buka Menu Kartu RFID</span>
+              </a>
             </div>
           </div>
 

@@ -9,6 +9,7 @@ import {
   Settings, 
   LogOut, 
   Fingerprint,
+  CreditCard,
   Send,
   X 
 } from 'lucide-react';
@@ -50,6 +51,12 @@ export default function Sidebar({
       label: 'Sidik Jari (Fingerprint)',
       icon: Fingerprint,
       badge: 'IoT'
+    },
+    {
+      id: 'cards',
+      label: 'Kartu RFID (Mapping)',
+      icon: CreditCard,
+      badge: 'RFID'
     },
     {
       id: 'telegram',
