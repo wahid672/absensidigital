@@ -2174,6 +2174,7 @@ func handlePositions(w http.ResponseWriter, r *http.Request) {
 // 7. GET /api/stats/dashboard (Data Grafik Trend 7 Hari & Komposisi)
 func handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 	today := time.Now()
+	tipeFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("tipe")))
 
 	type DayTrend struct {
 		Tanggal   string `json:"tanggal"`
@@ -2201,10 +2202,17 @@ func handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 		hStr := dayNames[t.Weekday()]
 
 		var total, tepat, telat, izinSakit int
-		db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ?", tStr).Scan(&total)
-		db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND status_masuk LIKE '%tepat%'", tStr).Scan(&tepat)
-		db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND status_masuk LIKE '%telat%'", tStr).Scan(&telat)
-		db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND (status_masuk = 'izin' OR status_masuk = 'sakit')", tStr).Scan(&izinSakit)
+		if tipeFilter != "" && tipeFilter != "all" {
+			db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND lower(tipe) = ?", tStr, tipeFilter).Scan(&total)
+			db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND lower(tipe) = ? AND status_masuk LIKE '%tepat%'", tStr, tipeFilter).Scan(&tepat)
+			db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND lower(tipe) = ? AND status_masuk LIKE '%telat%'", tStr, tipeFilter).Scan(&telat)
+			db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND lower(tipe) = ? AND (status_masuk = 'izin' OR status_masuk = 'sakit')", tStr, tipeFilter).Scan(&izinSakit)
+		} else {
+			db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ?", tStr).Scan(&total)
+			db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND status_masuk LIKE '%tepat%'", tStr).Scan(&tepat)
+			db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND status_masuk LIKE '%telat%'", tStr).Scan(&telat)
+			db.QueryRow("SELECT COUNT(*) FROM attendances WHERE tanggal = ? AND (status_masuk = 'izin' OR status_masuk = 'sakit')", tStr).Scan(&izinSakit)
+		}
 
 		trendList = append(trendList, DayTrend{
 			Tanggal:   tStr,

@@ -42,7 +42,7 @@ export default function DashboardView({
 
   const today = new Date().toISOString().split('T')[0];
   const [tanggal, setTanggal] = useState(today);
-  const [tipe, setTipe] = useState('all');
+  const [tipe, setTipe] = useState(isUmum ? 'guru' : 'all');
   const [selectedKelas, setSelectedKelas] = useState('');
   const [search, setSearch] = useState('');
   
@@ -54,10 +54,18 @@ export default function DashboardView({
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState(null);
 
+  // Sync mode umum
+  useEffect(() => {
+    if (isUmum) {
+      setTipe('guru');
+    }
+  }, [isUmum]);
+
   // Fetch Attendance Records
   const fetchData = async () => {
     setLoading(true);
-    let url = `/api/attendance?tanggal=${tanggal}&tipe=${tipe}`;
+    const activeTipe = isUmum ? 'guru' : tipe;
+    let url = `/api/attendance?tanggal=${tanggal}&tipe=${activeTipe}`;
     if (selectedKelas) url += `&kelas=${encodeURIComponent(selectedKelas)}`;
 
     try {
@@ -74,7 +82,8 @@ export default function DashboardView({
   // Fetch Dashboard Stats (7-Day Trend & Counts)
   const fetchStats = async () => {
     try {
-      const res = await apiFetch('/api/stats/dashboard');
+      const statsUrl = isUmum ? '/api/stats/dashboard?tipe=guru' : '/api/stats/dashboard';
+      const res = await apiFetch(statsUrl);
       const result = await res.json();
       setDashboardStats(result);
     } catch (err) {
@@ -84,16 +93,19 @@ export default function DashboardView({
 
   useEffect(() => {
     fetchData();
-  }, [tanggal, tipe, selectedKelas]);
+  }, [tanggal, tipe, selectedKelas, isUmum]);
 
   useEffect(() => {
     fetchStats();
-  }, []);
+  }, [isUmum]);
 
   // Handle Realtime Tap Event
   useEffect(() => {
     if (realtimeEvent && realtimeEvent.record) {
       const rec = realtimeEvent.record;
+      if (isUmum && rec.tipe && rec.tipe.toLowerCase() !== 'guru') {
+        return;
+      }
       if (tanggal === today) {
         setData(prev => {
           const idx = prev.findIndex(item => item.id === rec.id || (item.uid === rec.uid && item.tanggal === rec.tanggal));
@@ -110,7 +122,7 @@ export default function DashboardView({
         fetchStats();
       }
     }
-  }, [realtimeEvent]);
+  }, [realtimeEvent, isUmum, tanggal]);
 
   // Delete handler
   const handleDelete = (id, nama) => {
@@ -147,15 +159,17 @@ export default function DashboardView({
 
   // CSV Export
   const exportCSV = () => {
-    if (!data.length) {
+    if (!filteredData.length) {
       Swal.fire('Info', 'Tidak ada data untuk diekspor.', 'info');
       return;
     }
-    const headers = ['No', 'Nama', 'Tipe', 'Kelas / Jabatan', 'Waktu Masuk', 'Status Masuk', 'Waktu Keluar', 'Status Keluar', 'Mesin'];
+    const headers = isUmum 
+      ? ['No', 'Nama', 'Kategori', 'Jabatan / Divisi', 'Waktu Masuk', 'Status Masuk', 'Waktu Keluar', 'Status Keluar', 'Mesin']
+      : ['No', 'Nama', 'Tipe', 'Kelas / Jabatan', 'Waktu Masuk', 'Status Masuk', 'Waktu Keluar', 'Status Keluar', 'Mesin'];
     const rows = filteredData.map((item, i) => [
       i + 1,
       `"${item.nama}"`,
-      item.tipe,
+      isUmum ? 'Pegawai' : item.tipe,
       `"${item.kelas || '-'}"`,
       item.waktu_masuk || '-',
       item.status_masuk || '-',
@@ -174,20 +188,23 @@ export default function DashboardView({
   };
 
   // Metric counts
-  const tepatCount = data.filter(i => (i.status_masuk || '').toLowerCase().includes('tepat')).length;
-  const telatCount = data.filter(i => (i.status_masuk || '').toLowerCase().includes('telat')).length;
-  const izinSakitCount = data.filter(i => {
+  const filteredData = data
+    .filter(i => !isUmum || (i.tipe || '').toLowerCase() === 'guru')
+    .filter(i => 
+      (i.nama || '').toLowerCase().includes(search.toLowerCase().trim()) ||
+      (i.id_mesin || '').toLowerCase().includes(search.toLowerCase().trim()) ||
+      (i.kelas || '').toLowerCase().includes(search.toLowerCase().trim())
+    );
+
+  const tepatCount = filteredData.filter(i => (i.status_masuk || '').toLowerCase().includes('tepat')).length;
+  const telatCount = filteredData.filter(i => (i.status_masuk || '').toLowerCase().includes('telat')).length;
+  const izinSakitCount = filteredData.filter(i => {
     const s = (i.status_masuk || '').toLowerCase();
     return s === 'izin' || s === 'sakit';
   }).length;
   const siswaCount = data.filter(i => (i.tipe || '').toLowerCase() === 'siswa').length;
   const guruCount = data.filter(i => (i.tipe || '').toLowerCase() === 'guru').length;
-
-  const filteredData = data.filter(i => 
-    (i.nama || '').toLowerCase().includes(search.toLowerCase().trim()) ||
-    (i.id_mesin || '').toLowerCase().includes(search.toLowerCase().trim()) ||
-    (i.kelas || '').toLowerCase().includes(search.toLowerCase().trim())
-  );
+  const totalHadir = isUmum ? filteredData.length : data.length;
 
   // Maximum count for chart scaling
   const trendDays = dashboardStats?.trend_7_days || [];
@@ -203,7 +220,7 @@ export default function DashboardView({
           </div>
           <div className="min-w-0">
             <p className="text-xs font-medium text-slate-500 truncate">Total Hadir Hari Ini</p>
-            <h3 className="text-2xl font-bold text-slate-800">{data.length}</h3>
+            <h3 className="text-2xl font-bold text-slate-800">{totalHadir}</h3>
           </div>
         </div>
 
@@ -236,7 +253,7 @@ export default function DashboardView({
               {isUmum ? 'Pegawai Terdata' : `${labelSiswa} / ${labelGuru}`}
             </p>
             <h3 className="text-xl font-bold text-slate-800">
-              {isUmum ? (dashboardStats?.counts?.guru || members.filter(m => m.tipe === 'guru').length || data.length) : `${siswaCount} / ${guruCount}`}
+              {isUmum ? (dashboardStats?.counts?.guru ?? members.filter(m => m.tipe === 'guru').length) : `${siswaCount} / ${guruCount}`}
             </h3>
           </div>
         </div>
@@ -255,7 +272,13 @@ export default function DashboardView({
                 </div>
                 <div>
                   <h4 className="font-bold text-sm text-slate-800">Tren Kehadiran 7 Hari Terakhir</h4>
-                  <p className="text-xs text-slate-400">Statistik jumlah tap harian santri dan guru</p>
+                  <p className="text-xs text-slate-400">
+                    {isUmum 
+                      ? 'Statistik jumlah tap harian pegawai' 
+                      : isPesantren 
+                      ? 'Statistik jumlah tap harian santri dan guru' 
+                      : 'Statistik jumlah tap harian siswa dan guru'}
+                  </p>
                 </div>
               </div>
               <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 flex items-center gap-1">
@@ -338,11 +361,11 @@ export default function DashboardView({
                   <span className="text-emerald-700 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Tepat Waktu
                   </span>
-                  <span className="text-slate-700">{tepatCount} orang ({data.length ? Math.round((tepatCount/data.length)*100) : 0}%)</span>
+                  <span className="text-slate-700">{tepatCount} orang ({totalHadir ? Math.round((tepatCount/totalHadir)*100) : 0}%)</span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
                   <div 
-                    style={{ width: `${data.length ? (tepatCount/data.length)*100 : 0}%` }}
+                    style={{ width: `${totalHadir ? (tepatCount/totalHadir)*100 : 0}%` }}
                     className="bg-emerald-500 h-full rounded-full transition-all duration-500"
                   ></div>
                 </div>
@@ -353,11 +376,11 @@ export default function DashboardView({
                   <span className="text-rose-700 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-rose-500"></span> Terlambat
                   </span>
-                  <span className="text-slate-700">{telatCount} orang ({data.length ? Math.round((telatCount/data.length)*100) : 0}%)</span>
+                  <span className="text-slate-700">{telatCount} orang ({totalHadir ? Math.round((telatCount/totalHadir)*100) : 0}%)</span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
                   <div 
-                    style={{ width: `${data.length ? (telatCount/data.length)*100 : 0}%` }}
+                    style={{ width: `${totalHadir ? (telatCount/totalHadir)*100 : 0}%` }}
                     className="bg-rose-500 h-full rounded-full transition-all duration-500"
                   ></div>
                 </div>
@@ -368,11 +391,11 @@ export default function DashboardView({
                   <span className="text-amber-700 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-amber-500"></span> Izin / Sakit
                   </span>
-                  <span className="text-slate-700">{izinSakitCount} orang ({data.length ? Math.round((izinSakitCount/data.length)*100) : 0}%)</span>
+                  <span className="text-slate-700">{izinSakitCount} orang ({totalHadir ? Math.round((izinSakitCount/totalHadir)*100) : 0}%)</span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
                   <div 
-                    style={{ width: `${data.length ? (izinSakitCount/data.length)*100 : 0}%` }}
+                    style={{ width: `${totalHadir ? (izinSakitCount/totalHadir)*100 : 0}%` }}
                     className="bg-amber-500 h-full rounded-full transition-all duration-500"
                   ></div>
                 </div>
@@ -442,13 +465,11 @@ export default function DashboardView({
             <select 
               value={tipe} 
               onChange={(e) => { setTipe(e.target.value); setSelectedKelas(''); }}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
+              disabled={isUmum}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer disabled:bg-slate-100 disabled:cursor-default"
             >
               {isUmum ? (
-                <>
-                  <option value="all">Semua Pegawai</option>
-                  <option value="guru">Pegawai Tetap / Staff</option>
-                </>
+                <option value="guru">Semua Pegawai</option>
               ) : (
                 <>
                   <option value="all">Semua Pengguna</option>
@@ -506,7 +527,7 @@ export default function DashboardView({
               type="text" 
               value={search} 
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari nama / ID mesin / kelas..." 
+              placeholder={isUmum ? "Cari nama / ID mesin / jabatan..." : "Cari nama / ID mesin / kelas..."}
               className="w-full pl-9 pr-4 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
@@ -574,7 +595,7 @@ export default function DashboardView({
                             ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
                             : 'bg-sky-50 text-sky-700 border-sky-200'
                         }`}>
-                          {isUmum ? 'Pegawai' : isItemGuru ? 'Guru' : 'Siswa'}
+                          {isUmum ? 'Pegawai' : isItemGuru ? labelGuru : labelSiswa}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-xs font-medium text-slate-600">
