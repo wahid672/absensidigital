@@ -126,9 +126,54 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     setFormData(prev => ({ ...prev, instansi_logo: '' }));
   };
 
+  const handleSwitchAppMode = async (newMode) => {
+    setFormData(prev => ({ ...prev, app_mode: newMode }));
+    try {
+      localStorage.setItem('presensi_app_mode', newMode);
+      const existingSettings = JSON.parse(localStorage.getItem('presensi_app_settings') || '{}');
+      existingSettings.app_mode = newMode;
+      localStorage.setItem('presensi_app_settings', JSON.stringify(existingSettings));
+    } catch {}
+
+    // Simpan langsung perubahan mode ke server (didukung pada Versi Demo maupun versi Penuh)
+    try {
+      const res = await apiFetch('/api/settings', {
+        method: 'POST',
+        body: JSON.stringify({ app_mode: newMode })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        Swal.fire({
+          toast: true,
+          position: 'top-end',
+          icon: 'success',
+          title: 'Mode Aplikasi Diperbarui!',
+          text: `Aplikasi beralih ke ${newMode === 'umum' ? 'Mode Umum (Pegawai)' : newMode === 'sekolah' ? 'Mode Sekolah (Siswa & Guru)' : 'Mode Pesantren (Santri & Asatidz)'}.`,
+          showConfirmButton: false,
+          timer: 2500,
+          timerProgressBar: true
+        });
+        if (onSettingsUpdated) onSettingsUpdated();
+      }
+    } catch (err) {
+      console.error('Failed to update app_mode:', err);
+    }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (isDemoActive) {
+      // Izinkan perubahan mode aplikasi disimpan pada Versi Demo
+      if (formData.app_mode && formData.app_mode !== (settings.app_mode || 'pesantren')) {
+        await handleSwitchAppMode(formData.app_mode);
+        Swal.fire({
+          icon: 'success',
+          title: 'Mode Aplikasi Disimpan!',
+          text: `Mode aplikasi berhasil diubah ke ${formData.app_mode.toUpperCase()}. (Profil lembaga lainnya tetap terkunci dalam Versi Demo).`,
+          confirmButtonColor: '#0284c7'
+        });
+        return;
+      }
       showDemoAlert('Menyimpan perubahan pengaturan');
       return;
     }
@@ -513,13 +558,22 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
           <div className="space-y-6">
             {/* 1. PILIHAN MODE APLIKASI (UMUM vs PESANTREN) */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center text-lg">
-                  <Sparkles className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-sm text-slate-800">Mode Istilah Aplikasi</h4>
-                  <p className="text-xs text-slate-400">Sesuaikan sebutan untuk Pesantren atau Sekolah Umum</p>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center text-lg">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-sm text-slate-800">Mode Istilah Aplikasi</h4>
+                      {isDemoActive && (
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          Bisa Dicoba di Versi Demo
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400">Pilih mode instansi untuk menyesuaikan sebutan dan menu aplikasi secara instan</p>
+                  </div>
                 </div>
               </div>
 
@@ -527,7 +581,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                 {/* 1. MODE UMUM */}
                 <button
                   type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, app_mode: 'umum' }))}
+                  onClick={() => handleSwitchAppMode('umum')}
                   className={`p-3.5 rounded-xl border text-left transition-all ${
                     formData.app_mode === 'umum' 
                       ? 'border-primary-600 bg-primary-50/60 ring-2 ring-primary-500/20' 
@@ -546,7 +600,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                 {/* 2. MODE PESANTREN */}
                 <button
                   type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, app_mode: 'pesantren' }))}
+                  onClick={() => handleSwitchAppMode('pesantren')}
                   className={`p-3.5 rounded-xl border text-left transition-all ${
                     formData.app_mode === 'pesantren' 
                       ? 'border-primary-600 bg-primary-50/60 ring-2 ring-primary-500/20' 
@@ -565,7 +619,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                 {/* 3. MODE SEKOLAH */}
                 <button
                   type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, app_mode: 'sekolah' }))}
+                  onClick={() => handleSwitchAppMode('sekolah')}
                   className={`p-3.5 rounded-xl border text-left transition-all ${
                     formData.app_mode === 'sekolah' 
                       ? 'border-primary-600 bg-primary-50/60 ring-2 ring-primary-500/20' 

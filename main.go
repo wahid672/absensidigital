@@ -2577,14 +2577,27 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodPost:
-		if isDemoMode() {
-			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Pengaturan tidak dapat diubah dalam Versi Demo.")
-			return
-		}
-
 		var payload map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+			return
+		}
+
+		if isDemoMode() {
+			// Pada mode demo, izinkan user untuk mencoba ganti mode aplikasi (umum / pesantren / sekolah)
+			if mode, ok := payload["app_mode"]; ok {
+				mode = strings.ToLower(strings.TrimSpace(mode))
+				if mode == "umum" || mode == "pesantren" || mode == "sekolah" {
+					db.Exec("INSERT INTO settings (key, value) VALUES ('app_mode', ?) ON CONFLICT(key) DO UPDATE SET value = ?", mode, mode)
+					writeJSON(w, http.StatusOK, map[string]interface{}{
+						"status":   "success",
+						"message":  "Mode aplikasi berhasil diubah ke mode " + mode,
+						"app_mode": mode,
+					})
+					return
+				}
+			}
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Pengaturan profil instansi terkunci dalam Versi Demo. Anda tetap dapat mengganti Mode Aplikasi (Umum/Pesantren/Sekolah).")
 			return
 		}
 
