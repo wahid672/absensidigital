@@ -28,9 +28,10 @@ export default function FingerprintsView({
   onUpdated 
 }) {
   const isDemoActive = isDemo(settings);
-  const isPesantren = appMode !== 'umum';
+  const isUmum = appMode === 'umum';
+  const isPesantren = appMode === 'pesantren';
   const labelSiswa = isPesantren ? 'Santri' : 'Siswa';
-  const labelGuru = isPesantren ? 'Guru / Asatidz' : 'Guru';
+  const labelGuru = isUmum ? 'Pegawai' : isPesantren ? 'Guru / Asatidz' : 'Guru';
 
   const [fingerprints, setFingerprints] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -40,7 +41,7 @@ export default function FingerprintsView({
   // Modal Mapping State
   const [mapModalOpen, setMapModalOpen] = useState(false);
   const [selectedFp, setSelectedFp] = useState(null);
-  const [targetMemberType, setTargetMemberType] = useState('siswa');
+  const [targetMemberType, setTargetMemberType] = useState(isUmum ? 'guru' : 'siswa');
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
   const [savingMap, setSavingMap] = useState(false);
@@ -474,39 +475,46 @@ export default function FingerprintsView({
                 </div>
               </div>
 
-              {/* Pilihan Kategori Siswa atau Guru */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Pilih Kategori Anggota
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setTargetMemberType('siswa'); setSelectedMemberId(''); }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-                      targetMemberType === 'siswa'
-                        ? 'bg-sky-50 text-sky-700 border-sky-300 ring-2 ring-sky-500/20'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <GraduationCap className="w-4 h-4" />
-                    <span>{labelSiswa}</span>
-                  </button>
+              {/* Pilihan Kategori Siswa atau Guru (Disembunyikan jika Mode Umum) */}
+              {!isUmum ? (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Pilih Kategori Anggota
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setTargetMemberType('siswa'); setSelectedMemberId(''); }}
+                      className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                        targetMemberType === 'siswa'
+                          ? 'bg-sky-50 text-sky-700 border-sky-300 ring-2 ring-sky-500/20'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <GraduationCap className="w-4 h-4" />
+                      <span>{labelSiswa}</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => { setTargetMemberType('guru'); setSelectedMemberId(''); }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-                      targetMemberType === 'guru'
-                        ? 'bg-indigo-50 text-indigo-700 border-indigo-300 ring-2 ring-indigo-500/20'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Briefcase className="w-4 h-4" />
-                    <span>{labelGuru}</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => { setTargetMemberType('guru'); setSelectedMemberId(''); }}
+                      className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                        targetMemberType === 'guru'
+                          ? 'bg-indigo-50 text-indigo-700 border-indigo-300 ring-2 ring-indigo-500/20'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Briefcase className="w-4 h-4" />
+                      <span>{labelGuru}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-primary-50/70 p-3 rounded-xl border border-primary-200 text-xs font-semibold text-primary-800 flex items-center gap-2">
+                  <Briefcase className="w-4 h-4 text-primary-600" />
+                  <span>Target Mapping: Data Pegawai</span>
+                </div>
+              )}
 
               {/* Search Member Filter */}
               <div>

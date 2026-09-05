@@ -3,7 +3,6 @@ import { Menu, Clock } from 'lucide-react';
 
 export default function Navbar({ currentTab, settings = {}, onOpenMobileSidebar }) {
   const [timeStr, setTimeStr] = useState('00:00:00 WIB');
-  const isPesantren = (settings.app_mode || 'pesantren') !== 'umum';
 
   useEffect(() => {
     const updateTime = () => {
@@ -15,10 +14,16 @@ export default function Navbar({ currentTab, settings = {}, onOpenMobileSidebar 
     return () => clearInterval(interval);
   }, []);
 
+  const mode = settings.app_mode || 'pesantren';
+  const isUmum = mode === 'umum';
+  const isPesantren = mode === 'pesantren';
+
   const titles = {
     dashboard: { 
       title: 'Dashboard & Statistik Presensi', 
-      desc: isPesantren 
+      desc: isUmum
+        ? 'Pemantauan kehadiran pegawai dan grafik visual secara realtime'
+        : isPesantren 
         ? 'Pemantauan kehadiran santri, asatidz/guru, dan grafik visual secara realtime' 
         : 'Pemantauan kehadiran siswa, guru, dan grafik visual secara realtime' 
     },
@@ -27,18 +32,24 @@ export default function Navbar({ currentTab, settings = {}, onOpenMobileSidebar 
       desc: isPesantren ? 'Kelola database kartu RFID, NIS, dan kontak santri' : 'Kelola database kartu RFID, NIS, dan kontak siswa' 
     },
     guru: { 
-      title: isPesantren ? 'Data Guru / Asatidz' : 'Data Guru / Pendidik', 
-      desc: 'Kelola database kartu RFID, NIP, jabatan, dan staf pengajar' 
+      title: isUmum ? 'Data Pegawai' : isPesantren ? 'Data Guru / Asatidz' : 'Data Guru / Pendidik', 
+      desc: isUmum 
+        ? 'Kelola database kartu RFID, NIP/NIK, jabatan, dan staf pegawai'
+        : 'Kelola database kartu RFID, NIP, jabatan, dan staf pengajar' 
     },
     fingerprint: {
       title: 'Perekaman Sidik Jari (Fingerprint IoT)',
-      desc: isPesantren
+      desc: isUmum
+        ? 'Kelola slot sidik jari yang terekam dari mesin dan hubungkan ke pegawai'
+        : isPesantren
         ? 'Kelola slot sidik jari yang terekam dari mesin dan hubungkan ke santri / asatidz'
         : 'Kelola slot sidik jari yang terekam dari mesin dan hubungkan ke siswa / guru'
     },
     telegram: {
       title: 'Notifikasi Telegram',
-      desc: isPesantren
+      desc: isUmum
+        ? 'Konfigurasi Bot Telegram, template pesan, dan manajemen Chat ID Pegawai'
+        : isPesantren
         ? 'Konfigurasi Bot Telegram, template pesan, dan manajemen Chat ID Wali Santri & Asatidz'
         : 'Konfigurasi Bot Telegram, template pesan, dan manajemen Chat ID Wali Siswa & Guru'
     },
@@ -47,8 +58,10 @@ export default function Navbar({ currentTab, settings = {}, onOpenMobileSidebar 
       desc: 'Kelola daftar kelas dan jenjang tingkatan' 
     },
     jabatan: { 
-      title: 'Master Data Jabatan & Mapel', 
-      desc: 'Kelola daftar jabatan, mata pelajaran, dan tugas pengampu guru' 
+      title: isUmum ? 'Master Data Jabatan & Divisi' : 'Master Data Jabatan & Mapel', 
+      desc: isUmum 
+        ? 'Kelola daftar jabatan, divisi, dan penugasan pegawai'
+        : 'Kelola daftar jabatan, mata pelajaran, dan tugas pengampu guru' 
     },
     cetak: { 
       title: 'Cetak Rekap Laporan PDF', 
@@ -56,7 +69,7 @@ export default function Navbar({ currentTab, settings = {}, onOpenMobileSidebar 
     },
     pengaturan: { 
       title: 'Pengaturan Sistem & Instansi', 
-      desc: 'Kelola mode instansi (Umum/Pesantren), kartu baru, dan data' 
+      desc: 'Kelola mode instansi (Umum/Pesantren/Sekolah), profil, dan kartu presensi' 
     }
   };
 

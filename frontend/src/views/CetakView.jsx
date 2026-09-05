@@ -103,6 +103,10 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
     return `${names.join(', ')} (${selectedYear})`;
   };
 
+  const modeApp = settings.app_mode || 'pesantren';
+  const isUmum = modeApp === 'umum';
+  const isPesantren = modeApp === 'pesantren';
+
   return (
     <section className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-5xl w-full mx-auto">
       {/* FILTER CONTROL (Hidden on print) */}
@@ -136,29 +140,40 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Kategori Pengguna</label>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              {isUmum ? 'Kategori Pegawai' : 'Kategori Pengguna'}
+            </label>
             <select 
               value={tipe} 
               onChange={(e) => { setTipe(e.target.value); setSelectedKelas(''); }}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
             >
-              <option value="all">Semua (Santri & Guru)</option>
-              <option value="siswa">Khusus Santri / Siswa</option>
-              <option value="guru">Khusus Guru / Ustadz</option>
+              {isUmum ? (
+                <>
+                  <option value="all">Semua Pegawai</option>
+                  <option value="guru">Pegawai Tetap / Staff</option>
+                </>
+              ) : (
+                <>
+                  <option value="all">Semua ({isPesantren ? 'Santri & Guru' : 'Siswa & Guru'})</option>
+                  <option value="siswa">Khusus {isPesantren ? 'Santri' : 'Siswa'}</option>
+                  <option value="guru">Khusus {isPesantren ? 'Guru / Ustadz' : 'Guru'}</option>
+                </>
+              )}
             </select>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">
-              {tipe === 'guru' ? 'Filter Jabatan' : 'Filter Kelas'}
+              {isUmum ? 'Filter Jabatan / Divisi' : (tipe === 'guru' ? 'Filter Jabatan' : 'Filter Kelas')}
             </label>
             <select 
               value={selectedKelas} 
               onChange={(e) => setSelectedKelas(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
             >
-              <option value="">-- Semua {tipe === 'guru' ? 'Jabatan' : 'Kelas'} --</option>
-              {tipe === 'guru' ? (
+              <option value="">-- Semua {isUmum ? 'Jabatan / Divisi' : (tipe === 'guru' ? 'Jabatan' : 'Kelas')} --</option>
+              {isUmum || tipe === 'guru' ? (
                 positions.map(p => <option key={p.id} value={p.nama}>{p.nama}</option>)
               ) : (
                 classes.map(c => <option key={c.id} value={c.nama}>{c.nama}</option>)
@@ -268,13 +283,13 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
 
             <div className="flex-1 text-center pr-4">
               <h1 className="text-xl sm:text-2xl font-black tracking-wide uppercase text-slate-900 leading-tight">
-                {settings.instansi_nama || 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL'}
+                {settings.instansi_nama || (isUmum ? 'INSTANSI / PERUSAHAAN' : 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')}
               </h1>
               <p className="text-xs font-semibold text-slate-700 mt-1">
                 PresensiRFID - Sistem Absensi Fingerprint & RFID
               </p>
               <p className="text-[11px] text-slate-600 mt-0.5">
-                Alamat: {settings.instansi_alamat || 'Jl. Pesantren Digital No. 01'} • Wilayah: {kotaInstansi}
+                Alamat: {settings.instansi_alamat || 'Jl. Kantor Digital No. 01'} • Wilayah: {kotaInstansi}
               </p>
             </div>
 
@@ -314,10 +329,10 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
             <thead>
               <tr className="bg-slate-100 text-xs font-bold text-slate-800 border-y border-slate-400">
                 <th className="py-2.5 px-3 text-center w-10">No</th>
-                <th className="py-2.5 px-3 w-32">{tipe === 'guru' ? 'NIP' : 'NIS'}</th>
+                <th className="py-2.5 px-3 w-32">{isUmum ? 'NIP / NIK' : (tipe === 'guru' ? 'NIP' : 'NIS')}</th>
                 <th className="py-2.5 px-3">Nama Lengkap</th>
                 <th className="py-2.5 px-3">Kategori</th>
-                <th className="py-2.5 px-3">{tipe === 'guru' ? 'Jabatan / Mapel' : 'Kelas / Rombel'}</th>
+                <th className="py-2.5 px-3">{isUmum ? 'Jabatan / Divisi' : (tipe === 'guru' ? 'Jabatan / Mapel' : 'Kelas / Rombel')}</th>
                 <th className="py-2.5 px-3 text-center bg-primary-50/50 text-primary-900 font-bold">Total Hadir</th>
                 <th className="py-2.5 px-3 text-center text-emerald-800">Tepat Waktu</th>
                 <th className="py-2.5 px-3 text-center text-rose-800">Terlambat</th>
@@ -328,7 +343,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
               {summaryData.length === 0 ? (
                 <tr>
                   <td colSpan="9" className="py-8 text-center text-slate-400">
-                    Tidak ada data santri / guru untuk filter yang dipilih.
+                    Tidak ada data {isUmum ? 'pegawai' : 'santri / guru'} untuk filter yang dipilih.
                   </td>
                 </tr>
               ) : (
@@ -337,7 +352,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
                     <td className="py-2.5 px-3 text-center font-medium text-slate-500">{idx + 1}</td>
                     <td className="py-2.5 px-3 font-mono font-medium">{item.nis_nip || '-'}</td>
                     <td className="py-2.5 px-3 font-bold text-slate-900">{item.nama}</td>
-                    <td className="py-2.5 px-3 capitalize">{item.tipe}</td>
+                    <td className="py-2.5 px-3 capitalize">{isUmum ? 'Pegawai' : item.tipe}</td>
                     <td className="py-2.5 px-3">{item.kelas || '-'}</td>
                     <td className="py-2.5 px-3 text-center font-bold text-primary-700 bg-primary-50/30 text-sm">
                       {item.total_hadir} <span className="text-[10px] font-normal text-slate-500">Hari</span>
@@ -358,7 +373,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
                 <th className="py-2 px-3 text-center w-10">No</th>
                 <th className="py-2 px-3">Nama Lengkap</th>
                 <th className="py-2 px-3">Tipe</th>
-                <th className="py-2 px-3">Kelas / Jabatan</th>
+                <th className="py-2 px-3">{isUmum ? 'Jabatan / Divisi' : 'Kelas / Jabatan'}</th>
                 <th className="py-2 px-3 text-center">Tgl</th>
                 <th className="py-2 px-3 text-center">Masuk</th>
                 <th className="py-2 px-3 text-center">Status Masuk</th>
@@ -396,8 +411,14 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
         <div className="grid grid-cols-2 gap-8 text-xs text-slate-800 pt-6">
           <div className="text-center">
             <p>Mengetahui,</p>
-            <p className="font-semibold mb-16">Pengasuh / Kepala Sekolah</p>
-            <p className="font-bold underline">( {settings.kepala_nama || 'KH. Ahmad Zaki, Lc., M.Ag'} )</p>
+            <p className="font-semibold mb-16">
+              {isUmum 
+                ? 'Pimpinan / Direktur Instansi' 
+                : isPesantren 
+                ? 'Pengasuh / Mudir Pesantren' 
+                : 'Kepala Sekolah'}
+            </p>
+            <p className="font-bold underline">( {settings.kepala_nama || (isUmum ? 'Pimpinan Instansi' : 'KH. Ahmad Zaki, Lc., M.Ag')} )</p>
           </div>
           <div className="text-center">
             <p>{kotaInstansi}, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>

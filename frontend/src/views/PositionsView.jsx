@@ -126,19 +126,33 @@ export default function PositionsView({ settings = {}, onUpdated }) {
     (p.keterangan || '').toLowerCase().includes(search.toLowerCase().trim())
   );
 
+  const mode = settings.app_mode || 'pesantren';
+  const isUmum = mode === 'umum';
+  const isPesantren = mode === 'pesantren';
+
   return (
     <section className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         <div>
-          <h3 className="text-lg font-bold text-slate-800">Manajemen Master Data Jabatan / Mapel Guru</h3>
-          <p className="text-xs text-slate-500">Kelola daftar jabatan, mata pelajaran, dan tugas pengampu guru / asatidz</p>
+          <h3 className="text-lg font-bold text-slate-800">
+            {isUmum 
+              ? 'Manajemen Master Data Jabatan & Divisi Pegawai' 
+              : isPesantren 
+              ? 'Manajemen Master Data Jabatan / Mapel Guru & Asatidz' 
+              : 'Manajemen Master Data Jabatan & Mapel Guru'}
+          </h3>
+          <p className="text-xs text-slate-500">
+            {isUmum 
+              ? 'Kelola daftar divisi, jabatan fungsional, dan posisi staf pegawai instansi' 
+              : 'Kelola daftar jabatan, mata pelajaran, dan tugas pengampu staf pengajar'}
+          </p>
         </div>
         <button 
           onClick={openAdd}
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-xl shadow-md transition-all"
         >
           <Plus className="w-4 h-4" />
-          <span>Tambah Jabatan Baru</span>
+          <span>Tambah {isUmum ? 'Jabatan / Divisi' : 'Jabatan'} Baru</span>
         </button>
       </div>
 

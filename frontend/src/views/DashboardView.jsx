@@ -33,9 +33,12 @@ export default function DashboardView({
   realtimeEvent = null 
 }) {
   const isDemoActive = isDemo(settings);
-  const isPesantren = (settings.app_mode || 'pesantren') !== 'umum';
+  const mode = settings.app_mode || 'pesantren';
+  const isUmum = mode === 'umum';
+  const isPesantren = mode === 'pesantren';
+
   const labelSiswa = isPesantren ? 'Santri' : 'Siswa';
-  const labelGuru = isPesantren ? 'Guru / Asatidz' : 'Guru';
+  const labelGuru = isUmum ? 'Pegawai' : isPesantren ? 'Guru / Asatidz' : 'Guru';
 
   const today = new Date().toISOString().split('T')[0];
   const [tanggal, setTanggal] = useState(today);
@@ -226,11 +229,15 @@ export default function DashboardView({
 
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
           <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl flex-shrink-0">
-            <GraduationCap className="w-6 h-6" />
+            {isUmum ? <Briefcase className="w-6 h-6" /> : <GraduationCap className="w-6 h-6" />}
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-medium text-slate-500 truncate">{labelSiswa} / {labelGuru}</p>
-            <h3 className="text-xl font-bold text-slate-800">{siswaCount} / {guruCount}</h3>
+            <p className="text-xs font-medium text-slate-500 truncate">
+              {isUmum ? 'Pegawai Terdata' : `${labelSiswa} / ${labelGuru}`}
+            </p>
+            <h3 className="text-xl font-bold text-slate-800">
+              {isUmum ? (dashboardStats?.counts?.guru || members.filter(m => m.tipe === 'guru').length || data.length) : `${siswaCount} / ${guruCount}`}
+            </h3>
           </div>
         </div>
       </div>
@@ -374,13 +381,15 @@ export default function DashboardView({
           </div>
 
           {/* Master Stats Footer */}
-          <div className="pt-4 border-t border-slate-100 grid grid-cols-2 gap-2 text-center text-xs">
+          <div className={`pt-4 border-t border-slate-100 grid ${isUmum ? 'grid-cols-1' : 'grid-cols-2'} gap-2 text-center text-xs`}>
+            {!isUmum && (
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <span className="text-slate-400 block text-[10px]">Master Kelas</span>
+                <span className="font-bold text-slate-800 text-sm">{dashboardStats?.counts?.kelas || classes.length} Kelas</span>
+              </div>
+            )}
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <span className="text-slate-400 block text-[10px]">Master Kelas</span>
-              <span className="font-bold text-slate-800 text-sm">{dashboardStats?.counts?.kelas || classes.length} Kelas</span>
-            </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <span className="text-slate-400 block text-[10px]">Master Jabatan</span>
+              <span className="text-slate-400 block text-[10px]">{isUmum ? 'Master Jabatan / Divisi' : 'Master Jabatan'}</span>
               <span className="font-bold text-slate-800 text-sm">{dashboardStats?.counts?.jabatan || positions.length} Posisi</span>
             </div>
           </div>
@@ -415,7 +424,7 @@ export default function DashboardView({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
-          <div className="lg:col-span-4">
+          <div className={isUmum ? "lg:col-span-5" : "lg:col-span-4"}>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Tanggal Absensi</label>
             <input 
               type="date" 
@@ -426,30 +435,41 @@ export default function DashboardView({
             />
           </div>
 
-          <div className="lg:col-span-3">
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Tipe Pengguna</label>
+          <div className={isUmum ? "lg:col-span-4" : "lg:col-span-3"}>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              {isUmum ? 'Kategori Pegawai' : 'Tipe Pengguna'}
+            </label>
             <select 
               value={tipe} 
               onChange={(e) => { setTipe(e.target.value); setSelectedKelas(''); }}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
             >
-              <option value="all">Semua Pengguna</option>
-              <option value="siswa">Siswa</option>
-              <option value="guru">Guru</option>
+              {isUmum ? (
+                <>
+                  <option value="all">Semua Pegawai</option>
+                  <option value="guru">Pegawai Tetap / Staff</option>
+                </>
+              ) : (
+                <>
+                  <option value="all">Semua Pengguna</option>
+                  <option value="siswa">{labelSiswa}</option>
+                  <option value="guru">{labelGuru}</option>
+                </>
+              )}
             </select>
           </div>
 
           <div className="lg:col-span-3">
             <label className="block text-xs font-semibold text-slate-600 mb-1">
-              {tipe === 'guru' ? 'Filter Jabatan' : 'Filter Kelas'}
+              {isUmum ? 'Filter Jabatan / Divisi' : (tipe === 'guru' ? 'Filter Jabatan' : 'Filter Kelas')}
             </label>
             <select 
               value={selectedKelas} 
               onChange={(e) => setSelectedKelas(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
             >
-              <option value="">-- Semua {tipe === 'guru' ? 'Jabatan' : 'Kelas'} --</option>
-              {tipe === 'guru' ? (
+              <option value="">-- Semua {isUmum ? 'Jabatan / Divisi' : (tipe === 'guru' ? 'Jabatan' : 'Kelas')} --</option>
+              {isUmum || tipe === 'guru' ? (
                 positions.map(p => <option key={p.id} value={p.nama}>{p.nama}</option>)
               ) : (
                 classes.map(c => <option key={c.id} value={c.nama}>{c.nama}</option>)
@@ -457,11 +477,11 @@ export default function DashboardView({
             </select>
           </div>
 
-          <div className="lg:col-span-2">
+          <div className={isUmum ? "lg:col-span-12 sm:col-span-2 flex justify-end" : "lg:col-span-2"}>
             <button 
               onClick={fetchData}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl shadow-md shadow-primary-600/20 transition-all text-xs disabled:opacity-50"
+              className="w-full sm:w-auto px-4 flex items-center justify-center gap-2 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl shadow-md shadow-primary-600/20 transition-all text-xs disabled:opacity-50"
             >
               <RotateCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               <span>Tampilkan</span>
@@ -499,7 +519,7 @@ export default function DashboardView({
                 <th className="py-3.5 px-4 text-center w-12">No</th>
                 <th className="py-3.5 px-4">Nama Lengkap</th>
                 <th className="py-3.5 px-4">Tipe</th>
-                <th className="py-3.5 px-4">Kelas / Jabatan</th>
+                <th className="py-3.5 px-4">{isUmum ? 'Jabatan / Divisi' : 'Kelas / Jabatan'}</th>
                 <th className="py-3.5 px-4">Waktu Masuk</th>
                 <th className="py-3.5 px-4">Status Masuk</th>
                 <th className="py-3.5 px-4">Waktu Keluar</th>
@@ -526,17 +546,16 @@ export default function DashboardView({
                 ))
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="py-12 text-center text-slate-400">
-                    <FolderOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                    <p className="font-medium text-slate-600 text-sm">Tidak ada data absensi ditemukan</p>
+                  <td colSpan="10" className="py-12 text-center text-slate-400 text-xs">
+                    Belum ada data absensi untuk filter ini.
                   </td>
                 </tr>
               ) : (
                 filteredData.map((item, index) => {
-                  const isGuru = (item.tipe || 'siswa').toLowerCase() === 'guru';
+                  const isHighlighted = item.id === highlightId;
                   const sm = (item.status_masuk || '').toLowerCase();
                   const sk = (item.status_keluar || '').toLowerCase();
-                  const isHighlighted = highlightId === item.id;
+                  const isItemGuru = (item.tipe || '').toLowerCase() === 'guru';
 
                   return (
                     <tr 
@@ -549,9 +568,13 @@ export default function DashboardView({
                       </td>
                       <td className="py-3.5 px-4">
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-                          isGuru ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-sky-50 text-sky-700 border-sky-200'
+                          isUmum 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                            : isItemGuru 
+                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+                            : 'bg-sky-50 text-sky-700 border-sky-200'
                         }`}>
-                          {isGuru ? 'Guru' : 'Siswa'}
+                          {isUmum ? 'Pegawai' : isItemGuru ? 'Guru' : 'Siswa'}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-xs font-medium text-slate-600">
@@ -643,6 +666,7 @@ export default function DashboardView({
           classes={classes}
           positions={positions}
           defaultDate={tanggal}
+          appMode={mode}
           onClose={() => setModalOpen(false)}
           onSuccess={() => { fetchData(); fetchStats(); }}
         />

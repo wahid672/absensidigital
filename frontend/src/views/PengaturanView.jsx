@@ -517,37 +517,58 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                {/* 1. MODE UMUM */}
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, app_mode: 'umum' }))}
+                  className={`p-3.5 rounded-xl border text-left transition-all ${
+                    formData.app_mode === 'umum' 
+                      ? 'border-primary-600 bg-primary-50/60 ring-2 ring-primary-500/20' 
+                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="font-bold text-xs text-slate-800">Mode Umum</span>
+                    {formData.app_mode === 'umum' && <CheckCircle2 className="w-4 h-4 text-primary-600" />}
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    Menggunakan istilah <span className="font-semibold text-primary-700">"Pegawai"</span> & <span className="font-semibold text-primary-700">"Pimpinan"</span>. Menu santri & kelas otomatis disembunyikan.
+                  </p>
+                </button>
+
+                {/* 2. MODE PESANTREN */}
                 <button
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, app_mode: 'pesantren' }))}
                   className={`p-3.5 rounded-xl border text-left transition-all ${
-                    isPesantren 
+                    formData.app_mode === 'pesantren' 
                       ? 'border-primary-600 bg-primary-50/60 ring-2 ring-primary-500/20' 
                       : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="font-bold text-xs text-slate-800">Mode Pesantren</span>
-                    {isPesantren && <CheckCircle2 className="w-4 h-4 text-primary-600" />}
+                    {formData.app_mode === 'pesantren' && <CheckCircle2 className="w-4 h-4 text-primary-600" />}
                   </div>
                   <p className="text-[11px] text-slate-500 leading-tight">
                     Menggunakan istilah <span className="font-semibold text-primary-700">"Santri"</span> & <span className="font-semibold text-primary-700">"Asatidz/Guru"</span>.
                   </p>
                 </button>
 
+                {/* 3. MODE SEKOLAH */}
                 <button
                   type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, app_mode: 'umum' }))}
+                  onClick={() => setFormData(prev => ({ ...prev, app_mode: 'sekolah' }))}
                   className={`p-3.5 rounded-xl border text-left transition-all ${
-                    !isPesantren 
+                    formData.app_mode === 'sekolah' 
                       ? 'border-primary-600 bg-primary-50/60 ring-2 ring-primary-500/20' 
                       : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="font-bold text-xs text-slate-800">Mode Umum / Sekolah</span>
-                    {!isPesantren && <CheckCircle2 className="w-4 h-4 text-primary-600" />}
+                    <span className="font-bold text-xs text-slate-800">Mode Sekolah</span>
+                    {formData.app_mode === 'sekolah' && <CheckCircle2 className="w-4 h-4 text-primary-600" />}
                   </div>
                   <p className="text-[11px] text-slate-500 leading-tight">
                     Menggunakan istilah <span className="font-semibold text-primary-700">"Siswa"</span> & <span className="font-semibold text-primary-700">"Guru"</span>.
@@ -633,13 +654,23 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
             <form onSubmit={handleSave} className="space-y-3.5 pt-2 border-t border-slate-100">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {isPesantren ? 'Nama Yayasan / Pesantren' : 'Nama Sekolah / Madrasah'}
+                  {formData.app_mode === 'umum'
+                    ? 'Nama Instansi / Perusahaan / Lembaga'
+                    : formData.app_mode === 'pesantren'
+                    ? 'Nama Yayasan / Pondok Pesantren'
+                    : 'Nama Sekolah / Madrasah'}
                 </label>
                 <input 
                   type="text" 
                   value={formData.instansi_nama} 
                   onChange={(e) => setFormData({ ...formData, instansi_nama: e.target.value })}
-                  placeholder="Contoh: YAYASAN PONDOK PESANTREN DIGITAL"
+                  placeholder={
+                    formData.app_mode === 'umum'
+                      ? 'Contoh: PT. DIGITAL INOVASI MANDIRI'
+                      : formData.app_mode === 'pesantren'
+                      ? 'Contoh: YAYASAN PONDOK PESANTREN DIGITAL'
+                      : 'Contoh: SMK DIGITAL TEKNOLOGI'
+                  }
                   className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white font-medium"
                 />
               </div>
@@ -692,13 +723,23 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {isPesantren ? 'Nama Pengasuh / Mudir Pesantren' : 'Nama Kepala Sekolah'}
+                  {formData.app_mode === 'umum'
+                    ? 'Nama Pimpinan / Direktur Instansi'
+                    : formData.app_mode === 'pesantren'
+                    ? 'Nama Pengasuh / Mudir Pesantren'
+                    : 'Nama Kepala Sekolah'}
                 </label>
                 <input 
                   type="text" 
                   value={formData.kepala_nama} 
                   onChange={(e) => setFormData({ ...formData, kepala_nama: e.target.value })}
-                  placeholder="Contoh: KH. Ahmad Zaki, Lc., M.Ag"
+                  placeholder={
+                    formData.app_mode === 'umum'
+                      ? 'Contoh: H. Hendra Wijaya, S.T., M.M.'
+                      : formData.app_mode === 'pesantren'
+                      ? 'Contoh: KH. Ahmad Zaki, Lc., M.Ag'
+                      : 'Contoh: Drs. Bambang Sutrisno, M.Pd'
+                  }
                   className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white"
                 />
               </div>

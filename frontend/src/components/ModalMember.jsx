@@ -14,11 +14,17 @@ export default function ModalMember({
 }) {
   const isEdit = !!(member && member.id);
   const isGuru = tipe === 'guru';
-  const isPesantren = appMode !== 'umum';
+  const isUmum = appMode === 'umum';
+  const isPesantren = appMode === 'pesantren';
 
-  const labelMember = isGuru 
+  const labelMember = isUmum
+    ? 'Pegawai'
+    : isGuru 
     ? (isPesantren ? 'Guru / Asatidz' : 'Guru / Pendidik') 
     : (isPesantren ? 'Santri' : 'Siswa');
+
+  const labelIdNumber = isUmum ? 'NIP / NIK Pegawai' : isGuru ? 'NIP (Nomor Induk Pegawai / Guru)' : (isPesantren ? 'NIS (Nomor Induk Santri)' : 'NIS (Nomor Induk Siswa)');
+  const labelGroup = isUmum ? 'Jabatan / Divisi' : isGuru ? 'Jabatan / Tugas Mengajar' : 'Pilih Kelas / Rombel';
 
   const [formData, setFormData] = useState({
     id: member?.id || '',
@@ -120,7 +126,7 @@ export default function ModalMember({
           {/* INPUT NIS / NIP */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              {isGuru ? 'NIP (Nomor Induk Pegawai / Guru)' : (isPesantren ? 'NIS (Nomor Induk Santri)' : 'NIS (Nomor Induk Siswa)')}
+              {labelIdNumber}
             </label>
             <div className="relative">
               <Hash className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -128,7 +134,7 @@ export default function ModalMember({
                 type="text" 
                 value={formData.nis_nip} 
                 onChange={(e) => setFormData({ ...formData, nis_nip: e.target.value })}
-                placeholder={isGuru ? 'Contoh: 198507122010011001' : 'Contoh: 20261001'} 
+                placeholder={isUmum ? 'Contoh: 1985071201' : isGuru ? 'Contoh: 198507122010011001' : 'Contoh: 20261001'} 
                 className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
@@ -143,7 +149,7 @@ export default function ModalMember({
               value={formData.nama} 
               onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
               required 
-              placeholder={isGuru ? 'Contoh: Ustadz Ahmad Fauzi, S.Pd.I' : 'Contoh: Muhammad Rizky Pratama'} 
+              placeholder={isUmum ? 'Contoh: Hendra Wijaya, S.T.' : isGuru ? 'Contoh: Ustadz Ahmad Fauzi, S.Pd.I' : 'Contoh: Muhammad Rizky Pratama'} 
               className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
@@ -189,10 +195,10 @@ export default function ModalMember({
           {/* DROPDOWN KELAS / JABATAN */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              {isGuru ? 'Jabatan / Tugas Mengajar' : 'Pilih Kelas / Rombel'} <span className="text-rose-500">*</span>
+              {labelGroup} <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
-              {isGuru ? (
+              {isUmum || isGuru ? (
                 <Briefcase className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               ) : (
                 <GraduationCap className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -203,8 +209,8 @@ export default function ModalMember({
                 required 
                 className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
               >
-                <option value="">-- Pilih {isGuru ? 'Jabatan / Mapel' : 'Kelas'} --</option>
-                {isGuru ? (
+                <option value="">-- Pilih {isUmum ? 'Jabatan / Divisi' : isGuru ? 'Jabatan / Mapel' : 'Kelas'} --</option>
+                {isUmum || isGuru ? (
                   positions.map(p => (
                     <option key={p.id} value={p.nama}>
                       {p.nama} {p.keterangan ? `(${p.keterangan})` : ''}

@@ -35,10 +35,11 @@ import { isDemo, showDemoAlert } from '../utils/demo';
 
 export default function TelegramView({ settings = {}, onSettingsUpdated, appMode = 'pesantren' }) {
   const isDemoActive = isDemo(settings);
-  const isPesantren = appMode !== 'umum';
+  const isUmum = appMode === 'umum';
+  const isPesantren = appMode === 'pesantren';
   const labelSiswa = isPesantren ? 'Santri' : 'Siswa';
   const labelWali = isPesantren ? 'Wali Santri' : 'Wali Siswa';
-  const labelGuru = isPesantren ? 'Guru / Asatidz' : 'Guru / Pegawai';
+  const labelGuru = isUmum ? 'Pegawai' : isPesantren ? 'Guru / Asatidz' : 'Guru / Pegawai';
 
   // Sub-view tab navigation: 'main' (Konfigurasi Bot) | 'template' (Template Pesan) | 'chat_id' (Manajemen Chat ID)
   const [activeTab, setActiveTab] = useState('main');
@@ -68,7 +69,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
   // Chat ID Management State
   const [members, setMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [memberTypeTab, setMemberTypeTab] = useState('siswa'); // 'siswa' | 'guru'
+  const [memberTypeTab, setMemberTypeTab] = useState(isUmum ? 'guru' : 'siswa'); // 'siswa' | 'guru'
   const [searchQuery, setSearchQuery] = useState('');
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -300,10 +301,20 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
       confirmButtonColor: '#2563eb'
     }).then((result) => {
       if (result.isConfirmed) {
-        setTemplateIn("🔔 *NOTIFIKASI PRESENSI MASUK*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nAlhamdulillah, santri telah tiba dan melakukan absensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
-        setTemplateOut("🔔 *NOTIFIKASI PRESENSI PULANG*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri telah melakukan absensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
-        setTemplateLate("⚠️ *PERINGATAN KETERLAMBATAN*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri tercatat terlambat melakukan absensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_");
-        setTemplateAdmin("📋 *LIVE MONITOR PRESENSI ADMIN*\n👤 Nama: *{nama}*\n🏷️ Tipe: {tipe}\n🏫 Kelas/Jabatan: {kelas}\n🔄 Aksi: *{aksi}* ({status})\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📍 Mesin: {id_mesin}\n_{instansi}_");
+        if (isUmum) {
+          setTemplateIn("🔔 *NOTIFIKASI PRESENSI MASUK*\nYth. Rekan *{nama}*\n\nPresensi masuk berhasil tercatat:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nSelamat bekerja dan sukses selalu.\n_{instansi}_");
+          setTemplateOut("🔔 *NOTIFIKASI PRESENSI PULANG*\nYth. Rekan *{nama}*\n\nPresensi pulang berhasil tercatat:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih atas dedikasi Anda hari ini.\n_{instansi}_");
+          setTemplateLate("⚠️ *PERINGATAN KETERLAMBATAN*\nYth. Rekan *{nama}*\n\nAnda tercatat terlambat melakukan presensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nHarap konfirmasi ke bagian administrasi/SDM jika ada kendala.\n_{instansi}_");
+        } else if (isPesantren) {
+          setTemplateIn("🔔 *NOTIFIKASI PRESENSI MASUK*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nAlhamdulillah, santri telah tiba dan melakukan absensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
+          setTemplateOut("🔔 *NOTIFIKASI PRESENSI PULANG*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri telah melakukan absensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
+          setTemplateLate("⚠️ *PERINGATAN KETERLAMBATAN*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri tercatat terlambat melakukan absensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_");
+        } else {
+          setTemplateIn("🔔 *NOTIFIKASI PRESENSI MASUK*\nYth. Orang Tua/Wali dari *{nama}*\n\nSiswa telah tiba di sekolah dan melakukan absensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
+          setTemplateOut("🔔 *NOTIFIKASI PRESENSI PULANG*\nYth. Orang Tua/Wali dari *{nama}*\n\nSiswa telah melakukan absensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
+          setTemplateLate("⚠️ *PERINGATAN KETERLAMBATAN*\nYth. Orang Tua/Wali dari *{nama}*\n\nSiswa tercatat terlambat melakukan absensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_");
+        }
+        setTemplateAdmin("📋 *LIVE MONITOR PRESENSI ADMIN*\n👤 Nama: *{nama}*\n🏷️ Tipe: {tipe}\n🏫 Divisi/Kelas: {kelas}\n🔄 Aksi: *{aksi}* ({status})\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📍 Mesin: {id_mesin}\n_{instansi}_");
         Swal.fire({
           toast: true,
           position: 'top-end',
@@ -1081,20 +1092,22 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
             <div className="p-4 sm:px-6 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
               {/* Tabs: Wali Santri vs Pegawai */}
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMemberTypeTab('siswa');
-                    setCurrentPage(1);
-                  }}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
-                    memberTypeTab === 'siswa'
-                      ? 'bg-primary-50 text-primary-700 border border-primary-200'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  {labelWali}
-                </button>
+                {!isUmum && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMemberTypeTab('siswa');
+                      setCurrentPage(1);
+                    }}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                      memberTypeTab === 'siswa'
+                        ? 'bg-primary-50 text-primary-700 border border-primary-200'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    {labelWali}
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -1103,7 +1116,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                     setCurrentPage(1);
                   }}
                   className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
-                    memberTypeTab === 'guru'
+                    memberTypeTab === 'guru' || isUmum
                       ? 'bg-primary-50 text-primary-700 border border-primary-200'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}

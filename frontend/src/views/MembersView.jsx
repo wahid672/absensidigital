@@ -31,12 +31,18 @@ export default function MembersView({
 }) {
   const isDemoActive = isDemo(settings);
   const isGuru = tipe === 'guru';
-  const isPesantren = appMode !== 'umum';
+  const isUmum = appMode === 'umum';
+  const isPesantren = appMode === 'pesantren';
   
   // Dynamic labels based on appMode
-  const labelMember = isGuru 
+  const labelMember = isUmum
+    ? 'Pegawai'
+    : isGuru 
     ? (isPesantren ? 'Guru / Asatidz' : 'Guru / Pendidik') 
     : (isPesantren ? 'Santri' : 'Siswa');
+
+  const labelIdNumber = isUmum ? 'NIP / NIK' : isGuru ? 'NIP' : 'NIS';
+  const labelGroup = isUmum ? 'Jabatan / Divisi' : isGuru ? 'Jabatan / Mapel' : 'Kelas / Rombel';
 
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState('');
@@ -198,7 +204,7 @@ export default function MembersView({
       ];
       ws['!rows'] = [{ hpx: 26 }, { hpx: 20 }, { hpx: 20 }, { hpx: 20 }];
 
-      XLSX.utils.book_append_sheet(wb, ws, 'DATA GURU');
+      XLSX.utils.book_append_sheet(wb, ws, isUmum ? 'DATA PEGAWAI' : 'DATA GURU');
 
       // Reference Sheet Jabatan
       const posRef = positions.map(p => ({
@@ -214,10 +220,10 @@ export default function MembersView({
           { wch: 35 }
         ];
         wsRef['!rows'] = [{ hpx: 24 }];
-        XLSX.utils.book_append_sheet(wb, wsRef, 'DAFTAR JABATAN (REFERENSI)');
+        XLSX.utils.book_append_sheet(wb, wsRef, isUmum ? 'DAFTAR JABATAN / DIVISI' : 'DAFTAR JABATAN (REFERENSI)');
       }
 
-      XLSX.writeFile(wb, 'Template_Import_Guru.xlsx');
+      XLSX.writeFile(wb, isUmum ? 'Template_Import_Pegawai.xlsx' : 'Template_Import_Guru.xlsx');
     }
   };
 
@@ -230,12 +236,12 @@ export default function MembersView({
 
     const exportRows = members.map((m, idx) => ({
       'No': idx + 1,
-      [isGuru ? 'NIP' : 'NIS']: m.nis_nip || '-',
+      [labelIdNumber]: m.nis_nip || '-',
       'Nama Lengkap': m.nama,
       'UID Kartu RFID': m.uid,
-      [isGuru ? 'Jabatan / Mapel' : 'Kelas / Rombel']: m.kelas || '-',
+      [labelGroup]: m.kelas || '-',
       'No. WhatsApp': m.no_hp || '-',
-      'Kategori': m.tipe
+      'Kategori': isUmum ? 'Pegawai' : m.tipe
     }));
 
     const wb = XLSX.utils.book_new();
@@ -460,7 +466,7 @@ export default function MembersView({
               type="text" 
               value={search} 
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={`Cari nama / ${isGuru ? 'NIP' : 'NIS'} / RFID / ${isGuru ? 'jabatan' : 'kelas'}...`} 
+              placeholder={`Cari nama / ${labelIdNumber} / RFID / ${labelGroup.toLowerCase()}...`} 
               className="w-full pl-9 pr-4 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
@@ -471,10 +477,10 @@ export default function MembersView({
             <thead>
               <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] uppercase font-bold tracking-wider text-slate-500">
                 <th className="py-3.5 px-4 text-center w-12">No</th>
-                <th className="py-3.5 px-4 w-36">{isGuru ? 'NIP' : 'NIS'}</th>
+                <th className="py-3.5 px-4 w-36">{labelIdNumber}</th>
                 <th className="py-3.5 px-4">Nama Lengkap & Kartu RFID</th>
                 <th className="py-3.5 px-4">Kategori</th>
-                <th className="py-3.5 px-4">{isGuru ? 'Jabatan / Mapel' : 'Kelas / Rombel'}</th>
+                <th className="py-3.5 px-4">{labelGroup}</th>
                 <th className="py-3.5 px-4">No. WhatsApp</th>
                 <th className="py-3.5 px-4 text-center w-28">Aksi</th>
               </tr>
@@ -520,14 +526,18 @@ export default function MembersView({
                       </div>
                     </td>
                     <td className="py-3.5 px-4">
-                      <span className={`px-2 py-0.5 rounded text-[11px] font-semibold uppercase ${
-                        m.tipe === 'guru' ? 'bg-indigo-50 text-indigo-700' : 'bg-sky-50 text-sky-700'
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                        isUmum ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : isGuru ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-primary-50 text-primary-700 border-primary-200'
                       }`}>
-                        {m.tipe}
+                        {isUmum ? 'Pegawai' : isGuru ? 'Guru' : 'Siswa'}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-700 font-medium text-xs">{m.kelas || '-'}</td>
-                    <td className="py-3.5 px-4 text-slate-600 text-xs font-mono">{m.no_hp || '-'}</td>
+                    <td className="py-3.5 px-4 text-xs font-medium text-slate-700">
+                      {m.kelas || '-'}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono text-xs text-slate-600">
+                      {m.no_hp || '-'}
+                    </td>
                     <td className="py-3.5 px-4 text-center">
                       <div className="inline-flex items-center gap-1.5">
                         <button 
@@ -540,14 +550,14 @@ export default function MembersView({
                             setModalOpen(true); 
                           }}
                           className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" 
-                          title="Edit"
+                          title="Edit Data"
                         >
                           <PenSquare className="w-4 h-4" />
                         </button>
                         <button 
                           onClick={() => handleDelete(m.id, m.nama)}
                           className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" 
-                          title="Hapus"
+                          title="Hapus Data"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -561,7 +571,7 @@ export default function MembersView({
         </div>
       </div>
 
-      {/* MODAL FORM EDIT / TAMBAH MANUAL */}
+      {/* MODAL TAMBAH / EDIT MEMBER */}
       {modalOpen && (
         <ModalMember 
           member={editMember}
@@ -570,13 +580,16 @@ export default function MembersView({
           positions={positions}
           appMode={appMode}
           onClose={() => setModalOpen(false)}
-          onSuccess={fetchMembers}
+          onSuccess={() => {
+            fetchMembers();
+            if (onMembersUpdated) onMembersUpdated();
+          }}
         />
       )}
 
-      {/* MODAL CETAK PDF DAFTAR MASTER ANGGOTA */}
+      {/* MODAL PRINT REKAP PDF */}
       {pdfModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto print-modal">
           <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 my-8">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 no-print">
               <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
@@ -602,11 +615,11 @@ export default function MembersView({
                 <div className="flex items-center justify-center gap-2 mb-1">
                   <School className="w-7 h-7 text-slate-900" />
                   <h1 className="text-lg font-bold tracking-wide uppercase text-slate-900">
-                    {settings.instansi_nama || 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL'}
+                    {settings.instansi_nama || (isUmum ? 'INSTANSI / PERUSAHAAN' : 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')}
                   </h1>
                 </div>
                 <p className="text-[11px] text-slate-600">
-                  {settings.instansi_alamat || 'Jl. Pesantren Digital No. 01'} • Wilayah: {kotaInstansi}
+                  {settings.instansi_alamat || 'Jl. Kantor Digital No. 01'} • Wilayah: {kotaInstansi}
                 </p>
                 <p className="text-xs font-bold text-slate-900 mt-2 uppercase">
                   DAFTAR INDUK DATA {labelMember.toUpperCase()}
@@ -617,10 +630,10 @@ export default function MembersView({
                 <thead>
                   <tr className="bg-slate-100 font-bold text-slate-800 border-y border-slate-400">
                     <th className="py-2 px-2.5 text-center w-10">No</th>
-                    <th className="py-2 px-2.5 w-32">{isGuru ? 'NIP' : 'NIS'}</th>
+                    <th className="py-2 px-2.5 w-32">{labelIdNumber}</th>
                     <th className="py-2 px-2.5">Nama Lengkap</th>
                     <th className="py-2 px-2.5">UID RFID</th>
-                    <th className="py-2 px-2.5">{isGuru ? 'Jabatan / Mapel' : 'Kelas / Rombel'}</th>
+                    <th className="py-2 px-2.5">{labelGroup}</th>
                     <th className="py-2 px-2.5">No. WhatsApp</th>
                   </tr>
                 </thead>
@@ -641,8 +654,14 @@ export default function MembersView({
               <div className="grid grid-cols-2 gap-8 text-xs text-slate-800 pt-4">
                 <div className="text-center">
                   <p>Mengetahui,</p>
-                  <p className="font-semibold mb-14">{isPesantren ? 'Pengasuh / Mudir' : 'Kepala Sekolah'}</p>
-                  <p className="font-bold underline">( {settings.kepala_nama || 'KH. Ahmad Zaki, Lc., M.Ag'} )</p>
+                  <p className="font-semibold mb-14">
+                    {isUmum 
+                      ? 'Pimpinan / Direktur Instansi' 
+                      : isPesantren 
+                      ? 'Pengasuh / Mudir' 
+                      : 'Kepala Sekolah'}
+                  </p>
+                  <p className="font-bold underline">( {settings.kepala_nama || (isUmum ? 'Pimpinan Instansi' : 'KH. Ahmad Zaki, Lc., M.Ag')} )</p>
                 </div>
                 <div className="text-center">
                   <p>{kotaInstansi}, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>

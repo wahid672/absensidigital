@@ -23,9 +23,11 @@ export default function Sidebar({
   mobileOpen, 
   setMobileOpen 
 }) {
-  const isPesantren = (settings.app_mode || 'pesantren') !== 'umum';
+  const mode = settings.app_mode || 'pesantren';
+  const isUmum = mode === 'umum';
+  const isPesantren = mode === 'pesantren';
 
-  const navItems = [
+  const allNavItems = [
     {
       id: 'dashboard',
       label: 'Dashboard',
@@ -35,11 +37,12 @@ export default function Sidebar({
     {
       id: 'santri',
       label: isPesantren ? 'Data Santri' : 'Data Siswa',
-      icon: GraduationCap
+      icon: GraduationCap,
+      hide: isUmum
     },
     {
       id: 'guru',
-      label: isPesantren ? 'Data Guru / Asatidz' : 'Data Guru',
+      label: isUmum ? 'Data Pegawai' : isPesantren ? 'Data Guru / Asatidz' : 'Data Guru',
       icon: Users
     },
     {
@@ -57,11 +60,12 @@ export default function Sidebar({
     {
       id: 'kelas',
       label: 'Master Kelas',
-      icon: School
+      icon: School,
+      hide: isUmum
     },
     {
       id: 'jabatan',
-      label: 'Master Jabatan',
+      label: isUmum ? 'Master Jabatan / Divisi' : isPesantren ? 'Master Jabatan' : 'Master Jabatan / Mapel',
       icon: Briefcase
     },
     {
@@ -75,6 +79,8 @@ export default function Sidebar({
       icon: Settings
     }
   ];
+
+  const navItems = allNavItems.filter(item => !item.hide);
 
   return (
     <>

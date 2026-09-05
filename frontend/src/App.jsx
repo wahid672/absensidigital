@@ -105,9 +105,20 @@ export default function App() {
     try {
       const res = await apiFetch('/api/settings');
       const data = await res.json();
-      setSettings(data.data || {});
+      const loadedSettings = data.data || {};
+      setSettings(loadedSettings);
+      if (loadedSettings.app_mode === 'umum' && (currentTab === 'santri' || currentTab === 'kelas')) {
+        setCurrentTab('dashboard');
+      }
     } catch {}
   };
+
+  // Switch away from hidden tabs if mode changes to umum
+  useEffect(() => {
+    if (settings.app_mode === 'umum' && (currentTab === 'santri' || currentTab === 'kelas')) {
+      setCurrentTab('dashboard');
+    }
+  }, [settings.app_mode, currentTab]);
 
   // Setup SSE and initial data load
   useEffect(() => {

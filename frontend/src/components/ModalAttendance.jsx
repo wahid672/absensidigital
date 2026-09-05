@@ -8,20 +8,26 @@ export default function ModalAttendance({
   members = [], 
   onClose, 
   onSuccess,
-  defaultDate = ''
+  defaultDate = '',
+  appMode = 'pesantren'
 }) {
   const isEdit = !!(item && item.id);
   const today = defaultDate || new Date().toISOString().split('T')[0];
   const nowTime = new Date().toTimeString().split(' ')[0];
 
-  const [selectedType, setSelectedType] = useState(item?.tipe || 'siswa');
+  const isUmum = appMode === 'umum';
+  const isPesantren = appMode === 'pesantren';
+
+  const [selectedType, setSelectedType] = useState(
+    item?.tipe || (isUmum ? 'guru' : 'siswa')
+  );
   const [selectedMemberId, setSelectedMemberId] = useState('');
   
   const [formData, setFormData] = useState({
     id: item?.id || '',
     nama: item?.nama || '',
     uid: item?.uid || '',
-    tipe: item?.tipe || 'siswa',
+    tipe: item?.tipe || (isUmum ? 'guru' : 'siswa'),
     kelas: item?.kelas || '',
     tanggal: item?.tanggal || today,
     waktu_masuk: (item?.waktu_masuk && item?.waktu_masuk !== '-') ? item.waktu_masuk : (isEdit ? '' : nowTime),
@@ -153,24 +159,35 @@ export default function ModalAttendance({
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Tipe Anggota</label>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    {isUmum ? 'Kategori' : 'Tipe Anggota'}
+                  </label>
                   <select 
                     value={selectedType} 
                     onChange={(e) => handleTypeChange(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:ring-2 focus:ring-primary-500"
+                    disabled={isUmum}
+                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:ring-2 focus:ring-primary-500 disabled:bg-slate-100"
                   >
-                    <option value="siswa">Santri / Siswa</option>
-                    <option value="guru">Guru / Ustadz</option>
+                    {isUmum ? (
+                      <option value="guru">Pegawai</option>
+                    ) : (
+                      <>
+                        <option value="siswa">{isPesantren ? 'Santri' : 'Siswa'}</option>
+                        <option value="guru">{isPesantren ? 'Guru / Ustadz' : 'Guru'}</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Pilih Nama Anggota</label>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    {isUmum ? 'Pilih Nama Pegawai' : 'Pilih Nama Anggota'}
+                  </label>
                   <select 
                     value={selectedMemberId} 
                     onChange={(e) => handleMemberSelect(e.target.value)}
                     className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:ring-2 focus:ring-primary-500"
                   >
-                    <option value="">-- Pilih Anggota --</option>
+                    <option value="">-- Pilih {isUmum ? 'Pegawai' : 'Anggota'} --</option>
                     {filteredMembers.map(m => (
                       <option key={m.id} value={m.id}>
                         {m.nama} ({m.kelas || m.uid})
@@ -185,7 +202,7 @@ export default function ModalAttendance({
           {/* IDENTITAS ANGGOTA (LOCKED/READONLY) */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700">Identitas Anggota</span>
+              <span className="text-xs font-semibold text-slate-700">Identitas {isUmum ? 'Pegawai' : 'Anggota'}</span>
               <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-medium flex items-center gap-1">
                 <Lock className="w-2.5 h-2.5" />
                 {isEdit ? 'Data Terkunci' : 'Auto-Fill dari Master'}
@@ -216,7 +233,9 @@ export default function ModalAttendance({
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Kelas / Jabatan</label>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  {isUmum ? 'Jabatan / Divisi' : 'Kelas / Jabatan'}
+                </label>
                 <input 
                   type="text" 
                   value={formData.kelas} 
