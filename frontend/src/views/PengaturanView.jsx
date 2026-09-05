@@ -140,6 +140,12 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
       });
       const data = await res.json();
       if (res.ok) {
+        try {
+          if (formData.app_mode) {
+            localStorage.setItem('presensi_app_mode', formData.app_mode);
+          }
+          localStorage.setItem('presensi_app_settings', JSON.stringify(formData));
+        } catch {}
         Swal.fire({
           icon: 'success',
           title: 'Berhasil Disimpan',

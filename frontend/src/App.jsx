@@ -15,11 +15,35 @@ import CetakView from './views/CetakView';
 import PengaturanView from './views/PengaturanView';
 import TelegramView from './views/TelegramView';
 
+const SETTINGS_CACHE_KEY = 'presensi_app_settings';
+const MODE_CACHE_KEY = 'presensi_app_mode';
+
+const getInitialSettings = () => {
+  try {
+    const cached = localStorage.getItem(SETTINGS_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    }
+    const cachedMode = localStorage.getItem(MODE_CACHE_KEY);
+    if (cachedMode) {
+      return { app_mode: cachedMode };
+    }
+  } catch {}
+  return {};
+};
+
 export default function App() {
   const getTabFromPath = () => {
     const rawPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
     const validTabs = ['dashboard', 'santri', 'guru', 'fingerprint', 'cards', 'telegram', 'kelas', 'jabatan', 'cetak', 'pengaturan'];
     if (validTabs.includes(rawPath)) {
+      const initSettings = getInitialSettings();
+      if (initSettings.app_mode === 'umum' && (rawPath === 'santri' || rawPath === 'kelas')) {
+        return 'dashboard';
+      }
       return rawPath;
     }
     return 'dashboard';
@@ -53,7 +77,7 @@ export default function App() {
   const [membersCache, setMembersCache] = useState([]);
   const [classesCache, setClassesCache] = useState([]);
   const [positionsCache, setPositionsCache] = useState([]);
-  const [settings, setSettings] = useState({});
+  const [settings, setSettings] = useState(getInitialSettings);
   const [realtimeEvent, setRealtimeEvent] = useState(null);
 
   // Play audio chime on realtime tap
@@ -108,6 +132,12 @@ export default function App() {
       const data = await res.json();
       const loadedSettings = data.data || {};
       setSettings(loadedSettings);
+      try {
+        localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(loadedSettings));
+        if (loadedSettings.app_mode) {
+          localStorage.setItem(MODE_CACHE_KEY, loadedSettings.app_mode);
+        }
+      } catch {}
       if (loadedSettings.app_mode === 'umum' && (currentTab === 'santri' || currentTab === 'kelas')) {
         setCurrentTab('dashboard');
       }
