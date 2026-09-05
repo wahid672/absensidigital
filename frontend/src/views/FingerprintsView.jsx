@@ -231,10 +231,10 @@ export default function FingerprintsView({
         <div>
           <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <Fingerprint className="w-5 h-5 text-primary-600" />
-            <span>Perekaman & Mapping Sidik Jari (Fingerprint IoT)</span>
+            <span>Perekaman & Mapping Sidik Jari (Fingerprint)</span>
           </h3>
           <p className="text-xs text-slate-500">
-            Daftar slot sidik jari yang terekam dari mesin sensor (R503/FPM) dan hubungkan ke data {labelSiswa} / {labelGuru}
+            Daftar slot sidik jari yang terekam dari mesin dan hubungkan ke data {isUmum ? 'Pegawai' : `${labelSiswa} / ${labelGuru}`}
           </p>
         </div>
 
@@ -412,7 +412,7 @@ export default function FingerprintsView({
                           <button
                             onClick={() => openMapModal(fp)}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-200 transition-colors"
-                            title="Hubungkan ke data Santri / Guru"
+                            title={isUmum ? 'Hubungkan ke data Pegawai' : `Hubungkan ke data ${labelSiswa} / ${labelGuru}`}
                           >
                             <Link className="w-3.5 h-3.5" />
                             <span>{isMapped ? 'Ubah' : 'Hubungkan'}</span>

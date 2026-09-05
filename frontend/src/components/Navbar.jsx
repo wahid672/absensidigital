@@ -38,7 +38,7 @@ export default function Navbar({ currentTab, settings = {}, onOpenMobileSidebar 
         : 'Kelola database kartu RFID, NIP, jabatan, dan staf pengajar' 
     },
     fingerprint: {
-      title: 'Perekaman Sidik Jari (Fingerprint IoT)',
+      title: 'Perekaman Sidik Jari (Fingerprint)',
       desc: isUmum
         ? 'Kelola slot sidik jari yang terekam dari mesin dan hubungkan ke pegawai'
         : isPesantren
