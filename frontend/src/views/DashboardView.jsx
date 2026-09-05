@@ -4,6 +4,7 @@ import {
   CheckCircle2, 
   History, 
   GraduationCap, 
+  Briefcase,
   Filter, 
   Plus, 
   FileSpreadsheet, 
@@ -188,23 +189,23 @@ export default function DashboardView({
   };
 
   // Metric counts
-  const filteredData = data
-    .filter(i => !isUmum || (i.tipe || '').toLowerCase() === 'guru')
-    .filter(i => 
-      (i.nama || '').toLowerCase().includes(search.toLowerCase().trim()) ||
-      (i.id_mesin || '').toLowerCase().includes(search.toLowerCase().trim()) ||
-      (i.kelas || '').toLowerCase().includes(search.toLowerCase().trim())
-    );
+  const activeData = isUmum ? data.filter(i => (i.tipe || '').toLowerCase() === 'guru') : data;
 
-  const tepatCount = filteredData.filter(i => (i.status_masuk || '').toLowerCase().includes('tepat')).length;
-  const telatCount = filteredData.filter(i => (i.status_masuk || '').toLowerCase().includes('telat')).length;
-  const izinSakitCount = filteredData.filter(i => {
+  const tepatCount = activeData.filter(i => (i.status_masuk || '').toLowerCase().includes('tepat')).length;
+  const telatCount = activeData.filter(i => (i.status_masuk || '').toLowerCase().includes('telat')).length;
+  const izinSakitCount = activeData.filter(i => {
     const s = (i.status_masuk || '').toLowerCase();
     return s === 'izin' || s === 'sakit';
   }).length;
   const siswaCount = data.filter(i => (i.tipe || '').toLowerCase() === 'siswa').length;
   const guruCount = data.filter(i => (i.tipe || '').toLowerCase() === 'guru').length;
-  const totalHadir = isUmum ? filteredData.length : data.length;
+  const totalHadir = activeData.length;
+
+  const filteredData = activeData.filter(i => 
+    (i.nama || '').toLowerCase().includes(search.toLowerCase().trim()) ||
+    (i.id_mesin || '').toLowerCase().includes(search.toLowerCase().trim()) ||
+    (i.kelas || '').toLowerCase().includes(search.toLowerCase().trim())
+  );
 
   // Maximum count for chart scaling
   const trendDays = dashboardStats?.trend_7_days || [];
@@ -447,7 +448,7 @@ export default function DashboardView({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
-          <div className={isUmum ? "lg:col-span-5" : "lg:col-span-4"}>
+          <div className="lg:col-span-4">
             <label className="block text-xs font-semibold text-slate-600 mb-1">Tanggal Absensi</label>
             <input 
               type="date" 
@@ -458,7 +459,7 @@ export default function DashboardView({
             />
           </div>
 
-          <div className={isUmum ? "lg:col-span-4" : "lg:col-span-3"}>
+          <div className="lg:col-span-3">
             <label className="block text-xs font-semibold text-slate-600 mb-1">
               {isUmum ? 'Kategori Pegawai' : 'Tipe Pengguna'}
             </label>
@@ -498,11 +499,11 @@ export default function DashboardView({
             </select>
           </div>
 
-          <div className={isUmum ? "lg:col-span-12 sm:col-span-2 flex justify-end" : "lg:col-span-2"}>
+          <div className="lg:col-span-2">
             <button 
               onClick={fetchData}
               disabled={loading}
-              className="w-full sm:w-auto px-4 flex items-center justify-center gap-2 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl shadow-md shadow-primary-600/20 transition-all text-xs disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl shadow-md shadow-primary-600/20 transition-all text-xs disabled:opacity-50"
             >
               <RotateCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               <span>Tampilkan</span>
