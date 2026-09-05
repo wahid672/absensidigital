@@ -7,17 +7,28 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
   const currentYear = new Date().getFullYear();
   const currentMonth = today.substring(0, 7);
 
+  const modeApp = settings.app_mode || 'pesantren';
+  const isUmum = modeApp === 'umum';
+  const isPesantren = modeApp === 'pesantren';
+
   const [mode, setMode] = useState('total_akumulasi'); // 'harian' | 'bulanan' | 'total_akumulasi'
   const [tanggal, setTanggal] = useState(today);
   const [bulan, setBulan] = useState(currentMonth);
   const [selectedMonths, setSelectedMonths] = useState([currentMonth]);
   const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [tipe, setTipe] = useState('all');
+  const [tipe, setTipe] = useState(isUmum ? 'guru' : 'all');
   const [selectedKelas, setSelectedKelas] = useState('');
 
   const [data, setData] = useState([]);
   const [summaryData, setSummaryData] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Sync tipe if mode changes to umum
+  useEffect(() => {
+    if (isUmum) {
+      setTipe('guru');
+    }
+  }, [isUmum]);
 
   const monthNames = [
     { num: '01', name: 'Januari' },
@@ -56,15 +67,16 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
   const loadData = async () => {
     setLoading(true);
     try {
+      const activeTipe = isUmum ? 'guru' : tipe;
       if (mode === 'total_akumulasi') {
         const monthsParam = selectedMonths.join(',');
-        let url = `/api/attendance/summary?bulan=${monthsParam}&tipe=${tipe}`;
+        let url = `/api/attendance/summary?bulan=${monthsParam}&tipe=${activeTipe}`;
         if (selectedKelas) url += `&kelas=${encodeURIComponent(selectedKelas)}`;
         const res = await apiFetch(url);
         const result = await res.json();
         setSummaryData(result.data || []);
       } else {
-        let url = `/api/attendance?tipe=${tipe}`;
+        let url = `/api/attendance?tipe=${activeTipe}`;
         if (mode === 'bulanan') {
           url += `&bulan=${bulan}`;
         } else {
@@ -84,7 +96,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
 
   useEffect(() => {
     loadData();
-  }, [mode, tanggal, bulan, selectedMonths, tipe, selectedKelas]);
+  }, [mode, tanggal, bulan, selectedMonths, tipe, selectedKelas, isUmum]);
 
   const kotaInstansi = settings.instansi_kota || 'Kota Santri';
 
@@ -102,10 +114,6 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
     });
     return `${names.join(', ')} (${selectedYear})`;
   };
-
-  const modeApp = settings.app_mode || 'pesantren';
-  const isUmum = modeApp === 'umum';
-  const isPesantren = modeApp === 'pesantren';
 
   return (
     <section className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-5xl w-full mx-auto">
@@ -141,18 +149,16 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
 
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">
-              {isUmum ? 'Kategori Pegawai' : 'Kategori Pengguna'}
+              {isUmum ? 'Kategori Anggota' : 'Kategori Pengguna'}
             </label>
             <select 
-              value={tipe} 
-              onChange={(e) => { setTipe(e.target.value); setSelectedKelas(''); }}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
+              value={isUmum ? 'guru' : tipe} 
+              onChange={(e) => { if (!isUmum) { setTipe(e.target.value); setSelectedKelas(''); } }}
+              disabled={isUmum}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer disabled:bg-slate-100 disabled:text-slate-700"
             >
               {isUmum ? (
-                <>
-                  <option value="all">Semua Pegawai</option>
-                  <option value="guru">Pegawai Tetap / Staff</option>
-                </>
+                <option value="guru">Data Pegawai</option>
               ) : (
                 <>
                   <option value="all">Semua ({isPesantren ? 'Santri & Guru' : 'Siswa & Guru'})</option>
@@ -393,7 +399,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
                   <tr key={item.id} className="border-b border-slate-200">
                     <td className="py-2 px-3 text-center">{idx + 1}</td>
                     <td className="py-2 px-3 font-semibold">{item.nama}</td>
-                    <td className="py-2 px-3 capitalize">{item.tipe}</td>
+                    <td className="py-2 px-3 capitalize">{isUmum ? 'Pegawai' : item.tipe}</td>
                     <td className="py-2 px-3">{item.kelas || '-'}</td>
                     <td className="py-2 px-3 text-center font-mono">{item.tanggal || '-'}</td>
                     <td className="py-2 px-3 text-center font-mono">{item.waktu_masuk || '-'}</td>
