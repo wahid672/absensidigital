@@ -324,7 +324,7 @@ func initDatabase() {
 }
 
 func seedInitialData() {
-	// Seed Classes
+	// 1. Seed Classes
 	var classCount int
 	db.QueryRow("SELECT COUNT(*) FROM classes").Scan(&classCount)
 	if classCount == 0 {
@@ -345,11 +345,12 @@ func seedInitialData() {
 		}
 	}
 
-	// Seed Positions
+	// 2. Seed Positions (Mencakup Mode Pesantren, Mode Sekolah & Mode Umum)
 	var posCount int
 	db.QueryRow("SELECT COUNT(*) FROM positions").Scan(&posCount)
 	if posCount == 0 {
 		positions := []Position{
+			// Posisi Akademik / Pesantren / Sekolah
 			{Nama: "Guru Fiqih & Hadits", Keterangan: "Pengampu Pelajaran Fiqih & Hadits"},
 			{Nama: "Guru Bahasa Arab", Keterangan: "Pengampu Pelajaran Bahasa Arab & Nahwu"},
 			{Nama: "Guru Tahfidz & Quran", Keterangan: "Pembimbing Tahfidz Al-Qur'an"},
@@ -358,69 +359,214 @@ func seedInitialData() {
 			{Nama: "Guru Bahasa Inggris", Keterangan: "Pengampu Pelajaran Bahasa Inggris"},
 			{Nama: "Wali Asrama & Pengasuhan", Keterangan: "Koordinator Pengasuhan Santri"},
 			{Nama: "Kepala Madrasah / Kurikulum", Keterangan: "Kepala Bidang Akademik"},
+			// Posisi Instansi Umum / Perusahaan / Lembaga
+			{Nama: "Direktur Utama / Pimpinan", Keterangan: "Pimpinan Eksekutif Lembaga"},
+			{Nama: "Manager IT & Operasional", Keterangan: "Kepala Divisi Teknologi & Sistem"},
+			{Nama: "Staf Keuangan & Bendahara", Keterangan: "Pengelola Kas & Keuangan"},
+			{Nama: "HRD & Personalia", Keterangan: "Manajemen Sumber Daya Manusia"},
+			{Nama: "Staf Administrasi & Publikasi", Keterangan: "Pelayanan Administrasi & Humas"},
+			{Nama: "Customer Service & Resepsionis", Keterangan: "Front Desk & Layanan Tamu"},
 		}
 		for _, p := range positions {
 			db.Exec("INSERT OR IGNORE INTO positions (nama, keterangan) VALUES (?, ?)", p.Nama, p.Keterangan)
 		}
 	}
 
-	var count int
-	db.QueryRow("SELECT COUNT(*) FROM members").Scan(&count)
-	if count > 0 {
+	// Cek apakah data dummy lama (format UID hex A1B2C3..) masih ada atau rfid_cards masih kosong
+	var hasOldHexUID int
+	db.QueryRow("SELECT COUNT(*) FROM members WHERE uid LIKE 'A1B2C3%'").Scan(&hasOldHexUID)
+	var rfidCount int
+	db.QueryRow("SELECT COUNT(*) FROM rfid_cards").Scan(&rfidCount)
+
+	if hasOldHexUID > 0 || rfidCount == 0 {
+		// Bersihkan data dummy lama
+		db.Exec("DELETE FROM attendances WHERE uid LIKE 'A1B2C3%'")
+		db.Exec("DELETE FROM members WHERE uid LIKE 'A1B2C3%'")
+		db.Exec("DELETE FROM rfid_cards WHERE card_uid LIKE 'A1B2C3%'")
+		seedDummyData()
 		return
 	}
-	seedDummyData()
+
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM members").Scan(&count)
+	if count == 0 {
+		seedDummyData()
+	}
 }
 
 func seedDummyData() {
-	log.Println("🌱 Memasukkan seed data dummy santri, guru & absensi...")
+	log.Println("🌱 Memasukkan seed data dummy lengkap (RFID 10 angka, Sidik Jari, Pegawai/Santri & Absensi)...")
 
-	members := []Member{
-		{UID: "A1B2C301", NISNIP: "20261001", Nama: "Muhammad Rizky Pratama", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234567801"},
-		{UID: "A1B2C302", NISNIP: "198507122010011001", Nama: "Ustadz Ahmad Fauzi, S.Pd.I", Tipe: "guru", Kelas: "Guru Fiqih & Hadits", NoHP: "081234567802"},
-		{UID: "A1B2C303", NISNIP: "20261002", Nama: "Aisyah Nurul Hidayah", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234567803"},
-		{UID: "A1B2C304", NISNIP: "198803152012012002", Nama: "Ustadzah Fatimah Zahra, M.Pd", Tipe: "guru", Kelas: "Guru Bahasa Arab", NoHP: "081234567804"},
-		{UID: "A1B2C305", NISNIP: "20261003", Nama: "Fajar Dwi Santoso", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234567805"},
-		{UID: "A1B2C306", NISNIP: "20261004", Nama: "Zaid Bin Haritsah", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234567806"},
-		{UID: "A1B2C307", NISNIP: "20261005", Nama: "Khadijah Al-Kubra", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234567807"},
-		{UID: "A1B2C308", NISNIP: "198211052008011003", Nama: "Ustadz Abdullah Yusuf, Lc", Tipe: "guru", Kelas: "Guru Tahfidz & Quran", NoHP: "081234567808"},
-		{UID: "A1B2C309", NISNIP: "20261006", Nama: "Bilal Bin Rabah", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234567809"},
-		{UID: "A1B2C310", NISNIP: "199002202015012004", Nama: "Ustadzah Maryam Jameelah", Tipe: "guru", Kelas: "Guru Aqidah Akhlak", NoHP: "081234567810"},
-	}
-
-	for _, m := range members {
-		db.Exec("INSERT OR IGNORE INTO members (uid, nis_nip, nama, tipe, kelas, no_hp) VALUES (?, ?, ?, ?, ?, ?)",
-			m.UID, m.NISNIP, m.Nama, m.Tipe, m.Kelas, m.NoHP)
-	}
-
+	// 1. Devices
 	devices := []DeviceInfo{
-		{DeviceID: "ESP32-GATE-01", Nama: "Mesin Gerbang Utama", Lokasi: "Pintu Masuk Utama"},
-		{DeviceID: "ESP32-GATE-02", Nama: "Mesin Gedung Asrama", Lokasi: "Lobby Asrama Santri"},
+		{DeviceID: "PRESENSI-V1", Nama: "Mesin Utama Lobby", Lokasi: "Pintu Masuk Lobby Utama"},
+		{DeviceID: "ESP32-GATE-01", Nama: "Mesin Gerbang Masuk", Lokasi: "Pintu Gerbang Depan"},
+		{DeviceID: "ESP32-GATE-02", Nama: "Mesin Gedung B", Lokasi: "Lobby Gedung B & Kantor"},
 	}
-
 	for _, d := range devices {
-		db.Exec("INSERT OR IGNORE INTO devices (device_id, nama, lokasi, last_seen) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+		db.Exec(`INSERT INTO devices (device_id, nama, lokasi, last_seen) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+			ON CONFLICT(device_id) DO UPDATE SET nama = excluded.nama, lokasi = excluded.lokasi, last_seen = CURRENT_TIMESTAMP`,
 			d.DeviceID, d.Nama, d.Lokasi)
 	}
 
+	// 2. Positions (Pastikan posisi umum & pesantren lengkap)
+	positions := []Position{
+		{Nama: "Guru Fiqih & Hadits", Keterangan: "Pengampu Pelajaran Fiqih & Hadits"},
+		{Nama: "Guru Bahasa Arab", Keterangan: "Pengampu Pelajaran Bahasa Arab & Nahwu"},
+		{Nama: "Guru Tahfidz & Quran", Keterangan: "Pembimbing Tahfidz Al-Qur'an"},
+		{Nama: "Guru Aqidah Akhlak", Keterangan: "Pengampu Pelajaran Aqidah Akhlak"},
+		{Nama: "Guru Matematika & Sains", Keterangan: "Pengampu Bidang Eksak"},
+		{Nama: "Guru Bahasa Inggris", Keterangan: "Pengampu Pelajaran Bahasa Inggris"},
+		{Nama: "Wali Asrama & Pengasuhan", Keterangan: "Koordinator Pengasuhan Santri"},
+		{Nama: "Kepala Madrasah / Kurikulum", Keterangan: "Kepala Bidang Akademik"},
+		{Nama: "Direktur Utama / Pimpinan", Keterangan: "Pimpinan Eksekutif Lembaga"},
+		{Nama: "Manager IT & Operasional", Keterangan: "Kepala Divisi Teknologi & Sistem"},
+		{Nama: "Staf Keuangan & Bendahara", Keterangan: "Pengelola Kas & Keuangan"},
+		{Nama: "HRD & Personalia", Keterangan: "Manajemen Sumber Daya Manusia"},
+		{Nama: "Staf Administrasi & Publikasi", Keterangan: "Pelayanan Administrasi & Humas"},
+		{Nama: "Customer Service & Resepsionis", Keterangan: "Front Desk & Layanan Tamu"},
+	}
+	for _, p := range positions {
+		db.Exec("INSERT OR IGNORE INTO positions (nama, keterangan) VALUES (?, ?)", p.Nama, p.Keterangan)
+	}
+
+	// 3. Members (RFID 10 ANGKA & beberapa tanpa kartu untuk uji coba mapping)
+	members := []Member{
+		// === PEGAWAI / ASATIDZ / GURU (tipe: guru) ===
+		{UID: "0014829101", FingerprintID: 1, NISNIP: "198507122010011001", Nama: "Ustadz Ahmad Fauzi, S.Pd.I", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Fiqih & Hadits", NoHP: "081234567801", TelegramChatID: "123456781"},
+		{UID: "0014829102", FingerprintID: 2, NISNIP: "198803152012012002", Nama: "Ustadzah Fatimah Zahra, M.Pd", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Bahasa Arab", NoHP: "081234567802", TelegramChatID: "123456782"},
+		{UID: "0014829103", FingerprintID: 3, NISNIP: "198211052008011003", Nama: "Ustadz Abdullah Yusuf, Lc", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Tahfidz & Quran", NoHP: "081234567803", TelegramChatID: "123456783"},
+		{UID: "0014829104", FingerprintID: 4, NISNIP: "199002202015012004", Nama: "Ustadzah Maryam Jameelah, S.Ag", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Aqidah Akhlak", NoHP: "081234567804", TelegramChatID: "123456784"},
+		{UID: "0014829105", FingerprintID: 5, NISNIP: "198604102011011005", Nama: "Hendra Wijaya, S.T.", NamaOrtu: "", Tipe: "guru", Kelas: "Manager IT & Operasional", NoHP: "081234567805", TelegramChatID: "123456785"},
+		{UID: "0014829106", FingerprintID: 6, NISNIP: "199208152016012006", Nama: "Siti Nurhaliza, S.E.", NamaOrtu: "", Tipe: "guru", Kelas: "Staf Keuangan & Bendahara", NoHP: "081234567806", TelegramChatID: "123456786"},
+		{UID: "0014829107", FingerprintID: 7, NISNIP: "198409222009011007", Nama: "Bambang Suryono, S.H.", NamaOrtu: "", Tipe: "guru", Kelas: "HRD & Personalia", NoHP: "081234567807", TelegramChatID: "123456787"},
+		{UID: "0014829108", FingerprintID: 8, NISNIP: "199411032018012008", Nama: "Dewi Anggraini, S.Kom", NamaOrtu: "", Tipe: "guru", Kelas: "Staf Administrasi & Publikasi", NoHP: "081234567808", TelegramChatID: "123456788"},
+		// Anggota belum punya kartu (UID internal PENDING)
+		{UID: "PENDING-0000000001", FingerprintID: 0, NISNIP: "199105172017011009", Nama: "Rahmat Hidayat, M.Kom", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Matematika & Sains", NoHP: "081234567809", TelegramChatID: ""},
+		{UID: "PENDING-0000000002", FingerprintID: 0, NISNIP: "199312012019012010", Nama: "Anisa Rahmawati, S.Pd", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Bahasa Inggris", NoHP: "081234567810", TelegramChatID: ""},
+
+		// === SANTRI / SISWA (tipe: siswa) ===
+		{UID: "0014829111", FingerprintID: 9, NISNIP: "20261001", Nama: "Muhammad Rizky Pratama", NamaOrtu: "Bpk. Bambang Pratama", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234567811", TelegramChatID: "123456791"},
+		{UID: "0014829112", FingerprintID: 10, NISNIP: "20261002", Nama: "Aisyah Nurul Hidayah", NamaOrtu: "Bpk. H. Syarifudin", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234567812", TelegramChatID: "123456792"},
+		{UID: "0014829113", FingerprintID: 11, NISNIP: "20261003", Nama: "Fajar Dwi Santoso", NamaOrtu: "Ibu Sri Wahyuni", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234567813", TelegramChatID: "123456793"},
+		{UID: "0014829114", FingerprintID: 12, NISNIP: "20261004", Nama: "Zaid Bin Haritsah", NamaOrtu: "Bpk. Haritsah", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234567814", TelegramChatID: "123456794"},
+		{UID: "0014829115", FingerprintID: 13, NISNIP: "20261005", Nama: "Khadijah Al-Kubra", NamaOrtu: "Bpk. Khuwaylid", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234567815", TelegramChatID: "123456795"},
+		{UID: "0014829116", FingerprintID: 14, NISNIP: "20261006", Nama: "Bilal Bin Rabah", NamaOrtu: "Bpk. Rabah", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234567816", TelegramChatID: "123456796"},
+		{UID: "0014829117", FingerprintID: 15, NISNIP: "20261007", Nama: "Ali Bin Abi Thalib", NamaOrtu: "Bpk. Abu Thalib", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234567817", TelegramChatID: "123456797"},
+		{UID: "0014829118", FingerprintID: 16, NISNIP: "20261008", Nama: "Fatimah Az-Zahra", NamaOrtu: "Bpk. Muhammad", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234567818", TelegramChatID: "123456798"},
+		// Siswa belum punya kartu (UID internal PENDING)
+		{UID: "PENDING-0000000003", FingerprintID: 0, NISNIP: "20261009", Nama: "Umar Al-Faruq", NamaOrtu: "Bpk. Khattab", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234567819", TelegramChatID: ""},
+		{UID: "PENDING-0000000004", FingerprintID: 0, NISNIP: "20261010", Nama: "Utsman Dzun-Nurain", NamaOrtu: "Bpk. Affan", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234567820", TelegramChatID: ""},
+	}
+
+	for _, m := range members {
+		res, err := db.Exec(`INSERT INTO members (uid, fingerprint_id, nis_nip, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(uid) DO UPDATE SET 
+				fingerprint_id = excluded.fingerprint_id,
+				nis_nip = excluded.nis_nip,
+				nama = excluded.nama,
+				nama_ortu = excluded.nama_ortu,
+				tipe = excluded.tipe,
+				kelas = excluded.kelas,
+				no_hp = excluded.no_hp,
+				telegram_chat_id = excluded.telegram_chat_id`,
+			m.UID, m.FingerprintID, m.NISNIP, m.Nama, m.NamaOrtu, m.Tipe, m.Kelas, m.NoHP, m.TelegramChatID)
+
+		if err == nil {
+			var memberID int64
+			db.QueryRow("SELECT id FROM members WHERE uid = ?", m.UID).Scan(&memberID)
+			if memberID == 0 {
+				memberID, _ = res.LastInsertId()
+			}
+
+			// 4. Sinkronisasi kartu terhubung (mapped) ke rfid_cards (hanya kartu nyata 10 digit)
+			if !strings.HasPrefix(m.UID, "PENDING-") {
+				db.Exec(`INSERT INTO rfid_cards (card_uid, device_id, member_id, status, updated_at)
+					VALUES (?, 'PRESENSI-V1', ?, 'mapped', CURRENT_TIMESTAMP)
+					ON CONFLICT(card_uid) DO UPDATE SET member_id = excluded.member_id, status = 'mapped', updated_at = CURRENT_TIMESTAMP`,
+					m.UID, memberID)
+			}
+
+			// 5. Sinkronisasi slot sidik jari terhubung (mapped) ke fingerprints
+			if m.FingerprintID > 0 {
+				db.Exec(`INSERT INTO fingerprints (fingerprint_id, device_id, member_id, status, updated_at)
+					VALUES (?, 'PRESENSI-V1', ?, 'mapped', CURRENT_TIMESTAMP)
+					ON CONFLICT(device_id, fingerprint_id) DO UPDATE SET member_id = excluded.member_id, status = 'mapped', updated_at = CURRENT_TIMESTAMP`,
+					m.FingerprintID, memberID)
+			}
+		}
+	}
+
+	// 6. Kartu RFID Baru yang Belum Terhubung (Unmapped - 10 ANGKA) untuk pengujian menu Kartu RFID
+	unmappedCards := []string{
+		"0025918301",
+		"0025918302",
+		"0025918303",
+		"0025918304",
+		"0025918305",
+	}
+	devicesForCards := []string{"PRESENSI-V1", "ESP32-GATE-01", "ESP32-GATE-02", "PRESENSI-V1", "PRESENSI-V1"}
+	for i, cardUID := range unmappedCards {
+		dev := devicesForCards[i]
+		db.Exec(`INSERT INTO rfid_cards (card_uid, device_id, member_id, status, updated_at)
+			VALUES (?, ?, 0, 'unmapped', CURRENT_TIMESTAMP)
+			ON CONFLICT(card_uid) DO UPDATE SET member_id = 0, status = 'unmapped'`,
+			cardUID, dev)
+	}
+
+	// 7. Slot Sidik Jari Baru yang Belum Terhubung (Unmapped) untuk pengujian menu Sidik Jari
+	unmappedFingerprints := []int{17, 18, 19, 20}
+	for _, fpID := range unmappedFingerprints {
+		db.Exec(`INSERT INTO fingerprints (fingerprint_id, device_id, member_id, status, updated_at)
+			VALUES (?, 'PRESENSI-V1', 0, 'unmapped', CURRENT_TIMESTAMP)
+			ON CONFLICT(device_id, fingerprint_id) DO UPDATE SET member_id = 0, status = 'unmapped'`,
+			fpID)
+	}
+
+	// 8. Riwayat Presensi Realistis (Menggunakan UID 10 ANGKA, metode RFID & Fingerprint)
 	today := time.Now().Format("2006-01-02")
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 	twoDaysAgo := time.Now().AddDate(0, 0, -2).Format("2006-01-02")
 
-	db.Exec(`INSERT INTO attendances (uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin) VALUES 
-		('A1B2C301', 'Muhammad Rizky Pratama', 'siswa', '10 IPA 1', ?, '06:45:12', 'tepat', '15:05:30', 'tepat', 'ESP32-GATE-01'),
-		('A1B2C302', 'Ustadz Ahmad Fauzi, S.Pd.I', 'guru', 'Guru Fiqih & Hadits', ?, '06:30:45', 'tepat', '15:30:10', 'tepat', 'ESP32-GATE-01'),
-		('A1B2C303', 'Aisyah Nurul Hidayah', 'siswa', '11 IPS 2', ?, '07:15:20', 'telat', '15:00:15', 'tepat', 'ESP32-GATE-02'),
-		('A1B2C304', 'Ustadzah Fatimah Zahra, M.Pd', 'guru', 'Guru Bahasa Arab', ?, '06:40:10', 'tepat', '-', '-', 'ESP32-GATE-01'),
-		('A1B2C305', 'Fajar Dwi Santoso', 'siswa', '12 IPA 1', ?, '07:08:40', 'telat', '-', '-', 'ESP32-GATE-02'),
-		('A1B2C306', 'Zaid Bin Haritsah', 'siswa', '10 IPA 2', ?, '06:55:00', 'tepat', '15:10:00', 'tepat', 'ESP32-GATE-01'),
-		('A1B2C307', 'Khadijah Al-Kubra', 'siswa', '11 IPA 1', ?, '06:38:15', 'tepat', '15:00:00', 'tepat', 'ESP32-GATE-01'),
-		('A1B2C308', 'Ustadz Abdullah Yusuf, Lc', 'guru', 'Guru Tahfidz & Quran', ?, '06:20:00', 'tepat', '16:00:00', 'tepat', 'ESP32-GATE-01'),
-		('A1B2C301', 'Muhammad Rizky Pratama', 'siswa', '10 IPA 1', ?, '06:42:00', 'tepat', '15:00:00', 'tepat', 'ESP32-GATE-01'),
-		('A1B2C302', 'Ustadz Ahmad Fauzi, S.Pd.I', 'guru', 'Guru Fiqih & Hadits', ?, '06:28:00', 'tepat', '15:30:00', 'tepat', 'ESP32-GATE-01')
-	`, today, today, today, today, today, yesterday, yesterday, yesterday, twoDaysAgo, twoDaysAgo)
+	// Bersihkan presensi lama agar data baru bersih
+	db.Exec("DELETE FROM attendances")
 
-	log.Println("✅ Data dummy berhasil di-generate.")
+	db.Exec(`INSERT INTO attendances (uid, nama, tipe, kelas, tanggal, waktu_masuk, status_masuk, waktu_keluar, status_keluar, id_mesin) VALUES 
+		-- HARI INI (TODAY)
+		('0014829101', 'Ustadz Ahmad Fauzi, S.Pd.I', 'guru', 'Guru Fiqih & Hadits', ?, '06:30:15', 'tepat', '15:15:20', 'tepat', 'PRESENSI-V1'),
+		('0014829105', 'Hendra Wijaya, S.T.', 'guru', 'Manager IT & Operasional', ?, '06:45:10', 'tepat', '16:05:45', 'tepat', 'PRESENSI-V1'),
+		('0014829106', 'Siti Nurhaliza, S.E.', 'guru', 'Staf Keuangan & Bendahara', ?, '06:48:32', 'tepat', '-', '-', 'ESP32-GATE-01'),
+		('0014829107', 'Bambang Suryono, S.H.', 'guru', 'HRD & Personalia', ?, '07:18:04', 'telat', '-', '-', 'PRESENSI-V1'),
+		('0014829102', 'Ustadzah Fatimah Zahra, M.Pd', 'guru', 'Guru Bahasa Arab', ?, '06:52:19', 'tepat', '-', '-', 'ESP32-GATE-02'),
+		('0014829111', 'Muhammad Rizky Pratama', 'siswa', '10 IPA 1', ?, '06:40:22', 'tepat', '15:02:11', 'tepat', 'ESP32-GATE-01'),
+		('0014829112', 'Aisyah Nurul Hidayah', 'siswa', '11 IPS 2', ?, '07:12:45', 'telat', '15:05:00', 'tepat', 'PRESENSI-V1'),
+		('0014829113', 'Fajar Dwi Santoso', 'siswa', '12 IPA 1', ?, '07:05:18', 'telat', '-', '-', 'ESP32-GATE-02'),
+		('0014829114', 'Zaid Bin Haritsah', 'siswa', '10 IPA 2', ?, '06:35:50', 'tepat', '15:10:30', 'tepat', 'PRESENSI-V1'),
+		('0014829115', 'Khadijah Al-Kubra', 'siswa', '11 IPA 1', ?, '06:42:15', 'tepat', '-', '-', 'ESP32-GATE-01'),
+		('0014829117', 'Ali Bin Abi Thalib', 'siswa', 'Tahfidz A', ?, '06:25:00', 'tepat', '15:30:00', 'tepat', 'PRESENSI-V1'),
+
+		-- KEMARIN (YESTERDAY)
+		('0014829101', 'Ustadz Ahmad Fauzi, S.Pd.I', 'guru', 'Guru Fiqih & Hadits', ?, '06:28:40', 'tepat', '15:30:10', 'tepat', 'PRESENSI-V1'),
+		('0014829102', 'Ustadzah Fatimah Zahra, M.Pd', 'guru', 'Guru Bahasa Arab', ?, '06:39:15', 'tepat', '15:10:00', 'tepat', 'ESP32-GATE-02'),
+		('0014829105', 'Hendra Wijaya, S.T.', 'guru', 'Manager IT & Operasional', ?, '06:42:00', 'tepat', '16:00:00', 'tepat', 'PRESENSI-V1'),
+		('0014829106', 'Siti Nurhaliza, S.E.', 'guru', 'Staf Keuangan & Bendahara', ?, '06:50:00', 'tepat', '15:45:00', 'tepat', 'ESP32-GATE-01'),
+		('0014829111', 'Muhammad Rizky Pratama', 'siswa', '10 IPA 1', ?, '06:41:10', 'tepat', '15:00:00', 'tepat', 'ESP32-GATE-01'),
+		('0014829112', 'Aisyah Nurul Hidayah', 'siswa', '11 IPS 2', ?, '06:44:20', 'tepat', '15:00:00', 'tepat', 'PRESENSI-V1'),
+		('0014829113', 'Fajar Dwi Santoso', 'siswa', '12 IPA 1', ?, '06:58:00', 'tepat', '15:05:00', 'tepat', 'ESP32-GATE-02'),
+		('0014829116', 'Bilal Bin Rabah', 'siswa', '12 IPS 1', ?, '06:35:00', 'tepat', '15:00:00', 'tepat', 'PRESENSI-V1'),
+
+		-- 2 HARI LALU
+		('0014829101', 'Ustadz Ahmad Fauzi, S.Pd.I', 'guru', 'Guru Fiqih & Hadits', ?, '06:31:00', 'tepat', '15:30:00', 'tepat', 'PRESENSI-V1'),
+		('0014829105', 'Hendra Wijaya, S.T.', 'guru', 'Manager IT & Operasional', ?, '06:40:00', 'tepat', '16:00:00', 'tepat', 'PRESENSI-V1'),
+		('0014829111', 'Muhammad Rizky Pratama', 'siswa', '10 IPA 1', ?, '06:45:00', 'tepat', '15:00:00', 'tepat', 'ESP32-GATE-01'),
+		('0014829114', 'Zaid Bin Haritsah', 'siswa', '10 IPA 2', ?, '06:50:00', 'tepat', '15:10:00', 'tepat', 'PRESENSI-V1')
+	`, 
+		today, today, today, today, today, today, today, today, today, today, today,
+		yesterday, yesterday, yesterday, yesterday, yesterday, yesterday, yesterday, yesterday,
+		twoDaysAgo, twoDaysAgo, twoDaysAgo, twoDaysAgo)
+
+	log.Println("✅ Data dummy lengkap berhasil diperbarui.")
 }
 
 // -------------------------------------------------------------
@@ -2687,10 +2833,12 @@ func handleResetAll(w http.ResponseWriter, r *http.Request) {
 	db.Exec("DELETE FROM members")
 	db.Exec("DELETE FROM classes")
 	db.Exec("DELETE FROM positions")
+	db.Exec("DELETE FROM rfid_cards")
+	db.Exec("DELETE FROM fingerprints")
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "success",
-		"message": "Database berhasil di-reset total (Absensi, Anggota, Kelas, dan Jabatan telah dikosongkan).",
+		"message": "Database berhasil di-reset total (Absensi, Anggota, Kelas, Jabatan, RFID, dan Sidik Jari telah dikosongkan).",
 	})
 }
 
