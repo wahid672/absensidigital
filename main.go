@@ -35,7 +35,7 @@ var (
 	adminUser  = getEnv("ADMIN_USER", "admin")
 	adminPass  = getEnv("ADMIN_PASS", "admin123")
 	serverPort = getEnv("PORT", "8080")
-	dbPath     = getEnv("DB_PATH", "data/absensi.db")
+	dbPath     = getDBPath()
 	db         *sql.DB
 	dbMutex    sync.RWMutex
 	sseClients = make(map[chan string]bool)
@@ -316,9 +316,9 @@ func initDatabase() {
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_admin_chat_ids', '')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_notify_admin', '1')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_admin', '📋 *LIVE MONITOR PRESENSI ADMIN*\n👤 Nama: *{nama}*\n🏷️ Tipe: {tipe}\n🏫 Kelas/Jabatan: {kelas}\n🔄 Aksi: *{aksi}* ({status})\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📍 Mesin: {id_mesin}\n_{instansi}_')")
-	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_in', '🔔 *NOTIFIKASI PRESENSI MASUK*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nAlhamdulillah, santri telah tiba dan melakukan absensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_')")
-	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_out', '🔔 *NOTIFIKASI PRESENSI PULANG*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri telah melakukan absensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_')")
-	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_late', '⚠️ *PERINGATAN KETERLAMBATAN*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri tercatat terlambat melakukan absensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_in', '🔔 *NOTIFIKASI PRESENSI MASUK*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nAlhamdulillah, santri telah tiba dan melakukan presensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_out', '🔔 *NOTIFIKASI PRESENSI PULANG*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri telah melakukan presensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_late', '⚠️ *PERINGATAN KETERLAMBATAN*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri tercatat terlambat melakukan presensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_')")
 
 	seedInitialData()
 }
@@ -395,7 +395,7 @@ func seedInitialData() {
 }
 
 func seedDummyData() {
-	log.Println("🌱 Memasukkan seed data dummy lengkap (RFID 10 angka, Sidik Jari, Pegawai/Santri & Absensi)...")
+	log.Println("🌱 Memasukkan seed data dummy lengkap (RFID 10 angka, Sidik Jari, Pegawai/Santri & Presensi)...")
 
 	// 1. Devices
 	devices := []DeviceInfo{
@@ -887,7 +887,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		Token:   token,
 		User: User{
 			Username: req.Username,
-			Name:     "Administrator Absensi",
+			Name:     "Administrator Presensi",
 			Role:     "admin",
 		},
 	}
@@ -996,7 +996,7 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 			a.UID, a.Nama, a.Tipe, a.Kelas, a.Tanggal, a.WaktuMasuk, a.StatusMasuk, a.WaktuKeluar, a.StatusKeluar, a.DeviceID)
 
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Gagal menyimpan absensi: %v", err))
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Gagal menyimpan presensi: %v", err))
 			return
 		}
 
@@ -1005,13 +1005,13 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
 			"status":  "success",
-			"message": "Data absensi berhasil ditambahkan secara manual",
+			"message": "Data presensi berhasil ditambahkan secara manual",
 			"data":    a,
 		})
 
 	case http.MethodPut:
 		if isDemoMode() {
-			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Pengeditan data absensi dinonaktifkan dalam Versi Demo.")
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Pengeditan data presensi dinonaktifkan dalam Versi Demo.")
 			return
 		}
 
@@ -1022,7 +1022,7 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if a.ID == 0 {
-			writeJSONError(w, http.StatusBadRequest, "ID Absensi wajib disertakan.")
+			writeJSONError(w, http.StatusBadRequest, "ID Presensi wajib disertakan.")
 			return
 		}
 
@@ -1030,19 +1030,19 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 			a.UID, a.Nama, a.Tipe, a.Kelas, a.Tanggal, a.WaktuMasuk, a.StatusMasuk, a.WaktuKeluar, a.StatusKeluar, a.DeviceID, a.ID)
 
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Gagal memperbarui absensi: %v", err))
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Gagal memperbarui presensi: %v", err))
 			return
 		}
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status":  "success",
-			"message": "Data absensi berhasil diperbarui",
+			"message": "Data presensi berhasil diperbarui",
 			"data":    a,
 		})
 
 	case http.MethodDelete:
 		if isDemoMode() {
-			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Penghapusan data absensi dinonaktifkan dalam Versi Demo.")
+			writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Penghapusan data presensi dinonaktifkan dalam Versi Demo.")
 			return
 		}
 
@@ -1055,13 +1055,13 @@ func handleAttendance(w http.ResponseWriter, r *http.Request) {
 
 		_, err = db.Exec("DELETE FROM attendances WHERE id = ?", id)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "Gagal menghapus data absensi.")
+			writeJSONError(w, http.StatusInternalServerError, "Gagal menghapus data presensi.")
 			return
 		}
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status":  "success",
-			"message": "Data absensi berhasil dihapus",
+			"message": "Data presensi berhasil dihapus",
 		})
 
 	default:
@@ -1139,7 +1139,7 @@ func handleAttendanceSummary(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := db.Query(sqlQuery, args...)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Query summary absensi gagal: %v", err))
+		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Query summary presensi gagal: %v", err))
 		return
 	}
 	defer rows.Close()
@@ -1581,7 +1581,7 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 			VALUES (?, ?, ?, ?, ?, ?, ?, '-', '-', ?)`,
 			member.UID, member.Nama, member.Tipe, member.Kelas, tDate, tTime, statusMasuk, req.DeviceID)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "Gagal mencatat absensi masuk.")
+			writeJSONError(w, http.StatusInternalServerError, "Gagal mencatat presensi masuk.")
 			return
 		}
 
@@ -2802,19 +2802,19 @@ func handleResetAttendance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isDemoMode() {
-		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Reset data absensi dinonaktifkan dalam Versi Demo.")
+		writeJSONError(w, http.StatusForbidden, "Aksi ditolak: Reset data presensi dinonaktifkan dalam Versi Demo.")
 		return
 	}
 
 	_, err := db.Exec("DELETE FROM attendances")
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Gagal mereset data absensi.")
+		writeJSONError(w, http.StatusInternalServerError, "Gagal mereset data presensi.")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "success",
-		"message": "Seluruh riwayat data absensi berhasil dikosongkan.",
+		"message": "Seluruh riwayat data presensi berhasil dikosongkan.",
 	})
 }
 
@@ -2838,7 +2838,7 @@ func handleResetAll(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "success",
-		"message": "Database berhasil di-reset total (Absensi, Anggota, Kelas, Jabatan, RFID, dan Sidik Jari telah dikosongkan).",
+		"message": "Database berhasil di-reset total (Presensi, Anggota, Kelas, Jabatan, RFID, dan Sidik Jari telah dikosongkan).",
 	})
 }
 
@@ -2858,7 +2858,7 @@ func handleSeedDummy(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "success",
-		"message": "Data dummy santri, guru, kelas, jabatan, dan riwayat absensi berhasil di-generate.",
+		"message": "Data dummy santri, guru, kelas, jabatan, dan riwayat presensi berhasil di-generate.",
 	})
 }
 
@@ -2875,7 +2875,7 @@ func handleBackupDB(w http.ResponseWriter, r *http.Request) {
 	}
 
 	timestamp := time.Now().Format("20060102_150405")
-	backupFilename := fmt.Sprintf("backup_absensi_%s.db", timestamp)
+	backupFilename := fmt.Sprintf("backup_presensi_%s.db", timestamp)
 
 	// Buat file snapshot sementara menggunakan VACUUM INTO
 	tempDir := os.TempDir()
@@ -3056,7 +3056,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":    "ok",
 		"database":  "connected",
 		"timestamp": time.Now().Format(time.RFC3339),
-		"app":       "PresensiRFID - Sistem Absensi Fingerprint & RFID",
+		"app":       "PresensiRFID - Sistem Presensi Fingerprint & RFID",
 		"demo_mode": isDemoMode(),
 	})
 }
@@ -3414,7 +3414,7 @@ func handleTelegramSendTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Pesan == "" {
-		req.Pesan = "🔔 *TES NOTIFIKASI TELEGRAM*\nAssalamu'alaikum Wr. Wb.\nIni adalah pesan uji coba (test) notifikasi absensi dari sistem PresensiRFID.\n\nStatus: *Berhasil Terhubung! ✅*"
+		req.Pesan = "🔔 *TES NOTIFIKASI TELEGRAM*\nAssalamu'alaikum Wr. Wb.\nIni adalah pesan uji coba (test) notifikasi presensi dari sistem PresensiRFID.\n\nStatus: *Berhasil Terhubung! ✅*"
 	}
 
 	chatIDs := parseTelegramChatIDs(req.ChatID)
@@ -3637,6 +3637,16 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+func getDBPath() string {
+	if val := os.Getenv("DB_PATH"); val != "" {
+		return val
+	}
+	if _, err := os.Stat("data/absensi.db"); err == nil {
+		return "data/absensi.db"
+	}
+	return "data/presensi.db"
+}
+
 func isDemoMode() bool {
 	val := strings.ToLower(strings.TrimSpace(getEnv("DEMO_MODE", "false")))
 	return val == "true" || val == "1" || val == "yes"
@@ -3690,7 +3700,7 @@ func main() {
 	handler := corsMiddleware(mux)
 
 	log.Printf("===============================================================")
-	log.Printf("🚀 PresensiRFID - Sistem Absensi Fingerprint & RFID")
+	log.Printf("🚀 PresensiRFID - Sistem Presensi Fingerprint & RFID")
 	log.Printf("📡 Server: http://0.0.0.0:%s", serverPort)
 	log.Printf("🗄️ Database: %s", dbPath)
 	log.Printf("🔐 Admin Login: %s / %s", adminUser, adminPass)

@@ -257,7 +257,7 @@ export default function ModalAttendance({
 
             <div>
               <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                Tanggal Absensi <span className="text-rose-500">*</span>
+                Tanggal Presensi <span className="text-rose-500">*</span>
               </label>
               <input 
                 type="date" 
@@ -345,7 +345,7 @@ export default function ModalAttendance({
               disabled={loading}
               className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-xl shadow-md transition-all disabled:opacity-50"
             >
-              {loading ? 'Menyimpan...' : (isEdit ? 'Simpan Perubahan' : 'Simpan Absensi')}
+              {loading ? 'Menyimpan...' : (isEdit ? 'Simpan Perubahan' : 'Simpan Presensi')}
             </button>
           </div>
         </form>

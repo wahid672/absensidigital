@@ -121,7 +121,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm no-print space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div>
-            <h3 className="font-bold text-slate-800 text-base">Cetak Rekap Laporan Absensi (PDF / Print)</h3>
+            <h3 className="font-bold text-slate-800 text-base">Cetak Rekap Laporan Presensi (PDF / Print)</h3>
             <p className="text-xs text-slate-500">Pilih format laporan total kehadiran atau log rincian harian/bulanan</p>
           </div>
           <button 
@@ -192,7 +192,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
         {mode === 'harian' && (
           <div className="pt-2 border-t border-slate-100 flex items-center gap-3">
             <div className="w-full sm:w-64">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Pilih Tanggal Absensi</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Pilih Tanggal Presensi</label>
               <input 
                 type="date" 
                 value={tanggal} 
@@ -292,7 +292,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
                 {settings.instansi_nama || (isUmum ? 'INSTANSI / PERUSAHAAN' : 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')}
               </h1>
               <p className="text-xs font-semibold text-slate-700 mt-1">
-                PresensiRFID - Sistem Absensi Fingerprint & RFID
+                PresensiRFID - Sistem Presensi Fingerprint & RFID
               </p>
               <p className="text-[11px] text-slate-600 mt-0.5">
                 Alamat: {settings.instansi_alamat || 'Jl. Kantor Digital No. 01'} • Wilayah: {kotaInstansi}
@@ -325,7 +325,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
           </div>
           <div className="text-right mt-2 sm:mt-0">
             <p>Dicetak Pada: <span className="font-semibold">{new Date().toLocaleString('id-ID')}</span></p>
-            <p>Petugas: <span className="font-semibold">Administrator Absensi</span></p>
+            <p>Petugas: <span className="font-semibold">Administrator Presensi</span></p>
           </div>
         </div>
 
@@ -391,7 +391,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
               {data.length === 0 ? (
                 <tr>
                   <td colSpan="9" className="py-6 text-center text-slate-400">
-                    Tidak ada data absensi untuk periode/kategori ini.
+                    Tidak ada data presensi untuk periode/kategori ini.
                   </td>
                 </tr>
               ) : (
@@ -429,7 +429,7 @@ export default function CetakView({ settings = {}, classes = [], positions = [] 
           <div className="text-center">
             <p>{kotaInstansi}, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
             <p className="font-semibold mb-16">Petugas Administrator Presensi</p>
-            <p className="font-bold underline">( Administrator Absensi )</p>
+            <p className="font-bold underline">( Administrator Presensi )</p>
           </div>
         </div>
       </div>

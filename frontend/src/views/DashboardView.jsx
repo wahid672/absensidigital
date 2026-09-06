@@ -133,7 +133,7 @@ export default function DashboardView({
     }
     Swal.fire({
       title: 'Hapus Data Presensi?',
-      html: `Apakah Anda yakin ingin menghapus data absensi <b>${nama}</b>?`,
+      html: `Apakah Anda yakin ingin menghapus data presensi <b>${nama}</b>?`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#e11d48',
@@ -182,7 +182,7 @@ export default function DashboardView({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `rekap_absensi_${tanggal}.csv`);
+    link.setAttribute('download', `rekap_presensi_${tanggal}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -426,7 +426,7 @@ export default function DashboardView({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-primary-600" />
-            <span className="font-bold text-slate-800 text-sm">Filter & Manajemen Data Absensi</span>
+            <span className="font-bold text-slate-800 text-sm">Filter & Manajemen Data Presensi</span>
           </div>
           <div className="flex items-center gap-2">
             <button 
@@ -449,7 +449,7 @@ export default function DashboardView({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
           <div className="lg:col-span-4">
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Tanggal Absensi</label>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Tanggal Presensi</label>
             <input 
               type="date" 
               value={tanggal} 
@@ -569,7 +569,7 @@ export default function DashboardView({
               ) : filteredData.length === 0 ? (
                 <tr>
                   <td colSpan="10" className="py-12 text-center text-slate-400 text-xs">
-                    Belum ada data absensi untuk filter ini.
+                    Belum ada data presensi untuk filter ini.
                   </td>
                 </tr>
               ) : (

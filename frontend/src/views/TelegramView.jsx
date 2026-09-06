@@ -306,13 +306,13 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
           setTemplateOut("🔔 *NOTIFIKASI PRESENSI PULANG*\nYth. Rekan *{nama}*\n\nPresensi pulang berhasil tercatat:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih atas dedikasi Anda hari ini.\n_{instansi}_");
           setTemplateLate("⚠️ *PERINGATAN KETERLAMBATAN*\nYth. Rekan *{nama}*\n\nAnda tercatat terlambat melakukan presensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nHarap konfirmasi ke bagian administrasi/SDM jika ada kendala.\n_{instansi}_");
         } else if (isPesantren) {
-          setTemplateIn("🔔 *NOTIFIKASI PRESENSI MASUK*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nAlhamdulillah, santri telah tiba dan melakukan absensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
-          setTemplateOut("🔔 *NOTIFIKASI PRESENSI PULANG*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri telah melakukan absensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
-          setTemplateLate("⚠️ *PERINGATAN KETERLAMBATAN*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri tercatat terlambat melakukan absensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_");
+          setTemplateIn("🔔 *NOTIFIKASI PRESENSI MASUK*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nAlhamdulillah, santri telah tiba dan melakukan presensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
+          setTemplateOut("🔔 *NOTIFIKASI PRESENSI PULANG*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri telah melakukan presensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
+          setTemplateLate("⚠️ *PERINGATAN KETERLAMBATAN*\nAssalamu'alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri tercatat terlambat melakukan presensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_");
         } else {
-          setTemplateIn("🔔 *NOTIFIKASI PRESENSI MASUK*\nYth. Orang Tua/Wali dari *{nama}*\n\nSiswa telah tiba di sekolah dan melakukan absensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
-          setTemplateOut("🔔 *NOTIFIKASI PRESENSI PULANG*\nYth. Orang Tua/Wali dari *{nama}*\n\nSiswa telah melakukan absensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
-          setTemplateLate("⚠️ *PERINGATAN KETERLAMBATAN*\nYth. Orang Tua/Wali dari *{nama}*\n\nSiswa tercatat terlambat melakukan absensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_");
+          setTemplateIn("🔔 *NOTIFIKASI PRESENSI MASUK*\nYth. Orang Tua/Wali dari *{nama}*\n\nSiswa telah tiba di sekolah dan melakukan presensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
+          setTemplateOut("🔔 *NOTIFIKASI PRESENSI PULANG*\nYth. Orang Tua/Wali dari *{nama}*\n\nSiswa telah melakukan presensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_");
+          setTemplateLate("⚠️ *PERINGATAN KETERLAMBATAN*\nYth. Orang Tua/Wali dari *{nama}*\n\nSiswa tercatat terlambat melakukan presensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_");
         }
         setTemplateAdmin("📋 *LIVE MONITOR PRESENSI ADMIN*\n👤 Nama: *{nama}*\n🏷️ Tipe: {tipe}\n🏫 Divisi/Kelas: {kelas}\n🔄 Aksi: *{aksi}* ({status})\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📍 Mesin: {id_mesin}\n_{instansi}_");
         Swal.fire({
@@ -393,7 +393,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
     setTestTargetChatID(targetChatID);
     setTestTargetNama(targetNama);
     setTestMessageText(
-      `🔔 *TES NOTIFIKASI TELEGRAM*\nAssalamu'alaikum Wr. Wb.\nYth. ${targetNama ? `Wali dari *${targetNama}*` : 'Pengguna'}\n\nIni adalah pesan uji coba (test) notifikasi absensi dari sistem ${settings.instansi_nama || 'PresensiRFID'}.\n\nStatus: *Berhasil Terhubung! ✅*`
+      `🔔 *TES NOTIFIKASI TELEGRAM*\nAssalamu'alaikum Wr. Wb.\nYth. ${targetNama ? `Wali dari *${targetNama}*` : 'Pengguna'}\n\nIni adalah pesan uji coba (test) notifikasi presensi dari sistem ${settings.instansi_nama || 'PresensiRFID'}.\n\nStatus: *Berhasil Terhubung! ✅*`
     );
     setTestModalOpen(true);
   };
@@ -491,7 +491,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
               <span>Notifikasi Telegram</span>
             </h3>
             <p className="text-xs text-slate-500">
-              Konfigurasi Bot Telegram resmi untuk pengiriman notifikasi absensi otomatis ke {labelWali} & {labelGuru}
+              Konfigurasi Bot Telegram resmi untuk pengiriman notifikasi presensi otomatis ke {labelWali} & {labelGuru}
             </p>
           </div>
 
@@ -604,7 +604,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
               <li>User/Penerima pesan harus membuka bot Telegram yang telah dibuat.</li>
               <li>Klik tombol <b>'START'</b> atau kirim pesan <b>'/start'</b> pada bot tersebut.</li>
               <li>Hal ini diperlukan agar sistem dapat mengirimkan notifikasi melalui Telegram.</li>
-              <li>Setiap pesan notifikasi absensi akan otomatis dikirimkan saat santri/pegawai tap kartu RFID atau sidik jari di mesin presensi.</li>
+              <li>Setiap pesan notifikasi presensi akan otomatis dikirimkan saat santri/pegawai tap kartu RFID atau sidik jari di mesin presensi.</li>
             </ol>
           </div>
 
@@ -770,7 +770,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                     </span>
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Kirim notifikasi absensi realtime ke beberapa Chat ID Admin/Pimpinan sekaligus saat ada yang tap di mesin
+                    Kirim notifikasi presensi realtime ke beberapa Chat ID Admin/Pimpinan sekaligus saat ada yang tap di mesin
                   </p>
                 </div>
               </div>
@@ -804,7 +804,7 @@ export default function TelegramView({ settings = {}, onSettingsUpdated, appMode
                 className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3.5 text-xs font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white leading-relaxed"
               />
               <p className="text-[11px] text-slate-500">
-                Masukkan ID Telegram Admin lembaga. Semua admin yang terdaftar di sini akan menerima update live absensi secara otomatis.
+                Masukkan ID Telegram Admin lembaga. Semua admin yang terdaftar di sini akan menerima update live presensi secara otomatis.
               </p>
             </div>
 

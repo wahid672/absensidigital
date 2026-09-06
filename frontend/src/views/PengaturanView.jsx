@@ -299,16 +299,16 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
 
   const handleResetAttendance = () => {
     if (isDemoActive) {
-      showDemoAlert('Mereset riwayat data absensi');
+      showDemoAlert('Mereset riwayat data presensi');
       return;
     }
     Swal.fire({
-      title: 'Hapus Semua Data Absensi?',
+      title: 'Hapus Semua Data Presensi?',
       text: 'Seluruh riwayat kehadiran akan dikosongkan. Data master santri/siswa, guru, kelas, dan jabatan TIDAK akan terhapus.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#d97706',
-      confirmButtonText: 'Ya, Kosongkan Absensi',
+      confirmButtonText: 'Ya, Kosongkan Presensi',
       cancelButtonText: 'Batal'
     }).then(async (result) => {
       if (result.isConfirmed) {
@@ -319,7 +319,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
             Swal.fire({ icon: 'success', title: 'Dibersihkan', text: data.message, timer: 1800, showConfirmButton: false });
           }
         } catch (e) {
-          Swal.fire('Error', 'Gagal mereset data absensi.', 'error');
+          Swal.fire('Error', 'Gagal mereset data presensi.', 'error');
         }
       }
     });
@@ -332,7 +332,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     }
     Swal.fire({
       title: 'Reset Total Database?',
-      html: '<span class="text-rose-600 font-bold">PERINGATAN!</span> Tindakan ini akan menghapus SEMUA data santri/siswa, guru, kelas, jabatan, dan riwayat absensi. Database akan kembali kosong.',
+      html: '<span class="text-rose-600 font-bold">PERINGATAN!</span> Tindakan ini akan menghapus SEMUA data santri/siswa, guru, kelas, jabatan, dan riwayat presensi. Database akan kembali kosong.',
       icon: 'error',
       showCancelButton: true,
       confirmButtonColor: '#e11d48',
@@ -380,7 +380,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
 
       const blob = await res.blob();
       const disposition = res.headers.get('Content-Disposition');
-      let filename = 'backup_absensi.db';
+      let filename = 'backup_presensi.db';
       if (disposition && disposition.includes('filename=')) {
         const matches = disposition.match(/filename="?([^"]+)"?/);
         if (matches && matches[1]) {
@@ -483,7 +483,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
 
   const isAutoRegisterOn = formData.auto_register_card === '1';
   const isPesantren = formData.app_mode === 'pesantren';
-  const currentBaseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://absensi.smartapps.my.id';
+  const currentBaseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://presensi.smartapps.my.id';
   const tapEndpointUrl = `${currentBaseUrl}/api/attendance/tap`;
   const currentApiKey = isDemoActive 
     ? '••••••••••••••••••••••••••••••••••••••••••••••••' 
@@ -1054,7 +1054,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                 className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold shadow transition-all"
               >
                 <Broom className="w-4 h-4" />
-                <span>Hapus Seluruh Riwayat Absensi Saja</span>
+                <span>Hapus Seluruh Riwayat Presensi Saja</span>
               </button>
 
               <button 
@@ -1063,7 +1063,7 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                 className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow transition-all"
               >
                 <Trash2 className="w-4 h-4" />
-                <span>Reset Total Database (Absensi, Anggota, Kelas & Posisi)</span>
+                <span>Reset Total Database (Presensi, Anggota, Kelas & Posisi)</span>
               </button>
             </div>
           </div>

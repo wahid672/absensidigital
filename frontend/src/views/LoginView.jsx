@@ -83,7 +83,7 @@ export default function LoginView({ onLoginSuccess, demoMode = null }) {
           <h1 className="text-2xl font-black text-white tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
             PresensiRFID
           </h1>
-          <p className="text-slate-400 text-xs mt-1 font-medium">Sistem Absensi Fingerprint & RFID</p>
+          <p className="text-slate-400 text-xs mt-1 font-medium">Sistem Presensi Fingerprint & RFID</p>
         </div>
 
         <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-white/20">

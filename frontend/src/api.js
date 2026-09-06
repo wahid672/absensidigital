@@ -1,5 +1,5 @@
-const STORAGE_KEY_TOKEN = 'absensi_jwt_token';
-const STORAGE_KEY_USER = 'absensi_user_info';
+const STORAGE_KEY_TOKEN = 'presensi_jwt_token';
+const STORAGE_KEY_USER = 'presensi_user_info';
 
 export function getApiBaseUrl() {
   if (typeof window !== 'undefined' && window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('file:')) {
@@ -9,12 +9,12 @@ export function getApiBaseUrl() {
 }
 
 export function getAuthToken() {
-  return localStorage.getItem(STORAGE_KEY_TOKEN);
+  return localStorage.getItem(STORAGE_KEY_TOKEN) || localStorage.getItem('absensi_jwt_token');
 }
 
 export function getUserInfo() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY_USER) || '{}');
+    return JSON.parse(localStorage.getItem(STORAGE_KEY_USER) || localStorage.getItem('absensi_user_info') || '{}');
   } catch {
     return {};
   }
@@ -28,6 +28,8 @@ export function setAuth(token, user) {
 export function clearAuth() {
   localStorage.removeItem(STORAGE_KEY_TOKEN);
   localStorage.removeItem(STORAGE_KEY_USER);
+  localStorage.removeItem('absensi_jwt_token');
+  localStorage.removeItem('absensi_user_info');
 }
 
 export async function apiFetch(endpoint, options = {}) {

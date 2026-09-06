@@ -353,7 +353,7 @@ export default function CardsView({
           </h4>
           <p className="mt-0.5 text-slate-600">
             {autoRegister 
-              ? 'Ketika kartu RFID yang belum terdaftar di-tap pada mesin, sistem akan merekam nomor UID kartu ke antrean tabel di bawah ini tanpa langsung mencatat absensi. Anda dapat menghubungkan kartu tersebut ke anggota kapan saja.' 
+              ? 'Ketika kartu RFID yang belum terdaftar di-tap pada mesin, sistem akan merekam nomor UID kartu ke antrean tabel di bawah ini tanpa langsung mencatat presensi. Anda dapat menghubungkan kartu tersebut ke anggota kapan saja.' 
               : 'Kartu RFID yang belum terdaftar tidak akan dicatat dan akan ditolak oleh mesin presensi.'}
           </p>
         </div>
