@@ -140,6 +140,30 @@ struct CachedMember {
   bool found;
 };
 
+// Struktur Evaluasi Status Presensi Offline (Tepat / Telat / Pulang)
+struct OfflineAttendanceResult {
+  String statusMasuk;   // "tepat", "telat", "-"
+  String statusKeluar;  // "tepat", "cepat", "-"
+  String displayLine2;  // Teks baris ke-2 LCD
+  bool isLate;          // Pemicu nada buzzer peringatan
+};
+
+// Struktur Konfigurasi Jadwal Batas Presensi Mesin
+struct ScheduleConfig {
+  int inHour;             // Batas jam masuk (default 7)
+  int inMin;              // Batas menit masuk (default 0)
+  int outHour;            // Batas jam pulang (default 15)
+  int outMin;             // Batas menit pulang (default 0)
+  String instansiNama;    // Nama instansi / ponpes
+  bool isLoaded;          // Status apakah jadwal tersimpan
+};
+
+ScheduleConfig scheduleConfig = { 7, 0, 15, 0, "Presensi Digital", false };
+
+// Forward Declarations untuk fungsi yang mengembalikan custom struct
+OfflineAttendanceResult evaluateAttendanceOffline();
+CachedMember findMemberOffline(int fingerId, String rfidTag);
+
 // Variabel Tap Kartu Master
 unsigned long lastMasterTapTime = 0;
 int masterTapCount = 0;
@@ -311,20 +335,6 @@ void syncRTCFromNTP() {
   }
 }
 
-// =========================================================================
-// STRUKTUR JADWAL & WAKTU PRESENSI (UNDUH DARI SERVER & SIMPAN DI MESIN)
-// =========================================================================
-struct ScheduleConfig {
-  int inHour;             // Batas jam masuk (default 7)
-  int inMin;              // Batas menit masuk (default 0)
-  int outHour;            // Batas jam pulang (default 15)
-  int outMin;             // Batas menit pulang (default 0)
-  String instansiNama;    // Nama instansi / ponpes
-  bool isLoaded;          // Status apakah jadwal tersimpan
-};
-
-ScheduleConfig scheduleConfig = { 7, 0, 15, 0, "Presensi Digital", false };
-
 // Muat jadwal batas jam masuk & pulang dari NVS Preferences lokal saat mesin menyala
 void loadScheduleConfigFromNVS() {
   preferences.begin("presensi_cfg", false);
@@ -426,13 +436,6 @@ void fetchScheduleFromServer() {
 }
 
 // 6. Evaluasi Status Presensi Offline (Tepat / Telat / Pulang Cepat) Berdasarkan Jam Sekarang
-struct OfflineAttendanceResult {
-  String statusMasuk;   // "tepat", "telat", "-"
-  String statusKeluar;  // "tepat", "cepat", "-"
-  String displayLine2;  // Teks baris ke-2 LCD
-  bool isLate;          // Pemicu nada buzzer peringatan
-};
-
 OfflineAttendanceResult evaluateAttendanceOffline() {
   OfflineAttendanceResult res;
   res.statusMasuk = "-";
