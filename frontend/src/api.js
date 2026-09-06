@@ -47,9 +47,15 @@ export async function apiFetch(endpoint, options = {}) {
   const response = await fetch(url, { ...options, headers });
 
   if (response.status === 401) {
-    clearAuth();
-    window.location.reload();
-    throw new Error('Sesi telah berakhir, silakan login kembali.');
+    // Jangan reload jika request adalah /api/login (agar pesan login gagal tidak berkedip)
+    if (!endpoint.includes('/api/login')) {
+      clearAuth();
+      if (token && typeof window !== 'undefined') {
+        window.history.replaceState({}, '', '/login');
+        window.location.reload();
+      }
+      throw new Error('Sesi telah berakhir, silakan login kembali.');
+    }
   }
 
   return response;

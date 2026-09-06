@@ -67,12 +67,28 @@ export default function App() {
   // Sync route on browser Back / Forward buttons (popstate)
   useEffect(() => {
     const handlePopState = () => {
+      if (!getAuthToken()) {
+        setIsAuthenticated(false);
+        if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+          window.history.replaceState({}, '', '/login');
+        }
+        return;
+      }
       const targetTab = getTabFromPath();
       setCurrentTabState(targetTab);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  // Redirect to /login if unauthenticated and on a protected route
+  useEffect(() => {
+    if (!isAuthenticated) {
+      if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+        window.history.replaceState({}, '', '/login');
+      }
+    }
+  }, [isAuthenticated]);
 
   const [membersCache, setMembersCache] = useState([]);
   const [classesCache, setClassesCache] = useState([]);
@@ -255,14 +271,16 @@ export default function App() {
   const handleLoginSuccess = () => {
     setIsAuthenticated(true);
     setUser(getUserInfo());
-    const initialTab = getTabFromPath();
-    setCurrentTab(initialTab);
+    setCurrentTab('dashboard');
   };
 
   const handleLogout = () => {
     clearAuth();
     setIsAuthenticated(false);
     setUser({});
+    if (window.location.pathname !== '/login') {
+      window.history.replaceState({}, '', '/login');
+    }
   };
 
   if (!isAuthenticated) {
