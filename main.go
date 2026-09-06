@@ -3052,13 +3052,18 @@ func handleDevices(w http.ResponseWriter, r *http.Request) {
 
 // 10. GET /api/health
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"status":    "ok",
 		"database":  "connected",
 		"timestamp": time.Now().Format(time.RFC3339),
 		"app":       "PresensiRFID - Sistem Presensi Fingerprint & RFID",
 		"demo_mode": isDemoMode(),
-	})
+	}
+	if isDemoMode() {
+		resp["demo_user"] = adminUser
+		resp["demo_pass"] = adminPass
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // -------------------------------------------------------------

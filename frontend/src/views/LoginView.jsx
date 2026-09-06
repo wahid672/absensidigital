@@ -6,8 +6,9 @@ import AppLogo from '../components/AppLogo';
 
 export default function LoginView({ onLoginSuccess, demoMode = null }) {
   const [isDemo, setIsDemo] = useState(demoMode === true);
-  const [username, setUsername] = useState(demoMode ? 'admin' : '');
-  const [password, setPassword] = useState(demoMode ? 'admin123' : '');
+  const [demoCreds, setDemoCreds] = useState({ username: '', password: '' });
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -18,8 +19,11 @@ export default function LoginView({ onLoginSuccess, demoMode = null }) {
         const demoActive = data.demo_mode === true || data.demo_mode === 'true';
         setIsDemo(demoActive);
         if (demoActive) {
-          setUsername(prev => prev || 'admin');
-          setPassword(prev => prev || 'admin123');
+          const u = data.demo_user || 'admin';
+          const p = data.demo_pass || 'admin123';
+          setDemoCreds({ username: u, password: p });
+          setUsername(u);
+          setPassword(p);
         } else {
           setUsername('');
           setPassword('');
@@ -98,7 +102,17 @@ export default function LoginView({ onLoginSuccess, demoMode = null }) {
                 <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
                 <span className="font-bold">Mode Demo Aktif</span>
               </div>
-              <span className="text-[11px] text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded font-mono font-semibold">admin / admin123</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername(demoCreds.username);
+                  setPassword(demoCreds.password);
+                }}
+                className="text-[11px] text-amber-700 bg-amber-100/70 hover:bg-amber-200/80 px-2 py-0.5 rounded font-mono font-semibold transition-colors cursor-pointer"
+                title="Klik untuk mengisi otomatis"
+              >
+                {demoCreds.username || 'admin'} / {demoCreds.password || 'admin123'}
+              </button>
             </div>
           )}
 
@@ -114,9 +128,9 @@ export default function LoginView({ onLoginSuccess, demoMode = null }) {
                 <input 
                   type="text" 
                   value={username} 
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => setUsername(e.target.value)} 
                   required 
-                  placeholder={isDemo ? "admin" : ""} 
+                  placeholder={isDemo ? (demoCreds.username || "admin") : "Masukkan username"} 
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
               </div>
@@ -133,9 +147,9 @@ export default function LoginView({ onLoginSuccess, demoMode = null }) {
                 <input 
                   type={showPassword ? 'text' : 'password'} 
                   value={password} 
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)} 
                   required 
-                  placeholder={isDemo ? "••••••••" : ""} 
+                  placeholder={isDemo ? (demoCreds.password || "••••••••") : "••••••••"} 
                   className="w-full pl-10 pr-11 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
                 <button 
