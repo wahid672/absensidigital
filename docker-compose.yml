@@ -20,7 +20,7 @@ services:
       - TZ=Asia/Jakarta
       - DEMO_MODE=false # Ubah ke 'true' untuk mengaktifkan Versi Demo (read-only master data & pengaturan)
     labels:
-      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.scope=presensi"
 
 networks:
   caddy_net:

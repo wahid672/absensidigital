@@ -13,7 +13,7 @@ services:
       - WATCHTOWER_CLEANUP=true                 # Hapus image lama otomatis setelah update agar hemat disk VPS
       - WATCHTOWER_POLL_INTERVAL=300            # Interval pengecekan ke GHCR (dalam detik, 300 = 5 menit)
       - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_LABEL_ENABLE=true            # Otomatis pantau SEMUA container presensi (presensi-demo, presensi-almukmin, presensi-ptals, dll) yang memiliki label watchtower
+      - WATCHTOWER_SCOPE=presensi               # Scope khusus: HANYA pantau container dengan label scope=presensi (100% aman dari aplikasi lain di VPS)
       - TZ=Asia/Jakarta
 
       # (Opsional) Notifikasi Telegram instan saat Watchtower berhasil memperbarui aplikasi:

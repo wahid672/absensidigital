@@ -107,7 +107,7 @@ services:
       - TZ=Asia/Jakarta
       - DEMO_MODE=false # Ubah ke 'true' untuk Versi Demo
     labels:
-      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.scope=presensi"
 
 networks:
   caddy_net:
@@ -158,7 +158,7 @@ services:
       - JWT_SECRET=secret_demo_2026
       - DEMO_MODE=true
     labels:
-      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.scope=presensi"
 
   # Instance 2: Pesantren Al-Mukmin
   presensi-almukmin:
@@ -177,7 +177,7 @@ services:
       - JWT_SECRET=secret_almukmin_2026
       - DEMO_MODE=false
     labels:
-      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.scope=presensi"
 
   # Instance 3: Perusahaan PT ALS
   presensi-ptals:
@@ -196,7 +196,7 @@ services:
       - JWT_SECRET=secret_ptals_2026
       - DEMO_MODE=false
     labels:
-      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.scope=presensi"
 
 networks:
   caddy_net:
@@ -215,7 +215,9 @@ volumes:
 
 ### 🔄 Otomatisasi Auto-Update Menggunakan Watchtower (`docker-compose.watchtower.yml`)
 
-Watchtower dikonfigurasi dengan `WATCHTOWER_LABEL_ENABLE=true` sehingga **secara otomatis memantau dan meng-update SEMUA container presensi** (`presensi-app`, `presensi-demo`, `presensi-almukmin`, `presensi-ptals`, dll) yang memiliki label `com.centurylinklabs.watchtower.enable=true` tanpa menyentuh container lain di server Anda.
+Watchtower dikonfigurasi dengan `WATCHTOWER_SCOPE=presensi` sehingga **secara eksklusif hanya memantau kontainer presensi** (`presensi-app`, `presensi-demo`, `presensi-almukmin`, `presensi-ptals`, dll) yang memiliki label `com.centurylinklabs.watchtower.scope=presensi`. 
+
+> 💡 **Aman dari Aplikasi Lain:** Kontainer lain di server Anda (Caddy, database, atau aplikasi lain yang juga menggunakan Watchtower) **100% aman dan tidak akan terganggu/bentrok**.
 
 ```bash
 # Jalankan Watchtower di background
