@@ -10,6 +10,7 @@ services:
       # Uncomment baris di bawah jika image GHCR bersifat private dan butuh autentikasi docker login host:
       # - /root/.docker/config.json:/config.json:ro
     environment:
+      - DOCKER_API_VERSION=1.44                 # Wajib untuk Docker Engine versi baru (mengatasi client version 1.25 is too old)
       - WATCHTOWER_CLEANUP=true                 # Hapus image lama otomatis setelah update agar hemat disk VPS
       - WATCHTOWER_POLL_INTERVAL=300            # Interval pengecekan ke GHCR (dalam detik, 300 = 5 menit)
       - WATCHTOWER_INCLUDE_RESTARTING=true
