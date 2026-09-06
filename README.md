@@ -21,7 +21,7 @@ ghcr.io/wahid672/absensidigital:latest
 
 ### 2. 🗄️ Database SQLite Permanen
 - Menggunakan pure-Go SQLite driver (`modernc.org/sqlite`) yang ringan, cepat, dan tanpa ketergantungan CGO compiler.
-- Database tersimpan di `/app/data/absensi.db` dan di-mount ke host via `./data:/app/data` sehingga data **tidak akan hilang saat container di-restart atau di-update**.
+- Database tersimpan di `/app/data/absensi.db` dan di-mount ke Docker volume `absensi_data:/app/data` sehingga data **tidak akan hilang saat container di-restart atau di-update**.
 
 ### 3. ⚡ Realtime Live Stream (Server-Sent Events / SSE)
 - Saat perangkat ESP32 mengirim data tap kartu (`POST /api/attendance/tap`):
@@ -97,7 +97,7 @@ services:
     networks:
       - caddy_net
     volumes:
-      - ./data:/app/data
+      - absensi_data:/app/data
     environment:
       - PORT=8080
       - DB_PATH=/app/data/absensi.db
@@ -109,6 +109,10 @@ services:
 networks:
   caddy_net:
     external: true
+
+volumes:
+  absensi_data:
+    name: absensi_data
 ```
 
 ### Jalankan Container:
