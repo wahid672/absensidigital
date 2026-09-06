@@ -130,6 +130,22 @@ docker compose logs -f absensi-app
 
 ---
 
+### 🔄 Otomatisasi Auto-Update Menggunakan Watchtower (`docker-compose.watchtower.yml`)
+
+Agar container presensi di VPS selalu ter-update secara otomatis setiap kali ada image baru yang di-push ke GHCR tanpa perlu pull manual:
+
+```bash
+# Jalankan Watchtower khusus memantau container absensi-app
+docker compose -f docker-compose.watchtower.yml up -d
+
+# Cek status log Watchtower
+docker compose -f docker-compose.watchtower.yml logs -f
+```
+
+*Watchtower akan mengecek image baru setiap 5 menit (300 detik) dan otomatis me-restart container presensi dengan konfigurasi volume dan environment yang sama tanpa menghapus data.*
+
+---
+
 ## 🌐 Konfigurasi Caddy Web Server di VPS
 
 Tambahkan 1 blok `reverse_proxy` pada file `Caddyfile` VPS Anda:

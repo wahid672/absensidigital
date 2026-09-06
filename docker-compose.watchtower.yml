@@ -1,0 +1,24 @@
+﻿version: '3.8'
+
+services:
+  watchtower-presensi:
+    image: containrrr/watchtower:latest
+    container_name: watchtower-presensi
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Uncomment baris di bawah jika image GHCR bersifat private dan butuh autentikasi docker login host:
+      # - /root/.docker/config.json:/config.json:ro
+    environment:
+      - WATCHTOWER_CLEANUP=true                 # Hapus image lama otomatis setelah update agar hemat disk VPS
+      - WATCHTOWER_POLL_INTERVAL=300            # Interval pengecekan ke GHCR (dalam detik, 300 = 5 menit)
+      - WATCHTOWER_INCLUDE_RESTARTING=true
+      - TZ=Asia/Jakarta
+
+      # (Opsional) Notifikasi Telegram instan saat Watchtower berhasil memperbarui aplikasi:
+      # - WATCHTOWER_NOTIFICATIONS=shoutrrr
+      # - WATCHTOWER_NOTIFICATION_URL=telegram://TOKEN_BOT_TELEGRAM@telegram?channels=CHAT_ID_TELEGRAM
+      # - WATCHTOWER_NOTIFICATION_TEMPLATE={{range .}}{{.Message}}{{println}}{{end}}
+
+    # Hanya pantau container 'absensi-app' agar aman & tidak mengganggu container lain di VPS Anda
+    command: absensi-app
