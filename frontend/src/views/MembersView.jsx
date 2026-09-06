@@ -73,6 +73,16 @@ export default function MembersView({
     fetchMembers();
   }, [tipe, search]);
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (pdfModalOpen) setPdfModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pdfModalOpen]);
+
   const handleDelete = (id, nama) => {
     if (isDemoActive) {
       showDemoAlert(`Menghapus data ${labelMember}`);
@@ -595,86 +605,133 @@ export default function MembersView({
 
       {/* MODAL PRINT REKAP PDF */}
       {pdfModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto print-modal">
-          <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 my-8">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 no-print">
-              <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-                <Printer className="w-5 h-5 text-primary-600" />
-                <span>Pratinjau Cetak Data {labelMember}</span>
-              </h3>
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-sm print-modal animate-fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPdfModalOpen(false);
+          }}
+        >
+          <div className="bg-white rounded-2xl max-w-5xl w-full shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto">
+            {/* Modal Header Bar (Pinned / Sticky at Top) */}
+            <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 border-b border-slate-200 bg-slate-50/90 flex-shrink-0 no-print">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-primary-100 text-primary-600 flex items-center justify-center flex-shrink-0">
+                  <Printer className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-sm sm:text-base leading-tight flex items-center gap-2">
+                    <span>Pratinjau Cetak Data {labelMember}</span>
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-primary-100 text-primary-700">
+                      {members.length} Data
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Dokumen siap cetak atau simpan sebagai PDF resmi
+                  </p>
+                </div>
+              </div>
               <div className="flex items-center gap-2">
                 <button 
                   onClick={() => window.print()} 
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow transition-all flex items-center gap-1.5"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Printer className="w-4 h-4" /> Cetak Sekarang
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Sekarang</span>
                 </button>
-                <button onClick={() => setPdfModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                <button 
+                  onClick={() => setPdfModalOpen(false)} 
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-xl transition-all cursor-pointer"
+                  title="Tutup (Esc)"
+                >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Print Document Content */}
-            <div className="print-area p-4">
-              <div className="text-center border-b-2 border-slate-900 pb-3 mb-4">
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  <School className="w-7 h-7 text-slate-900" />
-                  <h1 className="text-lg font-bold tracking-wide uppercase text-slate-900">
-                    {settings.instansi_nama || (isUmum ? 'INSTANSI / PERUSAHAAN' : 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')}
-                  </h1>
-                </div>
-                <p className="text-[11px] text-slate-600">
-                  {settings.instansi_alamat || 'Jl. Kantor Digital No. 01'} • Wilayah: {kotaInstansi}
-                </p>
-                <p className="text-xs font-bold text-slate-900 mt-2 uppercase">
-                  DAFTAR INDUK DATA {labelMember.toUpperCase()}
-                </p>
-              </div>
-
-              <table className="w-full text-left border-collapse table-print mb-6 text-xs">
-                <thead>
-                  <tr className="bg-slate-100 font-bold text-slate-800 border-y border-slate-400">
-                    <th className="py-2 px-2.5 text-center w-10">No</th>
-                    <th className="py-2 px-2.5 w-32">{labelIdNumber}</th>
-                    <th className="py-2 px-2.5">Nama Lengkap</th>
-                    <th className="py-2 px-2.5">UID RFID</th>
-                    <th className="py-2 px-2.5">{labelGroup}</th>
-                    <th className="py-2 px-2.5">No. WhatsApp</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {members.map((m, idx) => (
-                    <tr key={m.id} className="border-b border-slate-200">
-                      <td className="py-2 px-2.5 text-center">{idx + 1}</td>
-                      <td className="py-2 px-2.5 font-mono">{m.nis_nip || '-'}</td>
-                      <td className="py-2 px-2.5 font-semibold">{m.nama}</td>
-                      <td className="py-2 px-2.5 font-mono">{m.uid}</td>
-                      <td className="py-2 px-2.5">{m.kelas || '-'}</td>
-                      <td className="py-2 px-2.5 font-mono">{m.no_hp || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="grid grid-cols-2 gap-8 text-xs text-slate-800 pt-4">
-                <div className="text-center">
-                  <p>Mengetahui,</p>
-                  <p className="font-semibold mb-14">
-                    {isUmum 
-                      ? 'Pimpinan / Direktur Instansi' 
-                      : isPesantren 
-                      ? 'Pengasuh / Mudir' 
-                      : 'Kepala Sekolah'}
+            {/* Modal Body: Document Preview Scroll Area */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/70">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200/80 p-6 sm:p-10 max-w-4xl mx-auto print-area print:shadow-none print:border-none print:p-0">
+                {/* Kop Surat Instansi */}
+                <div className="text-center border-b-2 border-slate-900 pb-3 mb-5">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <School className="w-7 h-7 text-slate-900" />
+                    <h1 className="text-base sm:text-lg font-bold tracking-wide uppercase text-slate-900">
+                      {settings.instansi_nama || (isUmum ? 'INSTANSI / PERUSAHAAN' : 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')}
+                    </h1>
+                  </div>
+                  <p className="text-[11px] text-slate-600">
+                    {settings.instansi_alamat || 'Jl. Kantor Digital No. 01'} • Wilayah: {kotaInstansi}
                   </p>
-                  <p className="font-bold underline">( {settings.kepala_nama || (isUmum ? 'Pimpinan Instansi' : 'KH. Ahmad Zaki, Lc., M.Ag')} )</p>
+                  <p className="text-xs font-bold text-slate-900 mt-2 uppercase tracking-wide">
+                    DAFTAR INDUK DATA {labelMember.toUpperCase()}
+                  </p>
                 </div>
-                <div className="text-center">
-                  <p>{kotaInstansi}, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-                  <p className="font-semibold mb-14">Petugas Administrator</p>
-                  <p className="font-bold underline">( Administrator )</p>
+
+                {/* Table Data */}
+                <table className="w-full text-left border-collapse table-print mb-6 text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 font-bold text-slate-800 border-y border-slate-400">
+                      <th className="py-2 px-2.5 text-center w-10">No</th>
+                      <th className="py-2 px-2.5 w-32">{labelIdNumber}</th>
+                      <th className="py-2 px-2.5">Nama Lengkap</th>
+                      <th className="py-2 px-2.5">UID RFID</th>
+                      <th className="py-2 px-2.5">{labelGroup}</th>
+                      <th className="py-2 px-2.5">No. WhatsApp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {members.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="py-6 text-center text-slate-400">
+                          Tidak ada data {labelMember.toLowerCase()} yang ditampilkan.
+                        </td>
+                      </tr>
+                    ) : (
+                      members.map((m, idx) => (
+                        <tr key={m.id} className="border-b border-slate-200">
+                          <td className="py-2 px-2.5 text-center">{idx + 1}</td>
+                          <td className="py-2 px-2.5 font-mono">{m.nis_nip || '-'}</td>
+                          <td className="py-2 px-2.5 font-semibold text-slate-800">{m.nama}</td>
+                          <td className="py-2 px-2.5 font-mono">{m.uid && !m.uid.startsWith('PENDING-') ? m.uid : '-'}</td>
+                          <td className="py-2 px-2.5">{m.kelas || '-'}</td>
+                          <td className="py-2 px-2.5 font-mono">{m.no_hp || '-'}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+
+                {/* Tanda Tangan */}
+                <div className="grid grid-cols-2 gap-8 text-xs text-slate-800 pt-4">
+                  <div className="text-center">
+                    <p>Mengetahui,</p>
+                    <p className="font-semibold mb-14">
+                      {isUmum 
+                        ? 'Pimpinan / Direktur Instansi' 
+                        : isPesantren 
+                        ? 'Pengasuh / Mudir' 
+                        : 'Kepala Sekolah'}
+                    </p>
+                    <p className="font-bold underline">( {settings.kepala_nama || (isUmum ? 'Pimpinan Instansi' : 'KH. Ahmad Zaki, Lc., M.Ag')} )</p>
+                  </div>
+                  <div className="text-center">
+                    <p>{kotaInstansi}, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                    <p className="font-semibold mb-14">Petugas Administrator</p>
+                    <p className="font-bold underline">( Administrator )</p>
+                  </div>
                 </div>
               </div>
+            </div>
+
+            {/* Modal Footer Bar */}
+            <div className="px-5 sm:px-6 py-2.5 border-t border-slate-200 bg-white flex items-center justify-between flex-shrink-0 no-print text-xs text-slate-500">
+              <span>💡 Gunakan opsi <i>Destination: Save as PDF</i> di dialog cetak browser untuk mengunduh PDF.</span>
+              <button 
+                onClick={() => setPdfModalOpen(false)}
+                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-all cursor-pointer"
+              >
+                Tutup Pratinjau
+              </button>
             </div>
           </div>
         </div>

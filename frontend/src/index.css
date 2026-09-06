@@ -57,6 +57,27 @@ body {
     padding: 0 !important;
     background: white !important;
   }
+  .print-modal {
+    position: static !important;
+    display: block !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    backdrop-filter: none !important;
+  }
+  .print-modal > div {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+  }
   .table-print {
     width: 100% !important;
     border: 1px solid #333 !important;
