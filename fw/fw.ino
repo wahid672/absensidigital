@@ -17,6 +17,7 @@
 
 #include <WiFi.h>
 #include <time.h>
+#include <Wire.h>
 #include <SPI.h>
 #include <FS.h>
 #include <SPIFFS.h>
@@ -180,6 +181,297 @@ PrayerTime pt[8] = {
   {"MAGHRIB", 0, 0, true},
   {"ISYA", 0, 0, true}
 };
+
+// =========================================================================
+// SISTEM RTC HARDWARE OTOMATIS: DS3231 vs DS1307 vs FALLBACK NTP
+// =========================================================================
+enum RtcType {
+  RTC_TYPE_NONE   = 0, // Tidak ada modul RTC hardware -> Gunakan NTP WiFi
+  RTC_TYPE_DS3231 = 1, // Modul DS3231 (TCXO Presisi Tinggi) terdeteksi
+  RTC_TYPE_DS1307 = 2  // Modul DS1307 (Real-Time Clock) terdeteksi
+};
+
+RtcType detectedRTC = RTC_TYPE_NONE;
+String  rtcName     = "NTP (Tanpa Hardware RTC)";
+unsigned long lastHourlySyncTime = 0;
+
+static inline uint8_t bcd2dec(uint8_t val) { return ((val / 16 * 10) + (val % 16)); }
+static inline uint8_t dec2bcd(uint8_t val) { return ((val / 10 * 16) + (val % 10)); }
+
+// 1. Deteksi Otomatis Hardware RTC di Alamat I2C 0x68
+RtcType scanAndDetectRTC() {
+  Wire.beginTransmission(0x68);
+  byte error = Wire.endTransmission();
+  if (error != 0) {
+    detectedRTC = RTC_TYPE_NONE;
+    rtcName = "NTP (Tanpa Hardware RTC)";
+    Serial.println("[RTC] Tidak ada modul RTC I2C terdeteksi di 0x68 -> Menggunakan mode NTP.");
+    return RTC_TYPE_NONE;
+  }
+
+  // Cek apakah DS3231 atau DS1307:
+  // Pada DS3231, register 0x11 adalah MSB sensor suhu (integer wajar antara 5°C s/d 75°C).
+  // Pada DS1307, register 0x08-0x3F adalah RAM baterai biasa.
+  Wire.beginTransmission(0x68);
+  Wire.write(0x11);
+  if (Wire.endTransmission() == 0) {
+    if (Wire.requestFrom(0x68, 1) == 1) {
+      int8_t tempMSB = Wire.read();
+      if (tempMSB >= 5 && tempMSB <= 75) {
+        detectedRTC = RTC_TYPE_DS3231;
+        rtcName = "DS3231 (Presisi Tinggi)";
+        Serial.printf("[RTC] Modul DS3231 Terdeteksi! (Sensor Suhu Internal: %d°C)\n", tempMSB);
+        return RTC_TYPE_DS3231;
+      }
+    }
+  }
+
+  detectedRTC = RTC_TYPE_DS1307;
+  rtcName = "DS1307 (RTC)";
+  Serial.println("[RTC] Modul DS1307 Terdeteksi!");
+  return RTC_TYPE_DS1307;
+}
+
+// 2. Baca Waktu dari Chip RTC Hardware (0x68)
+bool readHardwareRTC(int &year, int &month, int &day, int &hour, int &minute, int &second) {
+  if (detectedRTC == RTC_TYPE_NONE) return false;
+
+  Wire.beginTransmission(0x68);
+  Wire.write(0x00);
+  if (Wire.endTransmission() != 0) return false;
+
+  if (Wire.requestFrom(0x68, 7) < 7) return false;
+
+  second = bcd2dec(Wire.read() & 0x7F);
+  minute = bcd2dec(Wire.read() & 0x7F);
+  hour   = bcd2dec(Wire.read() & 0x3F);
+  Wire.read(); // Lewati Day of Week (0x03)
+  day    = bcd2dec(Wire.read() & 0x3F);
+  month  = bcd2dec(Wire.read() & 0x1F);
+  year   = bcd2dec(Wire.read()) + 2000;
+
+  return (year >= 2024 && month >= 1 && month <= 12 && day >= 1 && day <= 31 && hour < 24 && minute < 60 && second < 60);
+}
+
+// 3. Tulis / Kalibrasi Waktu ke Chip RTC Hardware (0x68)
+bool writeHardwareRTC(int year, int month, int day, int hour, int minute, int second) {
+  if (detectedRTC == RTC_TYPE_NONE) return false;
+
+  Wire.beginTransmission(0x68);
+  Wire.write(0x00);
+  Wire.write(dec2bcd(second & 0x7F)); // Pastikan bit 7 (CH) = 0 agar oscillator berjalan
+  Wire.write(dec2bcd(minute & 0x7F));
+  Wire.write(dec2bcd(hour & 0x3F));
+  Wire.write(dec2bcd(1)); // Day of week dummy
+  Wire.write(dec2bcd(day & 0x3F));
+  Wire.write(dec2bcd(month & 0x1F));
+  Wire.write(dec2bcd(year >= 2000 ? year - 2000 : year));
+  return (Wire.endTransmission() == 0);
+}
+
+// 4. Sinkronkan Jam Internal ESP32 dari RTC saat Booting (Bahkan sebelum WiFi Nyala!)
+bool syncSystemTimeFromRTC() {
+  int y, m, d, h, mi, s;
+  if (readHardwareRTC(y, m, d, h, mi, s)) {
+    struct tm tm_time;
+    memset(&tm_time, 0, sizeof(tm_time));
+    tm_time.tm_year = y - 1900;
+    tm_time.tm_mon  = m - 1;
+    tm_time.tm_mday = d;
+    tm_time.tm_hour = h;
+    tm_time.tm_min  = mi;
+    tm_time.tm_sec  = s;
+
+    time_t t = mktime(&tm_time);
+    struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
+    settimeofday(&tv, NULL);
+    Serial.printf("[RTC -> SYSTEM] Jam internal ESP32 disetel dari %s: %04d-%02d-%02d %02d:%02d:%02d\n",
+                  rtcName.c_str(), y, m, d, h, mi, s);
+    return true;
+  }
+  return false;
+}
+
+// 5. Kalibrasi RTC Hardware dari NTP Saat WiFi Terhubung
+void syncRTCFromNTP() {
+  if (detectedRTC == RTC_TYPE_NONE) return;
+
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo) && timeinfo.tm_year > 120) {
+    int y = timeinfo.tm_year + 1900;
+    int m = timeinfo.tm_mon + 1;
+    int d = timeinfo.tm_mday;
+    int h = timeinfo.tm_hour;
+    int mi = timeinfo.tm_min;
+    int s = timeinfo.tm_sec;
+    if (writeHardwareRTC(y, m, d, h, mi, s)) {
+      Serial.printf("[NTP -> RTC] Jam modul %s berhasil disinkronkan ke waktu NTP: %04d-%02d-%02d %02d:%02d:%02d\n",
+                    rtcName.c_str(), y, m, d, h, mi, s);
+    }
+  }
+}
+
+// =========================================================================
+// STRUKTUR JADWAL & WAKTU PRESENSI (UNDUH DARI SERVER & SIMPAN DI MESIN)
+// =========================================================================
+struct ScheduleConfig {
+  int inHour;             // Batas jam masuk (default 7)
+  int inMin;              // Batas menit masuk (default 0)
+  int outHour;            // Batas jam pulang (default 15)
+  int outMin;             // Batas menit pulang (default 0)
+  String instansiNama;    // Nama instansi / ponpes
+  bool isLoaded;          // Status apakah jadwal tersimpan
+};
+
+ScheduleConfig scheduleConfig = { 7, 0, 15, 0, "Presensi Digital", false };
+
+// Muat jadwal batas jam masuk & pulang dari NVS Preferences lokal saat mesin menyala
+void loadScheduleConfigFromNVS() {
+  preferences.begin("presensi_cfg", false);
+  scheduleConfig.inHour       = preferences.getInt("in_h", 7);
+  scheduleConfig.inMin        = preferences.getInt("in_m", 0);
+  scheduleConfig.outHour      = preferences.getInt("out_h", 15);
+  scheduleConfig.outMin       = preferences.getInt("out_m", 0);
+  scheduleConfig.instansiNama = preferences.getString("instansi", "Presensi Digital");
+  scheduleConfig.isLoaded     = preferences.getBool("loaded", false);
+  preferences.end();
+
+  Serial.printf("[JADWAL LOKAL] Batas Masuk: %02d:%02d | Batas Pulang: %02d:%02d | Instansi: %s\n",
+                scheduleConfig.inHour, scheduleConfig.inMin,
+                scheduleConfig.outHour, scheduleConfig.outMin,
+                scheduleConfig.instansiNama.c_str());
+}
+
+// Simpan jadwal ke NVS Preferences
+void saveScheduleConfigToNVS(int inH, int inM, int outH, int outM, String instansi) {
+  preferences.begin("presensi_cfg", false);
+  preferences.putInt("in_h", inH);
+  preferences.putInt("in_m", inM);
+  preferences.putInt("out_h", outH);
+  preferences.putInt("out_m", outM);
+  preferences.putString("instansi", instansi);
+  preferences.putBool("loaded", true);
+  preferences.end();
+
+  scheduleConfig.inHour       = inH;
+  scheduleConfig.inMin        = inM;
+  scheduleConfig.outHour      = outH;
+  scheduleConfig.outMin       = outM;
+  scheduleConfig.instansiNama = instansi;
+  scheduleConfig.isLoaded     = true;
+
+  Serial.printf("[JADWAL DISIMPAN] Masuk: %02d:%02d | Pulang: %02d:%02d\n", inH, inM, outH, outM);
+}
+
+// Unduh Jadwal & Timestamp dari Server API (Dipanggil saat online saat boot / berkala)
+void fetchScheduleFromServer() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  Serial.println("\n[SCHEDULE] Mengunduh konfigurasi jadwal & waktu dari server...");
+  String url = String(serverUrl) + "?action=get_schedule&device_id=" + String(deviceId);
+
+  HTTPClient http;
+  http.begin(url);
+  http.setTimeout(8000);
+  http.addHeader("X-API-KEY", apiKey);
+
+  int httpCode = http.GET();
+  if (httpCode == 200) {
+    String payload = http.getString();
+    DynamicJsonDocument doc(2048);
+    DeserializationError err = deserializeJson(doc, payload);
+    if (!err) {
+      // 1. Sinkronkan waktu dari timestamp server HTTP (fallback jika NTP gagal)
+      String serverTimestamp = doc["timestamp"].as<String>();
+      if (serverTimestamp.length() >= 19) {
+        int sy, sm, sd, sh, smin, ss;
+        if (sscanf(serverTimestamp.c_str(), "%d-%d-%d %d:%d:%d", &sy, &sm, &sd, &sh, &smin, &ss) == 6) {
+          struct tm tm_serv;
+          memset(&tm_serv, 0, sizeof(tm_serv));
+          tm_serv.tm_year = sy - 1900;
+          tm_serv.tm_mon  = sm - 1;
+          tm_serv.tm_mday = sd;
+          tm_serv.tm_hour = sh;
+          tm_serv.tm_min  = smin;
+          tm_serv.tm_sec  = ss;
+          time_t st = mktime(&tm_serv);
+          struct timeval tv = { .tv_sec = st, .tv_usec = 0 };
+          settimeofday(&tv, NULL);
+          
+          if (detectedRTC != RTC_TYPE_NONE) {
+            writeHardwareRTC(sy, sm, sd, sh, smin, ss);
+          }
+          Serial.printf("[TIME SYNC] Jam berhasil diselaraskan dari Server HTTP: %s\n", serverTimestamp.c_str());
+        }
+      }
+
+      // 2. Parse batas jam masuk & pulang dari server
+      JsonObject sched = doc["schedule"].as<JsonObject>();
+      if (!sched.isNull()) {
+        String jamMasuk  = sched["jam_masuk_batas"] | "07:00";
+        String jamPulang = sched["jam_pulang_batas"] | "15:00";
+        String instansi  = sched["instansi_nama"] | "Presensi Digital";
+
+        int inH = 7, inM = 0, outH = 15, outM = 0;
+        sscanf(jamMasuk.c_str(), "%d:%d", &inH, &inM);
+        sscanf(jamPulang.c_str(), "%d:%d", &outH, &outM);
+
+        saveScheduleConfigToNVS(inH, inM, outH, outM, instansi);
+      }
+    }
+  } else {
+    Serial.printf("[SCHEDULE] Gagal mengunduh jadwal (HTTP %d)\n", httpCode);
+  }
+  http.end();
+}
+
+// 6. Evaluasi Status Presensi Offline (Tepat / Telat / Pulang Cepat) Berdasarkan Jam Sekarang
+struct OfflineAttendanceResult {
+  String statusMasuk;   // "tepat", "telat", "-"
+  String statusKeluar;  // "tepat", "cepat", "-"
+  String displayLine2;  // Teks baris ke-2 LCD
+  bool isLate;          // Pemicu nada buzzer peringatan
+};
+
+OfflineAttendanceResult evaluateAttendanceOffline() {
+  OfflineAttendanceResult res;
+  res.statusMasuk = "-";
+  res.statusKeluar = "-";
+  res.displayLine2 = "Hadir (OK)";
+  res.isLate = false;
+
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo) || timeinfo.tm_year < 120) {
+    res.displayLine2 = "Hadir (Offline)";
+    return res;
+  }
+
+  int curH = timeinfo.tm_hour;
+  int curM = timeinfo.tm_min;
+
+  // Bandingkan dengan jam pulang batas
+  // Jika sebelum batas pulang -> Presensi Masuk
+  if (curH < scheduleConfig.outHour || (curH == scheduleConfig.outHour && curM < scheduleConfig.outMin)) {
+    if (curH < scheduleConfig.inHour || (curH == scheduleConfig.inHour && curM <= scheduleConfig.inMin)) {
+      res.statusMasuk = "tepat";
+      res.displayLine2 = "Masuk: Tepat (OK)";
+      res.isLate = false;
+    } else {
+      res.statusMasuk = "telat";
+      char jamStr[10];
+      snprintf(jamStr, sizeof(jamStr), "%02d:%02d", curH, curM);
+      res.displayLine2 = "Masuk: Telat " + String(jamStr);
+      res.isLate = true;
+    }
+  } else {
+    // Sudah masuk jam pulang -> Presensi Pulang
+    res.statusKeluar = "tepat";
+    res.displayLine2 = "Pulang: Tepat (OK)";
+    res.isLate = false;
+  }
+
+  return res;
+}
 
 // --- FUNGSI UTILITAS & CACHE OFFLINE ---
 
@@ -661,14 +953,14 @@ String getCurrentTimestamp() {
   return ""; // Kosong jika RTC belum tersinkronisasi
 }
 
-void saveOfflineLog(int fingerId, String rfidTag) {
+void saveOfflineLog(int fingerId, String rfidTag, String statusMasuk = "-", String statusKeluar = "-") {
   File file = SPIFFS.open("/offline_logs.txt", FILE_APPEND);
   if (!file) {
     Serial.println("[OFFLINE] Gagal membuka file /offline_logs.txt di SPIFFS!");
     return;
   }
 
-  StaticJsonDocument<192> doc;
+  StaticJsonDocument<256> doc;
   doc["device_id"] = deviceId;
   if (fingerId > 0) doc["fingerprint_id"] = fingerId;
   if (rfidTag.length() > 0) doc["rfid_tag"] = rfidTag;
@@ -677,6 +969,8 @@ void saveOfflineLog(int fingerId, String rfidTag) {
   if (timeStamp.length() > 0) {
     doc["recorded_at"] = timeStamp;
   }
+  if (statusMasuk != "-") doc["status_masuk"] = statusMasuk;
+  if (statusKeluar != "-") doc["status_keluar"] = statusKeluar;
 
   String jsonLine;
   serializeJson(doc, jsonLine);
@@ -764,9 +1058,18 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
   // 2. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
   if (WiFi.status() != WL_CONNECTED) {
     Serial.printf("[OFFLINE] WiFi offline. Data Fingerprint ID %d disimpan ke SPIFFS.\n", idFinger);
-    saveOfflineLog((int)idFinger, "");
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
-    showScannedMessage(namaPreview, "Hadir (Offline)");
+    OfflineAttendanceResult eval = evaluateAttendanceOffline();
+    saveOfflineLog((int)idFinger, "", eval.statusMasuk, eval.statusKeluar);
+    if (eval.isLate) {
+      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+      digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+    } else {
+      digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+    }
+    showScannedMessage(namaPreview, eval.displayLine2);
     return;
   }
 
@@ -803,18 +1106,30 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
       String nama = respDoc["data"]["nama"].as<String>();
       String waktuMasuk = respDoc["data"]["waktu_masuk"].as<String>();
       String waktuKeluar = respDoc["data"]["waktu_keluar"].as<String>();
+      String statusMasuk = respDoc["data"]["status_masuk"].as<String>();
+      String statusKeluar = respDoc["data"]["status_keluar"].as<String>();
 
       if (nama == "null" || nama == "") {
         nama = namaPreview;
       }
 
       if (status == "success") {
-        digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
         if (action == "check_out") {
+          digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+          finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
           showScannedMessage(nama, "Keluar: " + waktuKeluar + " OK");
         } else {
-          showScannedMessage(nama, "Masuk: " + waktuMasuk + " OK");
+          if (statusMasuk == "telat") {
+            digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+            digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+            digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+            showScannedMessage(nama, "Masuk: Telat " + waktuMasuk);
+          } else {
+            digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+            showScannedMessage(nama, "Masuk: " + waktuMasuk + " OK");
+          }
         }
       } else if (status == "already_attended") {
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(50);
@@ -831,15 +1146,23 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
         showScannedMessage("Jari Ditolak!", "Tidak Terdaftar");
       }
     } else {
-      digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
+      digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
       showScannedMessage("Presensi Sukses", "Slot #" + String(idFinger));
     }
   } else {
     Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke offline buffer...\n", http.errorToString(httpCode).c_str());
-    saveOfflineLog((int)idFinger, "");
-    digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
-    showScannedMessage(namaPreview, "Hadir (Offline)");
+    OfflineAttendanceResult eval = evaluateAttendanceOffline();
+    saveOfflineLog((int)idFinger, "", eval.statusMasuk, eval.statusKeluar);
+    if (eval.isLate) {
+      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+      digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+    } else {
+      digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+    }
+    showScannedMessage(namaPreview, eval.displayLine2);
   }
   http.end();
 }
@@ -856,9 +1179,18 @@ void kirimPresensiRFID(String tagId) {
   // 2. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
   if (WiFi.status() != WL_CONNECTED) {
     Serial.printf("[OFFLINE] WiFi offline. Data RFID %s disimpan ke SPIFFS.\n", tagId.c_str());
-    saveOfflineLog(0, tagId);
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
-    showScannedMessage(namaPreview, "Hadir (Offline)");
+    OfflineAttendanceResult eval = evaluateAttendanceOffline();
+    saveOfflineLog(0, tagId, eval.statusMasuk, eval.statusKeluar);
+    if (eval.isLate) {
+      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+      digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+    } else {
+      digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+    }
+    showScannedMessage(namaPreview, eval.displayLine2);
     return;
   }
 
@@ -895,18 +1227,30 @@ void kirimPresensiRFID(String tagId) {
       String nama = respDoc["data"]["nama"].as<String>();
       String waktuMasuk = respDoc["data"]["waktu_masuk"].as<String>();
       String waktuKeluar = respDoc["data"]["waktu_keluar"].as<String>();
+      String statusMasuk = respDoc["data"]["status_masuk"].as<String>();
+      String statusKeluar = respDoc["data"]["status_keluar"].as<String>();
 
       if (nama == "null" || nama == "") {
         nama = namaPreview;
       }
 
       if (status == "success") {
-        digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
         if (action == "check_out") {
+          digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+          finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
           showScannedMessage(nama, "Keluar: " + waktuKeluar + " OK");
         } else {
-          showScannedMessage(nama, "Masuk: " + waktuMasuk + " OK");
+          if (statusMasuk == "telat") {
+            digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+            digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+            digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+            showScannedMessage(nama, "Masuk: Telat " + waktuMasuk);
+          } else {
+            digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+            showScannedMessage(nama, "Masuk: " + waktuMasuk + " OK");
+          }
         }
       } else if (status == "already_attended") {
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(50);
@@ -918,19 +1262,27 @@ void kirimPresensiRFID(String tagId) {
         finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
         showScannedMessage("Kartu Tdk Dikenal", "Ditolak Sistem");
       } else {
-        digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
+        digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
         showScannedMessage(nama, "Presensi OK");
       }
     } else {
-      digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
+      digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
       showScannedMessage("Kartu Terbaca", tagId);
     }
   } else {
     Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke offline buffer...\n", http.errorToString(httpCode).c_str());
-    saveOfflineLog(0, tagId);
-    digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
-    showScannedMessage(namaPreview, "Hadir (Offline)");
+    OfflineAttendanceResult eval = evaluateAttendanceOffline();
+    saveOfflineLog(0, tagId, eval.statusMasuk, eval.statusKeluar);
+    if (eval.isLate) {
+      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
+      digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+    } else {
+      digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
+      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+    }
+    showScannedMessage(namaPreview, eval.displayLine2);
   }
   http.end();
 }
@@ -2242,6 +2594,18 @@ void setup() {
   
   lcd.begin(16, 2); lcd.init(); lcd.backlight();
   printCentered("Inisialisasi...", 0);
+
+  // Inisialisasi I2C & Auto-Detect RTC (DS3231 vs DS1307 vs NTP)
+  Wire.begin();
+  scanAndDetectRTC();
+  if (detectedRTC != RTC_TYPE_NONE) {
+    if (syncSystemTimeFromRTC()) {
+      printCentered(rtcName, 1);
+      delay(700);
+    }
+  }
+  // Muat jadwal batas jam presensi dari NVS lokal
+  loadScheduleConfigFromNVS();
   
   // 1. Inisialisasi SPIFFS untuk penyimpanan offline
   if (!SPIFFS.begin(true)) {
@@ -2309,6 +2673,8 @@ void setup() {
     setupOTA();
 
     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+    syncRTCFromNTP();
+    fetchScheduleFromServer();
     fetchJadwal(); 
     flushOfflineLogs(); // Kirim data offline jika ada antrean tersimpan
     delay(1000);
@@ -2445,6 +2811,8 @@ void loop() {
       delay(1000);
 
       configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+      syncRTCFromNTP();
+      fetchScheduleFromServer();
       fetchJadwal();
       flushOfflineLogs(); // Otomatis kirim seluruh antrean presensi offline
       
@@ -2475,6 +2843,13 @@ void loop() {
         WiFi.reconnect();
       }
     }
+  }
+
+  // Sinkronisasi berkala waktu RTC & jadwal presensi setiap 1 jam jika online
+  if (isWifiConnected && (millis() - lastHourlySyncTime >= 3600000)) {
+    lastHourlySyncTime = millis();
+    syncRTCFromNTP();
+    fetchScheduleFromServer();
   }
 
   // --- UI ROUTER ---

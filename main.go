@@ -1204,12 +1204,23 @@ func handleTapAttendance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Response status online untuk tes koneksi
+		inH, inM, outH, outM := getThresholdTimes()
+		var instansiNama, appMode string
+		db.QueryRow("SELECT value FROM settings WHERE key = 'instansi_nama'").Scan(&instansiNama)
+		db.QueryRow("SELECT value FROM settings WHERE key = 'app_mode'").Scan(&appMode)
+
+		// Response status online & jadwal untuk tes koneksi dan sync jadwal ESP32
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status":    "online",
 			"message":   "PresensiRFID API Server Ready",
 			"device_id": deviceID,
 			"timestamp": time.Now().Format("2006-01-02 15:04:05"),
+			"schedule": map[string]interface{}{
+				"jam_masuk_batas":  fmt.Sprintf("%02d:%02d", inH, inM),
+				"jam_pulang_batas": fmt.Sprintf("%02d:%02d", outH, outM),
+				"instansi_nama":    instansiNama,
+				"app_mode":         appMode,
+			},
 		})
 		return
 	}
