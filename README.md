@@ -88,31 +88,34 @@ Pengguna di VPS **tidak perlu meng-install Go atau meng-compile source code**. C
 version: '3.8'
 
 services:
-  absensi-app:
+  presensi-app:
     image: ghcr.io/wahid672/absensidigital:latest
-    container_name: absensi-app
+    container_name: presensi-app
     restart: unless-stopped
     expose:
       - "8080"
     networks:
       - caddy_net
     volumes:
-      - absensi_data:/app/data
+      - presensi_data:/app/data
     environment:
       - PORT=8080
-      - DB_PATH=/app/data/absensi.db
+      - DB_PATH=/app/data/presensi.db
       - JWT_SECRET=siakad_esp32_iot_secret_key_2026
       - ADMIN_USER=admin
       - ADMIN_PASS=admin123
       - TZ=Asia/Jakarta
+      - DEMO_MODE=false # Ubah ke 'true' untuk Versi Demo
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
 networks:
   caddy_net:
     external: true
 
 volumes:
-  absensi_data:
-    name: absensi_data
+  presensi_data:
+    name: presensi_data
 ```
 
 ### Jalankan Container:
@@ -125,34 +128,128 @@ docker compose pull
 docker compose up -d
 
 # 3. Cek log jika diperlukan
-docker compose logs -f absensi-app
+docker compose logs -f presensi-app
+```
+
+---
+
+### 🏢 Menjalankan Banyak Instance (Multi-Container: `presensi-demo`, `presensi-almukmin`, `presensi-ptals`, dll)
+
+Jika Anda ingin menjalankan **beberapa aplikasi presensi sekaligus dalam 1 server** untuk lembaga/sekolah/klien yang berbeda dengan database independen, cukup tambahkan service baru di `docker-compose.yml` atau pisahkan ke folder masing-masing:
+
+```yaml
+version: '3.8'
+
+services:
+  # Instance 1: Versi Demo
+  presensi-demo:
+    image: ghcr.io/wahid672/absensidigital:latest
+    container_name: presensi-demo
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - caddy_net
+    volumes:
+      - presensi_data_demo:/app/data
+    environment:
+      - PORT=8080
+      - DB_PATH=/app/data/presensi.db
+      - JWT_SECRET=secret_demo_2026
+      - DEMO_MODE=true
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # Instance 2: Pesantren Al-Mukmin
+  presensi-almukmin:
+    image: ghcr.io/wahid672/absensidigital:latest
+    container_name: presensi-almukmin
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - caddy_net
+    volumes:
+      - presensi_data_almukmin:/app/data
+    environment:
+      - PORT=8080
+      - DB_PATH=/app/data/presensi.db
+      - JWT_SECRET=secret_almukmin_2026
+      - DEMO_MODE=false
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # Instance 3: Perusahaan PT ALS
+  presensi-ptals:
+    image: ghcr.io/wahid672/absensidigital:latest
+    container_name: presensi-ptals
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - caddy_net
+    volumes:
+      - presensi_data_ptals:/app/data
+    environment:
+      - PORT=8080
+      - DB_PATH=/app/data/presensi.db
+      - JWT_SECRET=secret_ptals_2026
+      - DEMO_MODE=false
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+networks:
+  caddy_net:
+    external: true
+
+volumes:
+  presensi_data_demo:
+    name: presensi_data_demo
+  presensi_data_almukmin:
+    name: presensi_data_almukmin
+  presensi_data_ptals:
+    name: presensi_data_ptals
 ```
 
 ---
 
 ### 🔄 Otomatisasi Auto-Update Menggunakan Watchtower (`docker-compose.watchtower.yml`)
 
-Agar container presensi di VPS selalu ter-update secara otomatis setiap kali ada image baru yang di-push ke GHCR tanpa perlu pull manual:
+Watchtower dikonfigurasi dengan `WATCHTOWER_LABEL_ENABLE=true` sehingga **secara otomatis memantau dan meng-update SEMUA container presensi** (`presensi-app`, `presensi-demo`, `presensi-almukmin`, `presensi-ptals`, dll) yang memiliki label `com.centurylinklabs.watchtower.enable=true` tanpa menyentuh container lain di server Anda.
 
 ```bash
-# Jalankan Watchtower khusus memantau container absensi-app
+# Jalankan Watchtower di background
 docker compose -f docker-compose.watchtower.yml up -d
 
 # Cek status log Watchtower
 docker compose -f docker-compose.watchtower.yml logs -f
 ```
 
-*Watchtower akan mengecek image baru setiap 5 menit (300 detik) dan otomatis me-restart container presensi dengan konfigurasi volume dan environment yang sama tanpa menghapus data.*
-
 ---
 
 ## 🌐 Konfigurasi Caddy Web Server di VPS
 
-Tambahkan 1 blok `reverse_proxy` pada file `Caddyfile` VPS Anda:
+Tambahkan blok `reverse_proxy` pada file `Caddyfile` VPS Anda:
 
 ```caddy
-absensi.domainanda.com {
-    reverse_proxy absensi-app:8080
+# Domain untuk Instance Utama
+presensi.domainanda.com {
+    reverse_proxy presensi-app:8080
+}
+
+# Domain untuk Versi Demo
+demo.domainanda.com {
+    reverse_proxy presensi-demo:8080
+}
+
+# Domain untuk Pesantren Al-Mukmin
+almukmin.domainanda.com {
+    reverse_proxy presensi-almukmin:8080
+}
+
+# Domain untuk PT ALS
+presensi.ptals.com {
+    reverse_proxy presensi-ptals:8080
 }
 ```
 

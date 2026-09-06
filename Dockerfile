@@ -34,7 +34,7 @@ COPY main.go ./
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Compile binary secara statis & ramping untuk target architecture
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -ldflags="-w -s" -o absensi-app main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -ldflags="-w -s" -o presensi-app main.go
 
 # -------------------------------------------------------------
 # Stage 3: Runtime Image Ringan (Alpine Linux)
@@ -47,7 +47,7 @@ ENV TZ=Asia/Jakarta
 WORKDIR /app
 
 # Salin executable binary yang sudah meng-embed React frontend
-COPY --from=backend-builder /app/absensi-app /app/absensi-app
+COPY --from=backend-builder /app/presensi-app /app/presensi-app
 
 # Buat direktori data untuk database SQLite permanen
 RUN mkdir -p /app/data
@@ -56,4 +56,4 @@ RUN mkdir -p /app/data
 EXPOSE 8080
 
 # Jalankan aplikasi fullstack
-CMD ["/app/absensi-app"]
+CMD ["/app/presensi-app"]

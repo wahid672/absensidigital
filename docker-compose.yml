@@ -1,29 +1,31 @@
 version: '3.8'
 
 services:
-  absensi-app:
+  presensi-app:
     image: ghcr.io/wahid672/absensidigital:latest
-    container_name: absensi-app
+    container_name: presensi-app
     restart: unless-stopped
     expose:
       - "8080"
     networks:
       - caddy_net
     volumes:
-      - absensi_data:/app/data
+      - presensi_data:/app/data
     environment:
       - PORT=8080
-      - DB_PATH=/app/data/absensi.db
+      - DB_PATH=/app/data/presensi.db
       - JWT_SECRET=siakad_esp32_iot_secret_key_2026
       - ADMIN_USER=admin
       - ADMIN_PASS=admin123
       - TZ=Asia/Jakarta
       - DEMO_MODE=false # Ubah ke 'true' untuk mengaktifkan Versi Demo (read-only master data & pengaturan)
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
 networks:
   caddy_net:
     external: true
 
 volumes:
-  absensi_data:
-    name: absensi_data
+  presensi_data:
+    name: presensi_data

@@ -1,4 +1,4 @@
-﻿version: '3.8'
+version: '3.8'
 
 services:
   watchtower-presensi:
@@ -13,12 +13,10 @@ services:
       - WATCHTOWER_CLEANUP=true                 # Hapus image lama otomatis setelah update agar hemat disk VPS
       - WATCHTOWER_POLL_INTERVAL=300            # Interval pengecekan ke GHCR (dalam detik, 300 = 5 menit)
       - WATCHTOWER_INCLUDE_RESTARTING=true
+      - WATCHTOWER_LABEL_ENABLE=true            # Otomatis pantau SEMUA container presensi (presensi-demo, presensi-almukmin, presensi-ptals, dll) yang memiliki label watchtower
       - TZ=Asia/Jakarta
 
       # (Opsional) Notifikasi Telegram instan saat Watchtower berhasil memperbarui aplikasi:
       # - WATCHTOWER_NOTIFICATIONS=shoutrrr
       # - WATCHTOWER_NOTIFICATION_URL=telegram://TOKEN_BOT_TELEGRAM@telegram?channels=CHAT_ID_TELEGRAM
       # - WATCHTOWER_NOTIFICATION_TEMPLATE={{range .}}{{.Message}}{{println}}{{end}}
-
-    # Hanya pantau container 'absensi-app' agar aman & tidak mengganggu container lain di VPS Anda
-    command: absensi-app
