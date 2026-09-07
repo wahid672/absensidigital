@@ -123,25 +123,25 @@ export default function MembersView({
       // Data Sheet Santri / Siswa
       const sampleData = [
         {
+          'NIS (Wajib)': '20261001',
           'Nama Lengkap (Wajib)': 'Muhammad Rizky Pratama',
           'Nama Kelas (Wajib)': classes[0]?.nama || '10 IPA 1',
-          'NIS (Opsional)': '20261001',
           'UID Kartu RFID (Opsional)': '0014829101',
           'No WhatsApp (Opsional)': '081234567801',
           'Nama Orang Tua (Opsional)': 'Bapak Pratama'
         },
         {
+          'NIS (Wajib)': '20261002',
           'Nama Lengkap (Wajib)': 'Aisyah Nurul Hidayah',
           'Nama Kelas (Wajib)': classes[1]?.nama || '10 IPA 2',
-          'NIS (Opsional)': '20261002',
           'UID Kartu RFID (Opsional)': '', // Contoh dikosongkan (Kartu bisa di-tap nanti)
           'No WhatsApp (Opsional)': '081234567802',
           'Nama Orang Tua (Opsional)': 'Ibu Hidayah'
         },
         {
+          'NIS (Wajib)': '20261003',
           'Nama Lengkap (Wajib)': 'Fajar Dwi Santoso',
           'Nama Kelas (Wajib)': classes[2]?.nama || (classes[0]?.nama || '10 IPA 1'),
-          'NIS (Opsional)': '20261003',
           'UID Kartu RFID (Opsional)': '', // Contoh dikosongkan
           'No WhatsApp (Opsional)': '',     // Contoh dikosongkan
           'Nama Orang Tua (Opsional)': ''
@@ -150,9 +150,9 @@ export default function MembersView({
 
       const ws = XLSX.utils.json_to_sheet(sampleData);
       ws['!cols'] = [
+        { wch: 18 }, // NIS (Wajib)
         { wch: 32 }, // Nama Lengkap (Wajib)
         { wch: 24 }, // Nama Kelas (Wajib)
-        { wch: 18 }, // NIS (Opsional)
         { wch: 28 }, // UID Kartu RFID (Opsional)
         { wch: 24 }, // No WhatsApp (Opsional)
         { wch: 26 }  // Nama Orang Tua (Opsional)
@@ -162,9 +162,9 @@ export default function MembersView({
 
       // Sheet 2: Panduan & Keterangan Wajib / Opsional
       const guideData = [
+        { 'Nama Kolom': 'NIS (Wajib)', 'Status': 'WAJIB DIISI', 'Keterangan': 'Nomor Induk Santri/Siswa unik sebagai kunci utama database. Tidak boleh kosong atau duplikat.' },
         { 'Nama Kolom': 'Nama Lengkap (Wajib)', 'Status': 'WAJIB DIISI', 'Keterangan': 'Nama lengkap santri/siswa. Tidak boleh kosong.' },
         { 'Nama Kolom': 'Nama Kelas (Wajib)', 'Status': 'WAJIB DIISI', 'Keterangan': 'Harus sama persis dengan nama kelas di Master Kelas (lihat sheet DAFTAR KELAS).' },
-        { 'Nama Kolom': 'NIS (Opsional)', 'Status': 'OPSIONAL', 'Keterangan': 'Nomor Induk Santri/Siswa. Boleh dikosongkan.' },
         { 'Nama Kolom': 'UID Kartu RFID (Opsional)', 'Status': 'OPSIONAL (BOLEH KOSONG)', 'Keterangan': 'Boleh kosong jika belum ada kartu. Kartu fisik bisa ditempel nanti di menu Kartu RFID (Mapping).' },
         { 'Nama Kolom': 'No WhatsApp (Opsional)', 'Status': 'OPSIONAL (BOLEH KOSONG)', 'Keterangan': 'Nomor WhatsApp untuk notifikasi presensi. Boleh dikosongkan.' },
         { 'Nama Kolom': 'Nama Orang Tua (Opsional)', 'Status': 'OPSIONAL (BOLEH KOSONG)', 'Keterangan': 'Nama orang tua / wali santri. Boleh dikosongkan.' }
@@ -185,8 +185,8 @@ export default function MembersView({
         const wsRef = XLSX.utils.json_to_sheet(classRef);
         wsRef['!cols'] = [
           { wch: 12 },
-          { wch: 38 },
-          { wch: 18 },
+          { wch: 30 },
+          { wch: 16 },
           { wch: 35 }
         ];
         wsRef['!rows'] = [{ hpx: 24 }];
@@ -199,23 +199,23 @@ export default function MembersView({
       // Data Sheet Guru / Pegawai
       const sampleData = [
         {
+          'NIP (Wajib)': '198507122010011001',
           'Nama Lengkap (Wajib)': 'Ustadz Ahmad Fauzi, S.Pd.I',
           'Nama Jabatan (Wajib)': positions[0]?.nama || 'Guru Fiqih & Hadits',
-          'NIP (Opsional)': '198507122010011001',
           'UID Kartu RFID (Opsional)': '0014829104',
           'No WhatsApp (Opsional)': '081234567804'
         },
         {
+          'NIP (Wajib)': '198803152012012002',
           'Nama Lengkap (Wajib)': 'Ustadzah Fatimah Zahra, M.Pd',
           'Nama Jabatan (Wajib)': positions[1]?.nama || 'Guru Bahasa Arab',
-          'NIP (Opsional)': '198803152012012002',
           'UID Kartu RFID (Opsional)': '', // Contoh dikosongkan (Kartu bisa di-tap nanti)
           'No WhatsApp (Opsional)': '081234567805'
         },
         {
+          'NIP (Wajib)': '198211052008011003',
           'Nama Lengkap (Wajib)': 'Ustadz Abdullah Yusuf, Lc',
           'Nama Jabatan (Wajib)': positions[2]?.nama || (positions[0]?.nama || 'Guru Tahfidz & Quran'),
-          'NIP (Opsional)': '198211052008011003',
           'UID Kartu RFID (Opsional)': '', // Contoh dikosongkan
           'No WhatsApp (Opsional)': ''      // Contoh dikosongkan
         }
@@ -223,9 +223,9 @@ export default function MembersView({
 
       const ws = XLSX.utils.json_to_sheet(sampleData);
       ws['!cols'] = [
+        { wch: 24 }, // NIP (Wajib)
         { wch: 32 }, // Nama Lengkap (Wajib)
         { wch: 28 }, // Nama Jabatan (Wajib)
-        { wch: 24 }, // NIP (Opsional)
         { wch: 28 }, // UID Kartu RFID (Opsional)
         { wch: 24 }  // No WhatsApp (Opsional)
       ];
@@ -234,9 +234,9 @@ export default function MembersView({
 
       // Sheet 2: Panduan & Keterangan Wajib / Opsional
       const guideData = [
+        { 'Nama Kolom': 'NIP (Wajib)', 'Status': 'WAJIB DIISI', 'Keterangan': 'Nomor Induk Pegawai/Guru unik sebagai kunci utama database. Tidak boleh kosong atau duplikat.' },
         { 'Nama Kolom': 'Nama Lengkap (Wajib)', 'Status': 'WAJIB DIISI', 'Keterangan': 'Nama lengkap guru/pegawai. Tidak boleh kosong.' },
         { 'Nama Kolom': 'Nama Jabatan (Wajib)', 'Status': 'WAJIB DIISI', 'Keterangan': 'Harus sama persis dengan nama jabatan di Master Jabatan (lihat sheet DAFTAR JABATAN).' },
-        { 'Nama Kolom': 'NIP (Opsional)', 'Status': 'OPSIONAL', 'Keterangan': 'Nomor Induk Pegawai/Guru. Boleh dikosongkan.' },
         { 'Nama Kolom': 'UID Kartu RFID (Opsional)', 'Status': 'OPSIONAL (BOLEH KOSONG)', 'Keterangan': 'Boleh kosong jika belum ada kartu. Kartu fisik bisa ditempel nanti di menu Kartu RFID (Mapping).' },
         { 'Nama Kolom': 'No WhatsApp (Opsional)', 'Status': 'OPSIONAL (BOLEH KOSONG)', 'Keterangan': 'Nomor WhatsApp untuk notifikasi presensi. Boleh dikosongkan.' }
       ];

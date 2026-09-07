@@ -189,12 +189,15 @@ func initDatabase() {
 	schema := `
 	CREATE TABLE IF NOT EXISTS members (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		uid TEXT UNIQUE NOT NULL,
-		nis_nip TEXT DEFAULT '',
+		nis_nip TEXT UNIQUE NOT NULL,
+		uid TEXT DEFAULT '',
+		fingerprint_id INTEGER DEFAULT 0,
 		nama TEXT NOT NULL,
+		nama_ortu TEXT DEFAULT '',
 		tipe TEXT NOT NULL,
 		kelas TEXT DEFAULT '',
 		no_hp TEXT DEFAULT '',
+		telegram_chat_id TEXT DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -282,6 +285,44 @@ func initDatabase() {
 	db.Exec("ALTER TABLE members ADD COLUMN fingerprint_id INTEGER DEFAULT 0")
 	db.Exec("ALTER TABLE members ADD COLUMN nama_ortu TEXT DEFAULT ''")
 	db.Exec("ALTER TABLE members ADD COLUMN telegram_chat_id TEXT DEFAULT ''")
+
+	// Migrasi constraint tabel members: jadikan nis_nip UNIQUE NOT NULL dan uid bebas (TEXT DEFAULT '')
+	var membersTableSQL string
+	db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='members'").Scan(&membersTableSQL)
+	if strings.Contains(membersTableSQL, "uid TEXT UNIQUE") || !strings.Contains(membersTableSQL, "nis_nip TEXT UNIQUE") {
+		log.Println("[MIGRATION] Menyesuaikan skema tabel members agar 'nis_nip' menjadi UNIQUE NOT NULL...")
+		// 1. Pastikan tidak ada nis_nip yang kosong/null pada record lama
+		db.Exec("UPDATE members SET nis_nip = 'ID-' || id WHERE nis_nip IS NULL OR TRIM(nis_nip) = ''")
+		// 2. Bersihkan nilai UID dummy lama (PENDING-... / UNASSIGNED-...) menjadi string kosong ""
+		db.Exec("UPDATE members SET uid = '' WHERE uid LIKE 'PENDING-%' OR uid LIKE 'UNASSIGNED-%'")
+		// 3. Buat tabel sementara dengan skema baru
+		_, errMigrate := db.Exec(`
+			CREATE TABLE members_migrated (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				nis_nip TEXT UNIQUE NOT NULL,
+				uid TEXT DEFAULT '',
+				fingerprint_id INTEGER DEFAULT 0,
+				nama TEXT NOT NULL,
+				nama_ortu TEXT DEFAULT '',
+				tipe TEXT NOT NULL,
+				kelas TEXT DEFAULT '',
+				no_hp TEXT DEFAULT '',
+				telegram_chat_id TEXT DEFAULT '',
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			);
+			INSERT OR REPLACE INTO members_migrated (id, nis_nip, uid, fingerprint_id, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id, created_at)
+			SELECT id, nis_nip, uid, COALESCE(fingerprint_id, 0), nama, COALESCE(nama_ortu, ''), tipe, COALESCE(kelas, ''), COALESCE(no_hp, ''), COALESCE(telegram_chat_id, ''), COALESCE(created_at, CURRENT_TIMESTAMP)
+			FROM members;
+			DROP TABLE members;
+			ALTER TABLE members_migrated RENAME TO members;
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_members_nis_nip ON members(nis_nip);
+		`)
+		if errMigrate != nil {
+			log.Printf("[MIGRATION WARNING] Migrasi tabel members: %v", errMigrate)
+		} else {
+			log.Println("[MIGRATION SUCCESS] Skema tabel members berhasil dimigrasikan ke nis_nip UNIQUE.")
+		}
+	}
 
 	// Default settings
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('instansi_nama', 'YAYASAN PONDOK PESANTREN & SEKOLAH DIGITAL')")
@@ -441,9 +482,9 @@ func seedDummyData() {
 		{UID: "0014829106", FingerprintID: 6, NISNIP: "199208152016012006", Nama: "Siti Nurhaliza, S.E.", NamaOrtu: "", Tipe: "guru", Kelas: "Staf Keuangan & Bendahara", NoHP: "081234567806", TelegramChatID: "123456786"},
 		{UID: "0014829107", FingerprintID: 7, NISNIP: "198409222009011007", Nama: "Bambang Suryono, S.H.", NamaOrtu: "", Tipe: "guru", Kelas: "HRD & Personalia", NoHP: "081234567807", TelegramChatID: "123456787"},
 		{UID: "0014829108", FingerprintID: 8, NISNIP: "199411032018012008", Nama: "Dewi Anggraini, S.Kom", NamaOrtu: "", Tipe: "guru", Kelas: "Staf Administrasi & Publikasi", NoHP: "081234567808", TelegramChatID: "123456788"},
-		// Anggota belum punya kartu (UID internal PENDING)
-		{UID: "PENDING-0000000001", FingerprintID: 0, NISNIP: "199105172017011009", Nama: "Rahmat Hidayat, M.Kom", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Matematika & Sains", NoHP: "081234567809", TelegramChatID: ""},
-		{UID: "PENDING-0000000002", FingerprintID: 0, NISNIP: "199312012019012010", Nama: "Anisa Rahmawati, S.Pd", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Bahasa Inggris", NoHP: "081234567810", TelegramChatID: ""},
+		// Anggota belum punya kartu (UID kosong "")
+		{UID: "", FingerprintID: 0, NISNIP: "199105172017011009", Nama: "Rahmat Hidayat, M.Kom", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Matematika & Sains", NoHP: "081234567809", TelegramChatID: ""},
+		{UID: "", FingerprintID: 0, NISNIP: "199312012019012010", Nama: "Anisa Rahmawati, S.Pd", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Bahasa Inggris", NoHP: "081234567810", TelegramChatID: ""},
 
 		// === SANTRI / SISWA (tipe: siswa) ===
 		{UID: "0014829111", FingerprintID: 9, NISNIP: "20261001", Nama: "Muhammad Rizky Pratama", NamaOrtu: "Bpk. Bambang Pratama", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234567811", TelegramChatID: "123456791"},
@@ -454,34 +495,34 @@ func seedDummyData() {
 		{UID: "0014829116", FingerprintID: 14, NISNIP: "20261006", Nama: "Bilal Bin Rabah", NamaOrtu: "Bpk. Rabah", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234567816", TelegramChatID: "123456796"},
 		{UID: "0014829117", FingerprintID: 15, NISNIP: "20261007", Nama: "Ali Bin Abi Thalib", NamaOrtu: "Bpk. Abu Thalib", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234567817", TelegramChatID: "123456797"},
 		{UID: "0014829118", FingerprintID: 16, NISNIP: "20261008", Nama: "Fatimah Az-Zahra", NamaOrtu: "Bpk. Muhammad", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234567818", TelegramChatID: "123456798"},
-		// Siswa belum punya kartu (UID internal PENDING)
-		{UID: "PENDING-0000000003", FingerprintID: 0, NISNIP: "20261009", Nama: "Umar Al-Faruq", NamaOrtu: "Bpk. Khattab", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234567819", TelegramChatID: ""},
-		{UID: "PENDING-0000000004", FingerprintID: 0, NISNIP: "20261010", Nama: "Utsman Dzun-Nurain", NamaOrtu: "Bpk. Affan", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234567820", TelegramChatID: ""},
+		// Siswa belum punya kartu (UID kosong "")
+		{UID: "", FingerprintID: 0, NISNIP: "20261009", Nama: "Umar Al-Faruq", NamaOrtu: "Bpk. Khattab", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234567819", TelegramChatID: ""},
+		{UID: "", FingerprintID: 0, NISNIP: "20261010", Nama: "Utsman Dzun-Nurain", NamaOrtu: "Bpk. Affan", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234567820", TelegramChatID: ""},
 	}
 
 	for _, m := range members {
-		res, err := db.Exec(`INSERT INTO members (uid, fingerprint_id, nis_nip, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id)
+		res, err := db.Exec(`INSERT INTO members (nis_nip, uid, fingerprint_id, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(uid) DO UPDATE SET 
+			ON CONFLICT(nis_nip) DO UPDATE SET 
+				uid = excluded.uid,
 				fingerprint_id = excluded.fingerprint_id,
-				nis_nip = excluded.nis_nip,
 				nama = excluded.nama,
 				nama_ortu = excluded.nama_ortu,
 				tipe = excluded.tipe,
 				kelas = excluded.kelas,
 				no_hp = excluded.no_hp,
 				telegram_chat_id = excluded.telegram_chat_id`,
-			m.UID, m.FingerprintID, m.NISNIP, m.Nama, m.NamaOrtu, m.Tipe, m.Kelas, m.NoHP, m.TelegramChatID)
+			m.NISNIP, m.UID, m.FingerprintID, m.Nama, m.NamaOrtu, m.Tipe, m.Kelas, m.NoHP, m.TelegramChatID)
 
 		if err == nil {
 			var memberID int64
-			db.QueryRow("SELECT id FROM members WHERE uid = ?", m.UID).Scan(&memberID)
+			db.QueryRow("SELECT id FROM members WHERE nis_nip = ?", m.NISNIP).Scan(&memberID)
 			if memberID == 0 {
 				memberID, _ = res.LastInsertId()
 			}
 
-			// 4. Sinkronisasi kartu terhubung (mapped) ke rfid_cards (hanya kartu nyata 10 digit)
-			if !strings.HasPrefix(m.UID, "PENDING-") {
+			// 4. Sinkronisasi kartu terhubung (mapped) ke rfid_cards (hanya jika UID diisi)
+			if m.UID != "" && !strings.HasPrefix(m.UID, "PENDING-") && !strings.HasPrefix(m.UID, "UNASSIGNED-") {
 				db.Exec(`INSERT INTO rfid_cards (card_uid, device_id, member_id, status, updated_at)
 					VALUES (?, 'PRESENSI-V1', ?, 'mapped', CURRENT_TIMESTAMP)
 					ON CONFLICT(card_uid) DO UPDATE SET member_id = excluded.member_id, status = 'mapped', updated_at = CURRENT_TIMESTAMP`,
@@ -2022,8 +2063,7 @@ func handleCards(w http.ResponseWriter, r *http.Request) {
 
 		if memberID > 0 && targetUID != "" {
 			// Lepas uid dari member
-			dummyUID := fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
-			db.Exec("UPDATE members SET uid = ? WHERE id = ?", dummyUID, memberID)
+			db.Exec("UPDATE members SET uid = '' WHERE id = ?", memberID)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -2068,8 +2108,7 @@ func handleMapCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Lepas kartu ini dari member lain jika sebelumnya terhubung
-	dummyUID := fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
-	db.Exec("UPDATE members SET uid = ? WHERE uid = ? AND id != ?", dummyUID, req.CardUID, req.MemberID)
+	db.Exec("UPDATE members SET uid = '' WHERE uid = ? AND id != ?", req.CardUID, req.MemberID)
 
 	// 2. Hubungkan ke member target
 	_, err := db.Exec("UPDATE members SET uid = ? WHERE id = ?", req.CardUID, req.MemberID)
@@ -2133,14 +2172,12 @@ func handleUnmapCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.CardUID != "" {
-		dummyUID := fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
-		db.Exec("UPDATE members SET uid = ? WHERE uid = ?", dummyUID, req.CardUID)
+		db.Exec("UPDATE members SET uid = '' WHERE uid = ?", req.CardUID)
 		db.Exec("UPDATE rfid_cards SET member_id = 0, status = 'unmapped', updated_at = CURRENT_TIMESTAMP WHERE card_uid = ?", req.CardUID)
 	} else if req.MemberID > 0 {
 		var existingUID string
 		db.QueryRow("SELECT uid FROM members WHERE id = ?", req.MemberID).Scan(&existingUID)
-		dummyUID := fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
-		db.Exec("UPDATE members SET uid = ? WHERE id = ?", dummyUID, req.MemberID)
+		db.Exec("UPDATE members SET uid = '' WHERE id = ?", req.MemberID)
 		if existingUID != "" {
 			db.Exec("UPDATE rfid_cards SET member_id = 0, status = 'unmapped', updated_at = CURRENT_TIMESTAMP WHERE card_uid = ?", existingUID)
 		}
@@ -2216,21 +2253,35 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		m.Tipe = strings.ToLower(strings.TrimSpace(m.Tipe))
 		m.TelegramChatID = strings.TrimSpace(m.TelegramChatID)
 
+		if m.NISNIP == "" {
+			writeJSONError(w, http.StatusBadRequest, "NIS / NIP wajib diisi sebagai identitas unik anggota.")
+			return
+		}
 		if m.Nama == "" {
 			writeJSONError(w, http.StatusBadRequest, "Nama Lengkap wajib diisi.")
 			return
 		}
-		if m.UID == "" || m.UID == "-" {
-			m.UID = fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
+		if m.UID == "-" || strings.HasPrefix(m.UID, "PENDING-") || strings.HasPrefix(m.UID, "UNASSIGNED-") {
+			m.UID = ""
 		}
 		if m.Tipe != "siswa" && m.Tipe != "guru" {
 			m.Tipe = "siswa"
 		}
 
-		res, err := db.Exec("INSERT INTO members (uid, fingerprint_id, nis_nip, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			m.UID, m.FingerprintID, m.NISNIP, m.Nama, m.NamaOrtu, m.Tipe, m.Kelas, m.NoHP, m.TelegramChatID)
+		// Jika UID diisi nyata, pastikan belum digunakan oleh anggota lain
+		if m.UID != "" {
+			var conflictName string
+			db.QueryRow("SELECT nama FROM members WHERE uid = ? LIMIT 1", m.UID).Scan(&conflictName)
+			if conflictName != "" {
+				writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("UID Kartu RFID '%s' sudah digunakan oleh %s.", m.UID, conflictName))
+				return
+			}
+		}
+
+		res, err := db.Exec("INSERT INTO members (nis_nip, uid, fingerprint_id, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			m.NISNIP, m.UID, m.FingerprintID, m.Nama, m.NamaOrtu, m.Tipe, m.Kelas, m.NoHP, m.TelegramChatID)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "UID Kartu RFID sudah terdaftar.")
+			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("NIS / NIP '%s' sudah terdaftar pada anggota lain.", m.NISNIP))
 			return
 		}
 
@@ -2238,7 +2289,7 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		m.ID = int(id)
 
 		// Sinkronisasi ke rfid_cards jika UID nyata diisi
-		if !strings.HasPrefix(m.UID, "PENDING-") && !strings.HasPrefix(m.UID, "UNASSIGNED-") {
+		if m.UID != "" {
 			db.Exec(`INSERT INTO rfid_cards (card_uid, member_id, status, updated_at)
 				VALUES (?, ?, 'mapped', CURRENT_TIMESTAMP)
 				ON CONFLICT(card_uid) DO UPDATE SET member_id = excluded.member_id, status = 'mapped', updated_at = CURRENT_TIMESTAMP`,
@@ -2273,29 +2324,47 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		m.NamaOrtu = strings.TrimSpace(m.NamaOrtu)
 		m.TelegramChatID = strings.TrimSpace(m.TelegramChatID)
 
+		if m.NISNIP == "" {
+			writeJSONError(w, http.StatusBadRequest, "NIS / NIP wajib diisi sebagai identitas unik anggota.")
+			return
+		}
 		if m.Nama == "" {
 			writeJSONError(w, http.StatusBadRequest, "Nama Lengkap wajib diisi.")
 			return
 		}
 
-		if m.UID == "" || m.UID == "-" {
-			var oldUID string
-			db.QueryRow("SELECT uid FROM members WHERE id = ?", m.ID).Scan(&oldUID)
+		var oldUID string
+		db.QueryRow("SELECT uid FROM members WHERE id = ?", m.ID).Scan(&oldUID)
+
+		if m.UID == "-" || strings.HasPrefix(m.UID, "PENDING-") || strings.HasPrefix(m.UID, "UNASSIGNED-") {
+			m.UID = ""
+		}
+
+		if m.UID == "" {
 			if oldUID != "" && !strings.HasPrefix(oldUID, "PENDING-") && !strings.HasPrefix(oldUID, "UNASSIGNED-") {
 				db.Exec("UPDATE rfid_cards SET member_id = 0, status = 'unmapped', updated_at = CURRENT_TIMESTAMP WHERE card_uid = ?", oldUID)
 			}
-			m.UID = fmt.Sprintf("PENDING-%d", time.Now().UnixNano())
+		} else if m.UID != oldUID {
+			var conflictName string
+			db.QueryRow("SELECT nama FROM members WHERE uid = ? AND id != ? LIMIT 1", m.UID, m.ID).Scan(&conflictName)
+			if conflictName != "" {
+				writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("UID Kartu RFID '%s' sudah digunakan oleh %s.", m.UID, conflictName))
+				return
+			}
+			if oldUID != "" && !strings.HasPrefix(oldUID, "PENDING-") && !strings.HasPrefix(oldUID, "UNASSIGNED-") {
+				db.Exec("UPDATE rfid_cards SET member_id = 0, status = 'unmapped', updated_at = CURRENT_TIMESTAMP WHERE card_uid = ?", oldUID)
+			}
 		}
 
-		_, err := db.Exec("UPDATE members SET uid = ?, fingerprint_id = ?, nis_nip = ?, nama = ?, nama_ortu = ?, tipe = ?, kelas = ?, no_hp = ?, telegram_chat_id = ? WHERE id = ?",
-			m.UID, m.FingerprintID, m.NISNIP, m.Nama, m.NamaOrtu, m.Tipe, m.Kelas, m.NoHP, m.TelegramChatID, m.ID)
+		_, err := db.Exec("UPDATE members SET nis_nip = ?, uid = ?, fingerprint_id = ?, nama = ?, nama_ortu = ?, tipe = ?, kelas = ?, no_hp = ?, telegram_chat_id = ? WHERE id = ?",
+			m.NISNIP, m.UID, m.FingerprintID, m.Nama, m.NamaOrtu, m.Tipe, m.Kelas, m.NoHP, m.TelegramChatID, m.ID)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "Gagal memperbarui data member (UID mungkin sudah terdaftar pada anggota lain).")
+			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("Gagal memperbarui data member: NIS / NIP '%s' mungkin sudah terdaftar pada anggota lain.", m.NISNIP))
 			return
 		}
 
 		// Sinkronisasi ke rfid_cards jika UID nyata diisi
-		if !strings.HasPrefix(m.UID, "PENDING-") && !strings.HasPrefix(m.UID, "UNASSIGNED-") {
+		if m.UID != "" {
 			db.Exec(`INSERT INTO rfid_cards (card_uid, member_id, status, updated_at)
 				VALUES (?, ?, 'mapped', CURRENT_TIMESTAMP)
 				ON CONFLICT(card_uid) DO UPDATE SET member_id = excluded.member_id, status = 'mapped', updated_at = CURRENT_TIMESTAMP`,
@@ -2320,6 +2389,10 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, "Parameter id tidak valid.")
 			return
 		}
+
+		// Lepas relasi kartu dan sidik jari sebelum menghapus member
+		db.Exec("UPDATE rfid_cards SET member_id = 0, status = 'unmapped', updated_at = CURRENT_TIMESTAMP WHERE member_id = ?", id)
+		db.Exec("UPDATE fingerprints SET member_id = 0, status = 'unmapped', updated_at = CURRENT_TIMESTAMP WHERE member_id = ?", id)
 
 		_, err = db.Exec("DELETE FROM members WHERE id = ?", id)
 		if err != nil {
@@ -2418,7 +2491,8 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 	var errorsList []BulkErrorItem
 	var insertedCount int
 	var updatedCount int
-	usedBatchUIDs := make(map[string]int) // uid -> row number
+	usedBatchUIDs := make(map[string]int)   // uid -> row number
+	usedBatchNISNIP := make(map[string]int) // nis_nip -> row number
 
 	for idx, m := range req.Members {
 		rowNum := m.RowNumber
@@ -2451,6 +2525,37 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 		noHP := strings.TrimSpace(m.NoHP)
 		chatId := strings.TrimSpace(m.TelegramChatID)
 		uid := strings.ToUpper(strings.TrimSpace(m.UID))
+
+		// Validasi NIS / NIP (Wajib sebagai kunci unik)
+		if nisNIP == "" {
+			labelID := "NIS"
+			if tipe == "guru" {
+				labelID = "NIP"
+			}
+			errorsList = append(errorsList, BulkErrorItem{
+				RowNumber: rowNum,
+				Nama:      nama,
+				Field:     labelID,
+				Error:     fmt.Sprintf("%s wajib diisi sebagai identitas unik anggota.", labelID),
+			})
+			continue
+		}
+
+		// Validasi duplikasi NIS/NIP di dalam file Excel yang sama
+		if prevRow, dup := usedBatchNISNIP[nisNIP]; dup {
+			labelID := "NIS"
+			if tipe == "guru" {
+				labelID = "NIP"
+			}
+			errorsList = append(errorsList, BulkErrorItem{
+				RowNumber: rowNum,
+				Nama:      nama,
+				Field:     labelID,
+				Error:     fmt.Sprintf("%s '%s' duplikat di file Excel (sudah dipakai di baris %d).", labelID, nisNIP, prevRow),
+			})
+			continue
+		}
+		usedBatchNISNIP[nisNIP] = rowNum
 
 		// Validasi Kelas / Jabatan
 		var canonicalGroup string
@@ -2514,24 +2619,16 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 			usedBatchUIDs[uid] = rowNum
 		}
 
-		// Cek apakah anggota sudah ada di database
-		// Prioritas pencarian: 1. By NIS/NIP jika ada, 2. By UID jika UID nyata diisi
+		// Cek apakah anggota sudah ada di database berdasarkan kunci unik NIS/NIP
 		var existingID int
 		var existingUID string
 		var existingName string
 
-		if nisNIP != "" {
-			db.QueryRow("SELECT id, uid, nama FROM members WHERE nis_nip = ? AND tipe = ? LIMIT 1", nisNIP, tipe).
-				Scan(&existingID, &existingUID, &existingName)
-		}
-
-		if existingID == 0 && isRealUID {
-			db.QueryRow("SELECT id, uid, nama FROM members WHERE uid = ? LIMIT 1", uid).
-				Scan(&existingID, &existingUID, &existingName)
-		}
+		db.QueryRow("SELECT id, uid, nama FROM members WHERE nis_nip = ? LIMIT 1", nisNIP).
+			Scan(&existingID, &existingUID, &existingName)
 
 		if existingID > 0 {
-			// Jika UID baru nyata diisi dan berbeda dari UID lama, pastikan tidak bertabrakan dengan anggota lain
+			// Jika anggota sudah ada: jika UID baru diisi nyata dan berbeda dari UID lama, pastikan tidak bentrok
 			targetUID := existingUID
 			if isRealUID {
 				var conflictID int
@@ -2553,9 +2650,9 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 			// Lakukan update data anggota yang sudah ada
 			_, err := db.Exec(`
 				UPDATE members 
-				SET uid = ?, nis_nip = ?, nama = ?, nama_ortu = ?, tipe = ?, kelas = ?, no_hp = ?, telegram_chat_id = ?
+				SET nis_nip = ?, uid = ?, nama = ?, nama_ortu = ?, tipe = ?, kelas = ?, no_hp = ?, telegram_chat_id = ?
 				WHERE id = ?
-			`, targetUID, nisNIP, nama, namaOrtu, tipe, canonicalGroup, noHP, chatId, existingID)
+			`, nisNIP, targetUID, nama, namaOrtu, tipe, canonicalGroup, noHP, chatId, existingID)
 
 			if err != nil {
 				errorsList = append(errorsList, BulkErrorItem{
@@ -2567,7 +2664,7 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			if !strings.HasPrefix(targetUID, "PENDING-") && !strings.HasPrefix(targetUID, "UNASSIGNED-") {
+			if targetUID != "" && !strings.HasPrefix(targetUID, "PENDING-") && !strings.HasPrefix(targetUID, "UNASSIGNED-") {
 				db.Exec(`INSERT INTO rfid_cards (card_uid, member_id, status, updated_at)
 					VALUES (?, ?, 'mapped', CURRENT_TIMESTAMP)
 					ON CONFLICT(card_uid) DO UPDATE SET member_id = excluded.member_id, status = 'mapped', updated_at = CURRENT_TIMESTAMP`,
@@ -2577,31 +2674,29 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 
 		} else {
 			// Anggota baru (INSERT)
-			targetUID := uid
-			if !isRealUID {
-				// RFID Opsional: alokasikan identitas sementara unik
-				targetUID = fmt.Sprintf("PENDING-%d-%d", time.Now().UnixNano(), rowNum)
-			} else {
+			targetUID := ""
+			if isRealUID {
 				// Cek tabrakan UID di database
 				var conflictID int
 				var conflictName string
-				db.QueryRow("SELECT id, nama FROM members WHERE uid = ? LIMIT 1", targetUID).
+				db.QueryRow("SELECT id, nama FROM members WHERE uid = ? LIMIT 1", uid).
 					Scan(&conflictID, &conflictName)
 				if conflictID > 0 {
 					errorsList = append(errorsList, BulkErrorItem{
 						RowNumber: rowNum,
 						Nama:      nama,
 						Field:     "UID Kartu RFID",
-						Error:     fmt.Sprintf("UID Kartu RFID '%s' sudah terdaftar pada anggota '%s'.", targetUID, conflictName),
+						Error:     fmt.Sprintf("UID Kartu RFID '%s' sudah terdaftar pada anggota '%s'.", uid, conflictName),
 					})
 					continue
 				}
+				targetUID = uid
 			}
 
 			res, err := db.Exec(`
-				INSERT INTO members (uid, nis_nip, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id)
+				INSERT INTO members (nis_nip, uid, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			`, targetUID, nisNIP, nama, namaOrtu, tipe, canonicalGroup, noHP, chatId)
+			`, nisNIP, targetUID, nama, namaOrtu, tipe, canonicalGroup, noHP, chatId)
 
 			if err != nil {
 				errorsList = append(errorsList, BulkErrorItem{
@@ -2614,7 +2709,7 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 			}
 
 			newID, _ := res.LastInsertId()
-			if !strings.HasPrefix(targetUID, "PENDING-") && !strings.HasPrefix(targetUID, "UNASSIGNED-") {
+			if targetUID != "" && !strings.HasPrefix(targetUID, "PENDING-") && !strings.HasPrefix(targetUID, "UNASSIGNED-") {
 				db.Exec(`INSERT INTO rfid_cards (card_uid, member_id, status, updated_at)
 					VALUES (?, ?, 'mapped', CURRENT_TIMESTAMP)
 					ON CONFLICT(card_uid) DO UPDATE SET member_id = excluded.member_id, status = 'mapped', updated_at = CURRENT_TIMESTAMP`,

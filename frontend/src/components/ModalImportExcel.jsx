@@ -123,10 +123,23 @@ export default function ModalImportExcel({
         });
 
         const seenUIDs = new Set();
+        const seenNISNIP = new Set();
         const validated = rawData.map((raw, index) => {
           const rowNumber = index + 2; // Baris 1 adalah header di Excel
           const normalized = normalizeRow(raw);
           const errors = [];
+
+          // 0. Validasi NIS / NIP (Wajib sebagai kunci unik database)
+          const idLabel = isGuru ? 'NIP' : 'NIS';
+          if (!normalized.nis_nip) {
+            errors.push(`${idLabel} wajib diisi sebagai identitas unik anggota`);
+          } else {
+            if (seenNISNIP.has(normalized.nis_nip)) {
+              errors.push(`${idLabel} "${normalized.nis_nip}" duplikat di dalam file Excel`);
+            } else {
+              seenNISNIP.add(normalized.nis_nip);
+            }
+          }
 
           // 1. Validasi Nama (Wajib)
           if (!normalized.nama) {
@@ -325,7 +338,10 @@ export default function ModalImportExcel({
               </div>
               <ul className="text-slate-600 space-y-1 pl-5 list-disc text-11px">
                 <li>
-                  <b className="text-slate-800">Nama Lengkap (Wajib)</b>: Nama santri/guru tidak boleh kosong.
+                  <b className="text-slate-800">{isGuru ? 'NIP (Wajib)' : 'NIS (Wajib)'}</b>: Kunci unik anggota di database (tidak boleh kosong & tidak boleh duplikat).
+                </li>
+                <li>
+                  <b className="text-slate-800">Nama Lengkap (Wajib)</b>: Nama santri/guru/pegawai tidak boleh kosong.
                 </li>
                 <li>
                   <b className="text-slate-800">{isGuru ? 'Nama Jabatan (Wajib)' : 'Nama Kelas (Wajib)'}</b>: Harus sama persis dengan yang ada di <i>Master {isGuru ? 'Jabatan' : 'Kelas'}</i>.
@@ -344,11 +360,13 @@ export default function ModalImportExcel({
                   <b className="text-slate-800">UID Kartu RFID (Opsional)</b>: Boleh kosong. Kartu bisa di-tap/dihubungkan nanti di menu <i>Kartu RFID (Mapping)</i>.
                 </li>
                 <li>
-                  <b className="text-slate-800">No WhatsApp (Opsional)</b>: Boleh kosong.
+                  <b className="text-slate-800">No WhatsApp (Opsional)</b>: Boleh dikosongkan.
                 </li>
-                <li>
-                  <b className="text-slate-800">{isGuru ? 'NIP' : 'NIS'} (Opsional)</b>: Nomor induk santri/guru.
-                </li>
+                {!isGuru && (
+                  <li>
+                    <b className="text-slate-800">Nama Orang Tua (Opsional)</b>: Boleh dikosongkan.
+                  </li>
+                )}
               </ul>
             </div>
           </div>
@@ -439,10 +457,10 @@ export default function ModalImportExcel({
                 <thead className="bg-slate-100 text-slate-700 sticky top-0 z-10 font-bold border-b border-slate-200">
                   <tr>
                     <th className="p-2.5 w-14 text-center">Baris</th>
-                    <th className="p-2.5">Nama Lengkap</th>
-                    <th className="p-2.5">{labelGroup}</th>
-                    <th className="p-2.5">{isGuru ? 'NIP' : 'NIS'}</th>
-                    <th className="p-2.5">UID RFID</th>
+                    <th className="p-2.5">{isGuru ? 'NIP (Wajib)' : 'NIS (Wajib)'}</th>
+                    <th className="p-2.5">Nama Lengkap (Wajib)</th>
+                    <th className="p-2.5">{labelGroup} (Wajib)</th>
+                    <th className="p-2.5">UID RFID (Opsional)</th>
                     <th className="p-2.5">No WhatsApp</th>
                     <th className="p-2.5 text-center">Status / Info</th>
                   </tr>
@@ -454,6 +472,15 @@ export default function ModalImportExcel({
                       className={r.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/50 hover:bg-rose-50'}
                     >
                       <td className="p-2.5 text-center font-bold text-slate-500">{r.rowNumber}</td>
+                      <td className="p-2.5 font-mono text-11px">
+                        {r.nis_nip ? (
+                          <span className={r.errors.some(e => e.includes('NIS') || e.includes('NIP')) ? 'text-rose-600 font-bold' : 'text-slate-700 font-semibold'}>
+                            {r.nis_nip}
+                          </span>
+                        ) : (
+                          <span className="text-rose-500 font-bold italic">(Wajib Diisi)</span>
+                        )}
+                      </td>
                       <td className="p-2.5 font-semibold text-slate-800">
                         {r.nama || <span className="text-rose-500 italic">(Kosong)</span>}
                       </td>
@@ -466,7 +493,6 @@ export default function ModalImportExcel({
                           <span className="text-rose-500 italic">(Kosong)</span>
                         )}
                       </td>
-                      <td className="p-2.5 text-slate-500 font-mono text-11px">{r.nis_nip || '-'}</td>
                       <td className="p-2.5">
                         {r.uid && r.uid !== '-' ? (
                           <span className="font-mono text-11px px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200">
