@@ -1,1539 +1,1752 @@
 {
-	"info": {
-		"_postman_id": "8f28b2a1-e408-4e89-a2bf-a720dc274941",
-		"name": "Absensi Digital - Golang REST API & ESP32 (Lengkap 2026)",
-		"description": "Koleksi Postman REST API Resmi untuk Sistem Presensi Digital Pondok Pesantren & Sekolah (IoT ESP32 + Golang + SQLite).\n\n🌟 Fitur & Modul API:\n1. Autentikasi JWT Admin.\n2. Integrasi IoT ESP32 (RFID + Sensor Sidik Jari R503, Sync Booting, Upload Template .bin, Offline Batch Flush).\n3. Manajemen Sidik Jari (Daftar Slot, Mapping Anggota, Hapus Remote dengan instruksi restart sensor).\n4. Data Master Anggota (Santri / Guru, Bulk Import Excel).\n5. Data Master Kelas & Jabatan.\n6. Laporan & Rekapitulasi Presensi (Harian, Bulanan, Summary).\n7. Pengaturan Sistem, Logo Instansi, Batas Jam, dan Reset Database.\n8. Server-Sent Events (SSE) Realtime Stream & Health Check.",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-	},
-	"item": [
-		{
-			"name": "1. Autentikasi",
-			"item": [
-				{
-					"name": "Login Administrator",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"if (pm.response.code === 200 && jsonData.token) {",
-									"    pm.collectionVariables.set(\"jwt_token\", jsonData.token);",
-									"    console.log(\"JWT Token berhasil disimpan ke variabel: \", jsonData.token);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"username\": \"admin\",\n    \"password\": \"admin123\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/login",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"login"
-							]
-						},
-						"description": "Endpoint login untuk administrator. Token JWT akan otomatis tersimpan ke variabel {{jwt_token}} dan digunakan oleh request lain di koleksi ini."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "2. Integrasi Mesin ESP32 (IoT Actions)",
-			"description": "Endpoint publik yang digunakan oleh mikrokontroler ESP32 untuk presensi RFID, sidik jari, sinkronisasi booting, upload template, dan flush log offline.",
-			"item": [
-				{
-					"name": "1. Tap Absensi Sidik Jari (Fingerprint Scan)",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "X-API-KEY",
-								"value": "KUNCI_API_PRESENSI_V1_2026"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"device_id\": \"PRESENSI-V1\",\n    \"fingerprint_id\": 1,\n    \"tipe_scan\": \"auto\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/attendance/tap",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"attendance",
-								"tap"
-							]
-						},
-						"description": "Simulasi scan jari pada sensor R503. Backend otomatis mendeteksi apakah santri/guru tersebut masuk atau pulang dan mengecek batas jeda 2 menit untuk mencegah dobel absen."
-					},
-					"response": []
-				},
-				{
-					"name": "2. Tap Absensi RFID (Card Scan)",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "X-API-KEY",
-								"value": "KUNCI_API_PRESENSI_V1_2026"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"device_id\": \"PRESENSI-V1\",\n    \"rfid_tag\": \"0104830615\",\n    \"tipe_scan\": \"auto\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/attendance/tap",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"attendance",
-								"tap"
-							]
-						},
-						"description": "Simulasi tap kartu RFID pada reader RC522. Backend mencatat riwayat kehadiran atau auto-register jika kartu belum terdaftar."
-					},
-					"response": []
-				},
-				{
-					"name": "3. Booting Sync & Sensor Purge (Action: sync)",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "X-API-KEY",
-								"value": "KUNCI_API_PRESENSI_V1_2026"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"action\": \"sync\",\n    \"device_id\": \"PRESENSI-V1\",\n    \"active_fingerprints\": [1, 2, 3, 4, 5],\n    \"total_fingerprints\": 5\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/attendance/tap",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"attendance",
-								"tap"
-							]
-						},
-						"description": "Dipanggil saat ESP32 pertama kali booting. Server mencatat seluruh slot aktif dan merespon dengan daftar 'delete_fingerprints' jika ada slot yang telah dihapus admin melalui web."
-					},
-					"response": []
-				},
-				{
-					"name": "4. Upload Seluruh Template Sidik Jari (Action: upload_templates)",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "X-API-KEY",
-								"value": "KUNCI_API_PRESENSI_V1_2026"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"action\": \"upload_templates\",\n    \"device_id\": \"PRESENSI-V1\",\n    \"templates\": [\n        {\n            \"fingerprint_id\": 1,\n            \"template_data\": \"010203040506070809...\"\n        },\n        {\n            \"fingerprint_id\": 2,\n            \"template_data\": \"010203040506070809...\"\n        }\n    ]\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/attendance/tap",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"attendance",
-								"tap"
-							]
-						},
-						"description": "Dipanggil otomatis oleh ESP32 setelah selesai merestore file backup .bin agar server database memiliki salinan seluruh template sidik jari."
-					},
-					"response": []
-				},
-				{
-					"name": "5. Batch Flush Antrean Presensi Offline (Action: offline_sync)",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "X-API-KEY",
-								"value": "KUNCI_API_PRESENSI_V1_2026"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"action\": \"offline_sync\",\n    \"device_id\": \"PRESENSI-V1\",\n    \"logs\": [\n        \"{\\\"fingerprint_id\\\": 1, \\\"rfid_tag\\\": \\\"\\\", \\\"recorded_at\\\": \\\"2026-09-03 06:45:10\\\"}\",\n        \"{\\\"fingerprint_id\\\": 0, \\\"rfid_tag\\\": \\\"0104830615\\\", \\\"recorded_at\\\": \\\"2026-09-03 06:46:20\\\"}\"\n    ]\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/attendance/tap",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"attendance",
-								"tap"
-							]
-						},
-						"description": "Mengirimkan seluruh data antrean presensi yang disimpan di flash SPIFFS ESP32 saat jaringan WiFi sempat terputus."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "3. Manajemen Sidik Jari (Fingerprints)",
-			"item": [
-				{
-					"name": "Get Semua Slot Sidik Jari & Relasi Anggota",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/fingerprints",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"fingerprints"
-							]
-						},
-						"description": "Mengambil seluruh slot sidik jari yang terdaftar di database server beserta status mapping (mapped/unmapped) dan data santri/guru terkait."
-					},
-					"response": []
-				},
-				{
-					"name": "Hubungkan (Map) Sidik Jari ke Anggota",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"fingerprint_id\": 1,\n    \"member_id\": 1\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/fingerprints/map",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"fingerprints",
-								"map"
-							]
-						},
-						"description": "Menghubungkan slot sensor sidik jari tertentu ke profil santri atau guru di database."
-					},
-					"response": []
-				},
-				{
-					"name": "Lepas Hubungan (Unmap) Sidik Jari",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"fingerprint_id\": 1\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/fingerprints/unmap",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"fingerprints",
-								"unmap"
-							]
-						},
-						"description": "Melepaskan kaitan slot sidik jari sehingga menjadi 'unmapped' tanpa menghapus model sidik jarinya."
-					},
-					"response": []
-				},
-				{
-					"name": "Hapus Sidik Jari dari Server & Antrean Sensor ESP32",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "DELETE",
-						"url": {
-							"raw": "{{baseUrl}}/api/fingerprints?id=1&fingerprint_id=1&device_id=PRESENSI-V1",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"fingerprints"
-							],
-							"query": [
-								{
-									"key": "id",
-									"value": "1"
-								},
-								{
-									"key": "fingerprint_id",
-									"value": "1"
-								},
-								{
-									"key": "device_id",
-									"value": "PRESENSI-V1"
-								}
-							]
-						},
-						"description": "Menghapus data sidik jari dari database server dan memasukkannya ke antrean penghapusan fisik sensor R503 saat ESP32 dinyalakan ulang (restart)."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "4. Data Master Anggota (Santri & Guru)",
-			"item": [
-				{
-					"name": "Get Semua Anggota (Filter Tipe & Search)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/members?tipe=all&search=",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"members"
-							],
-							"query": [
-								{
-									"key": "tipe",
-									"value": "all",
-									"description": "all | siswa | guru"
-								},
-								{
-									"key": "search",
-									"value": "",
-									"description": "Cari nama, UID, NISN, atau kelas"
-								}
-							]
-						},
-						"description": "Mengambil seluruh data santri atau guru yang terdaftar di database SQLite."
-					},
-					"response": []
-				},
-				{
-					"name": "Tambah Anggota Baru",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"uid\": \"0104830615\",\n    \"fingerprint_id\": 0,\n    \"nis_nip\": \"20261001\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"no_hp\": \"081234567801\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/members",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"members"
-							]
-						},
-						"description": "Mendaftarkan anggota baru ke database."
-					},
-					"response": []
-				},
-				{
-					"name": "Import Anggota Bulk dari Excel (Bulk Import)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"members\": [\n        {\n            \"uid\": \"0104830616\",\n            \"nis_nip\": \"20261002\",\n            \"nama\": \"Aisyah Nurul Hidayah\",\n            \"tipe\": \"siswa\",\n            \"kelas\": \"10 IPA 2\",\n            \"no_hp\": \"081234567802\"\n        },\n        {\n            \"uid\": \"0104830617\",\n            \"nis_nip\": \"20261003\",\n            \"nama\": \"Fajar Dwi Santoso\",\n            \"tipe\": \"siswa\",\n            \"kelas\": \"11 IPA 1\",\n            \"no_hp\": \"081234567803\"\n        }\n    ]\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/members/bulk",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"members",
-								"bulk"
-							]
-						},
-						"description": "Menyimpan banyak data anggota sekaligus hasil parsing file Excel (.xlsx)."
-					},
-					"response": []
-				},
-				{
-					"name": "Update Data Anggota",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "PUT",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"id\": 1,\n    \"uid\": \"0104830615\",\n    \"fingerprint_id\": 1,\n    \"nis_nip\": \"20261001\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"12 IPA 1\",\n    \"no_hp\": \"081299887766\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/members",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"members"
-							]
-						},
-						"description": "Mengubah informasi nama, UID kartu, NIS/NIP, kelas, atau nomor telepon anggota."
-					},
-					"response": []
-				},
-				{
-					"name": "Hapus Anggota",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "DELETE",
-						"url": {
-							"raw": "{{baseUrl}}/api/members?id=1",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"members"
-							],
-							"query": [
-								{
-									"key": "id",
-									"value": "1"
-								}
-							]
-						},
-						"description": "Menghapus data anggota berdasarkan ID."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "5. Data Master Kelas & Jabatan",
-			"item": [
-				{
-					"name": "Get Semua Kelas",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/classes",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"classes"
-							]
-						},
-						"description": "Mengambil daftar master nama kelas santri."
-					},
-					"response": []
-				},
-				{
-					"name": "Tambah Kelas Baru",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"nama\": \"10 IPA 3\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/classes",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"classes"
-							]
-						},
-						"description": "Menambahkan data kelas baru."
-					},
-					"response": []
-				},
-				{
-					"name": "Hapus Kelas",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "DELETE",
-						"url": {
-							"raw": "{{baseUrl}}/api/classes?id=1",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"classes"
-							],
-							"query": [
-								{
-									"key": "id",
-									"value": "1"
-								}
-							]
-						},
-						"description": "Menghapus master data kelas."
-					},
-					"response": []
-				},
-				{
-					"name": "Get Semua Jabatan Guru/Staf",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/positions",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"positions"
-							]
-						},
-						"description": "Mengambil daftar master jabatan guru dan staf pondok."
-					},
-					"response": []
-				},
-				{
-					"name": "Tambah Jabatan Baru",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"nama\": \"Guru Tahfidz\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/positions",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"positions"
-							]
-						},
-						"description": "Menambahkan jabatan guru baru."
-					},
-					"response": []
-				},
-				{
-					"name": "Hapus Jabatan",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "DELETE",
-						"url": {
-							"raw": "{{baseUrl}}/api/positions?id=1",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"positions"
-							],
-							"query": [
-								{
-									"key": "id",
-									"value": "1"
-								}
-							]
-						},
-						"description": "Menghapus data master jabatan."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "6. Laporan & Presensi",
-			"item": [
-				{
-					"name": "Get Laporan Harian (Tanggal)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/attendance?tanggal=2026-09-03&tipe=all",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"attendance"
-							],
-							"query": [
-								{
-									"key": "tanggal",
-									"value": "2026-09-03"
-								},
-								{
-									"key": "tipe",
-									"value": "all",
-									"description": "all | siswa | guru"
-								}
-							]
-						},
-						"description": "Mengambil rekapitulasi data absensi berdasarkan tanggal tertentu."
-					},
-					"response": []
-				},
-				{
-					"name": "Get Laporan Rekap Bulanan (Bulan)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/attendance?bulan=2026-09&tipe=all",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"attendance"
-							],
-							"query": [
-								{
-									"key": "bulan",
-									"value": "2026-09"
-								},
-								{
-									"key": "tipe",
-									"value": "all"
-								}
-							]
-						},
-						"description": "Mengambil rekapitulasi kehadiran selama 1 bulan penuh untuk dicetak ke PDF."
-					},
-					"response": []
-				},
-				{
-					"name": "Get Summary Kehadiran (Statistik Cepat)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/attendance/summary?tanggal=2026-09-03",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"attendance",
-								"summary"
-							],
-							"query": [
-								{
-									"key": "tanggal",
-									"value": "2026-09-03"
-								}
-							]
-						},
-						"description": "Mengambil ringkasan jumlah hadir, telat, tepat, dan belum hadir."
-					},
-					"response": []
-				},
-				{
-					"name": "Tambah Presensi Manual (Admin)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"uid\": \"0104830615\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"tanggal\": \"2026-09-03\",\n    \"waktu_masuk\": \"06:40:00\",\n    \"status_masuk\": \"tepat\",\n    \"waktu_keluar\": \"15:00:00\",\n    \"status_keluar\": \"tepat\",\n    \"id_mesin\": \"MANUAL\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/attendance",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"attendance"
-							]
-						},
-						"description": "Input manual data presensi oleh administrator jika santri/guru berhalangan tap kartu."
-					},
-					"response": []
-				},
-				{
-					"name": "Edit Jam & Status Presensi",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "PUT",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"id\": 1,\n    \"uid\": \"0104830615\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"tanggal\": \"2026-09-03\",\n    \"waktu_masuk\": \"06:30:00\",\n    \"status_masuk\": \"tepat\",\n    \"waktu_keluar\": \"15:15:00\",\n    \"status_keluar\": \"tepat\",\n    \"id_mesin\": \"PRESENSI-V1\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/attendance",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"attendance"
-							]
-						},
-						"description": "Mengubah jam masuk/keluar atau status absensi pada rekaman yang sudah ada."
-					},
-					"response": []
-				},
-				{
-					"name": "Hapus Data Presensi",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "DELETE",
-						"url": {
-							"raw": "{{baseUrl}}/api/attendance?id=1",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"attendance"
-							],
-							"query": [
-								{
-									"key": "id",
-									"value": "1"
-								}
-							]
-						},
-						"description": "Menghapus 1 baris rekaman presensi."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "7. Dashboard & Statistik",
-			"item": [
-				{
-					"name": "Get Statistik Realtime Dashboard",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/stats/dashboard",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"stats",
-								"dashboard"
-							]
-						},
-						"description": "Mengambil data statistik realtime: total santri, total guru, jumlah hadir hari ini, persentase kehadiran, dan daftar 10 aktivitas presensi terakhir."
-					},
-					"response": []
-				},
-				{
-					"name": "Get Daftar Perangkat Mesin IoT",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/devices",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"devices"
-							]
-						},
-						"description": "Mengambil status online/offline mesin presensi ESP32."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "8. Pengaturan Sistem & Reset",
-			"item": [
-				{
-					"name": "Get Pengaturan Sistem, Profil & Logo",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/settings",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"settings"
-							]
-						},
-						"description": "Mengambil data profil instansi, logo base64, alamat, kontak, dan batas jam masuk/pulang."
-					},
-					"response": []
-				},
-				{
-					"name": "Simpan Pengaturan Sistem & Logo Instansi",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"instansi_nama\": \"YAYASAN PONDOK PESANTREN DIGITAL\",\n    \"instansi_sub_header\": \"AKREDITASI A - KEMENAG RI\",\n    \"instansi_alamat\": \"Jl. Pesantren Digital No. 01\",\n    \"instansi_kota\": \"Jawa Timur\",\n    \"instansi_telepon\": \"(031) 88997766\",\n    \"instansi_email\": \"info@siakadponpes.com\",\n    \"instansi_logo\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...\",\n    \"jam_masuk_batas\": \"07:00\",\n    \"jam_pulang_batas\": \"15:00\",\n    \"kepala_nama\": \"KH. Ahmad Zaki, Lc., M.Ag\",\n    \"kepala_nip\": \"198001012005011001\",\n    \"auto_register_rfid\": \"1\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/settings",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"settings"
-							]
-						},
-						"description": "Menyimpan pengaturan profil instansi, logo, batas jam presensi, dan kebijakan auto-register RFID ke database SQLite."
-					},
-					"response": []
-				},
-				{
-					"name": "Generate Data Dummy Santri & Absensi",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"url": {
-							"raw": "{{baseUrl}}/api/settings/seed-dummy",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"settings",
-								"seed-dummy"
-							]
-						},
-						"description": "Mengisi database dengan 10 santri, 5 guru, dan data riwayat absensi beberapa hari."
-					},
-					"response": []
-				},
-				{
-					"name": "Hapus Riwayat Absensi Saja",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"url": {
-							"raw": "{{baseUrl}}/api/settings/reset-attendance",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"settings",
-								"reset-attendance"
-							]
-						},
-						"description": "Mengosongkan riwayat kehadiran tanpa menghapus data santri/guru/sidik jari."
-					},
-					"response": []
-				},
-				{
-					"name": "Reset Total Database (Factory Reset)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"url": {
-							"raw": "{{baseUrl}}/api/settings/reset-all",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"settings",
-								"reset-all"
-							]
-						},
-						"description": "Mengosongkan seluruh database (data anggota, sidik jari, dan absensi) agar kembali seperti awal."
-					},
-					"response": []
-				},
-				{
-					"name": "Download Backup Database (.db)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/settings/backup-db",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"settings",
-								"backup-db"
-							]
-						},
-						"description": "Mengunduh file snapshot database SQLite lengkap (.db) yang berisi data santri/siswa, guru, kelas, jabatan, sidik jari, dan absensi."
-					},
-					"response": []
-				},
-				{
-					"name": "Upload & Restore Database (.db)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "database",
-									"type": "file",
-									"src": ""
-								}
-							]
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/settings/restore-db",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"settings",
-								"restore-db"
-							]
-						},
-						"description": "Mengunggah file .db backup untuk memulihkan seluruh data sistem (database lama akan otomatis di-backup sebagai pengaman .bak di server)."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "9. Realtime & Health Check",
-			"item": [
-				{
-					"name": "Health Check Backend",
-					"request": {
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/health",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"health"
-							]
-						},
-						"description": "Mengecek status kesehatan server dan koneksi database SQLite."
-					},
-					"response": []
-				},
-				{
-					"name": "Server-Sent Events (SSE) Stream",
-					"request": {
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/realtime",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"realtime"
-							]
-						},
-						"description": "Membuka koneksi streaming HTTP SSE untuk menerima event realtime (attendance_tap, fingerprint_event, device_status)."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "10. Notifikasi Telegram",
-			"item": [
-				{
-					"name": "Get Status Bot & Konfigurasi Telegram",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"url": {
-							"raw": "{{baseUrl}}/api/telegram/status",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"telegram",
-								"status"
-							]
-						},
-						"description": "Mengambil status verifikasi bot, token, dan template notifikasi aktif."
-					},
-					"response": []
-				},
-				{
-					"name": "Uji Koneksi Bot Token (@BotFather)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"bot_token\": \"1234567890:ABCdefGHIjklMNOpqrsTUVwxyz123456789\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/telegram/test-bot",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"telegram",
-								"test-bot"
-							]
-						},
-						"description": "Memvalidasi apakah Bot Token aktif ke server Telegram API."
-					},
-					"response": []
-				},
-				{
-					"name": "Uji Kirim Pesan Test ke Chat ID (Modal Test)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"chat_id\": \"1234567890\",\n    \"pesan\": \"🔔 *TES NOTIFIKASI TELEGRAM*\\nAssalamu'alaikum Wr. Wb.\\nIni adalah pesan uji coba dari sistem SIAKAD PONPES.\\n\\nStatus: *Berhasil Terhubung! ✅*\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/telegram/send-test",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"telegram",
-								"send-test"
-							]
-						},
-						"description": "Mengirimkan pesan uji coba ke Chat ID penerima tertentu."
-					},
-					"response": []
-				},
-				{
-					"name": "Simpan Pengaturan Bot & Template Pesan",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"bot_token\": \"1234567890:ABCdefGHIjklMNOpqrsTUVwxyz123456789\",\n    \"enabled\": true,\n    \"notify_in\": true,\n    \"notify_out\": true,\n    \"admin_chat_ids\": \"1234567890, 987654321\",\n    \"notify_admin\": true,\n    \"template_admin\": \"📋 *LIVE MONITOR PRESENSI ADMIN*\\n👤 Nama: *{nama}*\\n🏷️ Tipe: {tipe}\\n🏫 Kelas/Jabatan: {kelas}\\n🔄 Aksi: *{aksi}* ({status})\\n📅 Tanggal: {tanggal}\\n⏰ Jam: {waktu}\\n📍 Mesin: {id_mesin}\\n_{instansi}_\",\n    \"template_in\": \"🔔 *NOTIFIKASI PRESENSI MASUK*\\nAssalamu'alaikum Wr. Wb.\\nYth. Orang Tua/Wali dari *{nama}*\\n\\nAlhamdulillah, santri telah tiba dan melakukan absensi masuk:\\n📅 Tanggal: {tanggal}\\n⏰ Jam: {waktu}\\n📌 Status: {status}\\n\\nTerima kasih.\\n_{instansi}_\",\n    \"template_out\": \"🔔 *NOTIFIKASI PRESENSI PULANG*\\nAssalamu'alaikum Wr. Wb.\\nYth. Orang Tua/Wali dari *{nama}*\\n\\nSantri telah melakukan absensi pulang:\\n📅 Tanggal: {tanggal}\\n⏰ Jam: {waktu}\\n📌 Status: {status}\\n\\nTerima kasih.\\n_{instansi}_\",\n    \"template_late\": \"⚠️ *PERINGATAN KETERLAMBATAN*\\nAssalamu'alaikum Wr. Wb.\\nYth. Orang Tua/Wali dari *{nama}*\\n\\nSantri tercatat terlambat melakukan absensi:\\n📅 Tanggal: {tanggal}\\n⏰ Jam: {waktu}\\n📌 Status: {status}\\n\\nMohon perhatiannya. Terima kasih.\\n_{instansi}_\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/telegram/settings",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"telegram",
-								"settings"
-							]
-						},
-						"description": "Menyimpan seluruh konfigurasi Bot Token, sakelar notifikasi, dan template pesan masuk/pulang."
-					},
-					"response": []
-				},
-				{
-					"name": "Update Chat ID & Nama Ortu Anggota",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{jwt_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "PUT",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"id\": 1,\n    \"nama_ortu\": \"Bp. Anwar TACOB (ALM) & Ibu NURHAYATI\",\n    \"telegram_chat_id\": \"1234567890\"\n}"
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/members/chat-id",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"members",
-								"chat-id"
-							]
-						},
-						"description": "Memperbarui data Nama Orang Tua dan Telegram Chat ID anggota."
-					},
-					"response": []
-				}
-			]
-		}
-	],
-	"variable": [
-		{
-			"key": "baseUrl",
-			"value": "https://absensi.smartapps.my.id",
-			"type": "string"
-		},
-		{
-			"key": "jwt_token",
-			"value": "",
-			"type": "string"
-		}
-	]
+    "info": {
+        "_postman_id": "8f28b2a1-e408-4e89-a2bf-a720dc274941",
+        "name": "Absensi Digital - Golang REST API & ESP32 (Lengkap 2026)",
+        "description": "Koleksi Postman REST API Resmi untuk Sistem Presensi Digital Pondok Pesantren & Sekolah (IoT ESP32 + Golang + SQLite).\n\n🌟 Fitur & Modul API Lengkap 2026:\n1. Autentikasi JWT Administrator (/api/login).\n2. Integrasi Mesin IoT ESP32 (RFID RC522 + Sensor Sidik Jari R503, Tap Presensi Realtime, Booting Sync, Upload Template .bin, Offline Batch Flush, Indikator Kartu Unmapped).\n3. Manajemen Sidik Jari (/api/fingerprints, /api/fingerprints/map, /api/fingerprints/unmap).\n4. Manajemen Kartu RFID (/api/cards, /api/cards/map, /api/cards/unmap, delete kartu).\n5. Data Master Anggota (Santri / Guru / Pegawai, Primary Unique Key NIS/NIP, Auto-Generate NIS [Tahun+3digit] & NIP [PG+3digit] jika kosong, Kartu RFID Opsional Bebas, Bulk Import Excel).\n6. Data Master Kelas & Jabatan (/api/classes, /api/positions).\n7. Laporan & Rekapitulasi Presensi (/api/attendance, /api/attendance/summary, edit/delete manual).\n8. Dashboard Realtime & Manajemen Perangkat Mesin IoT (/api/stats/dashboard, /api/devices).\n9. Pengaturan Sistem, Regenerate IoT API Key, Backup/Restore Database SQLite, dan Reset Data (/api/settings).\n10. Server-Sent Events (SSE) Stream (/api/realtime) & Health Check (/api/health).\n11. Notifikasi Otomatis Bot Telegram (/api/telegram/status, /api/telegram/settings, /api/telegram/send-test).",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "1. Autentikasi",
+            "item": [
+                {
+                    "name": "Login Administrator",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "var jsonData = pm.response.json();",
+                                    "if (pm.response.code === 200 && jsonData.token) {",
+                                    "    pm.collectionVariables.set(\"jwt_token\", jsonData.token);",
+                                    "    console.log(\"JWT Token berhasil disimpan ke variabel: \", jsonData.token);",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"username\": \"admin\",\n    \"password\": \"admin123\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "login"
+                            ]
+                        },
+                        "description": "Endpoint login untuk administrator. Token JWT akan otomatis tersimpan ke variabel {{jwt_token}} dan digunakan oleh request lain di koleksi ini."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "2. Integrasi Mesin ESP32 (IoT Actions)",
+            "description": "Endpoint publik yang digunakan oleh mikrokontroler ESP32 untuk presensi RFID, sidik jari, sinkronisasi booting, upload template, dan flush log offline.",
+            "item": [
+                {
+                    "name": "1. Tap Absensi Sidik Jari (Fingerprint Scan)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-API-KEY",
+                                "value": "KUNCI_API_PRESENSI_V1_2026"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"device_id\": \"PRESENSI-V1\",\n    \"fingerprint_id\": 1,\n    \"tipe_scan\": \"auto\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance/tap",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance",
+                                "tap"
+                            ]
+                        },
+                        "description": "Simulasi scan jari pada sensor R503. Backend otomatis mendeteksi apakah santri/guru tersebut masuk atau pulang dan mengecek batas jeda 2 menit untuk mencegah dobel absen."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "2. Tap Absensi RFID (Card Scan)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-API-KEY",
+                                "value": "KUNCI_API_PRESENSI_V1_2026"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"device_id\": \"PRESENSI-V1\",\n    \"rfid_tag\": \"0104830615\",\n    \"tipe_scan\": \"auto\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance/tap",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance",
+                                "tap"
+                            ]
+                        },
+                        "description": "Simulasi tap kartu RFID pada reader RC522 mikrokontroler ESP32.\n\nRespon Server:\n- HTTP 200 {status: 'success', action: 'check_in'/'check_out'}: Presensi berhasil dicatat (Layar LCD: Nama & Jam, LED Biru, Beep 1x).\n- HTTP 200 {status: 'already_attended'}: Anggota sudah melakukan presensi dalam jeda 2 menit (Layar LCD: 'Sudah Absen!').\n- HTTP 200 {status: 'unmapped', action: 'card_unmapped'}: Kartu baru terdeteksi saat mode 'Perekaman Kartu Baru' aktif (Layar LCD: 'Kartu Belum Di-mapping!', LED Ungu Flashing 3x, Buzzer Beep 2x).\n- HTTP 200 {status: 'not_found', action: 'card_not_registered'}: Kartu tidak terdaftar saat mode 'Perekaman Kartu Baru' dimatikan (Layar LCD: 'Kartu Tdk Dikenal Ditolak Sistem', LED Merah, Beep Panjang)."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "3. Booting Sync & Sensor Purge (Action: sync)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-API-KEY",
+                                "value": "KUNCI_API_PRESENSI_V1_2026"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"sync\",\n    \"device_id\": \"PRESENSI-V1\",\n    \"active_fingerprints\": [1, 2, 3, 4, 5],\n    \"total_fingerprints\": 5\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance/tap",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance",
+                                "tap"
+                            ]
+                        },
+                        "description": "Dipanggil saat ESP32 pertama kali booting. Server mencatat seluruh slot aktif dan merespon dengan daftar 'delete_fingerprints' jika ada slot yang telah dihapus admin melalui web."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "4. Upload Seluruh Template Sidik Jari (Action: upload_templates)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-API-KEY",
+                                "value": "KUNCI_API_PRESENSI_V1_2026"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"upload_templates\",\n    \"device_id\": \"PRESENSI-V1\",\n    \"templates\": [\n        {\n            \"fingerprint_id\": 1,\n            \"template_data\": \"010203040506070809...\"\n        },\n        {\n            \"fingerprint_id\": 2,\n            \"template_data\": \"010203040506070809...\"\n        }\n    ]\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance/tap",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance",
+                                "tap"
+                            ]
+                        },
+                        "description": "Dipanggil otomatis oleh ESP32 setelah selesai merestore file backup .bin agar server database memiliki salinan seluruh template sidik jari."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "5. Batch Flush Antrean Presensi Offline (Action: offline_sync)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-API-KEY",
+                                "value": "KUNCI_API_PRESENSI_V1_2026"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"offline_sync\",\n    \"device_id\": \"PRESENSI-V1\",\n    \"logs\": [\n        \"{\\\"fingerprint_id\\\": 1, \\\"rfid_tag\\\": \\\"\\\", \\\"recorded_at\\\": \\\"2026-09-03 06:45:10\\\"}\",\n        \"{\\\"fingerprint_id\\\": 0, \\\"rfid_tag\\\": \\\"0104830615\\\", \\\"recorded_at\\\": \\\"2026-09-03 06:46:20\\\"}\"\n    ]\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance/tap",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance",
+                                "tap"
+                            ]
+                        },
+                        "description": "Mengirimkan seluruh data antrean presensi yang disimpan di flash SPIFFS ESP32 saat jaringan WiFi sempat terputus."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "3. Manajemen Sidik Jari (Fingerprints)",
+            "item": [
+                {
+                    "name": "Get Semua Slot Sidik Jari & Relasi Anggota",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/fingerprints",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "fingerprints"
+                            ]
+                        },
+                        "description": "Mengambil seluruh slot sidik jari yang terdaftar di database server beserta status mapping (mapped/unmapped) dan data santri/guru terkait."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Hubungkan (Map) Sidik Jari ke Anggota",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"fingerprint_id\": 1,\n    \"member_id\": 1\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/fingerprints/map",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "fingerprints",
+                                "map"
+                            ]
+                        },
+                        "description": "Menghubungkan slot sensor sidik jari tertentu ke profil santri atau guru di database."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Lepas Hubungan (Unmap) Sidik Jari",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"fingerprint_id\": 1\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/fingerprints/unmap",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "fingerprints",
+                                "unmap"
+                            ]
+                        },
+                        "description": "Melepaskan kaitan slot sidik jari sehingga menjadi 'unmapped' tanpa menghapus model sidik jarinya."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Hapus Sidik Jari dari Server & Antrean Sensor ESP32",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/fingerprints?id=1&fingerprint_id=1&device_id=PRESENSI-V1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "fingerprints"
+                            ],
+                            "query": [
+                                {
+                                    "key": "id",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "fingerprint_id",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "device_id",
+                                    "value": "PRESENSI-V1"
+                                }
+                            ]
+                        },
+                        "description": "Menghapus data sidik jari dari database server dan memasukkannya ke antrean penghapusan fisik sensor R503 saat ESP32 dinyalakan ulang (restart)."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "4. Manajemen Kartu RFID (Cards)",
+            "description": "Endpoint pengelolaan kartu fisik RFID yang terekam dari mesin IoT, mapping kartu ke anggota, dan pelepasan kartu.",
+            "item": [
+                {
+                    "name": "Get Semua Kartu RFID & Relasi Anggota",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/cards",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "cards"
+                            ]
+                        },
+                        "description": "Mengambil seluruh data kartu RFID yang terdeteksi oleh mesin presensi beserta informasi anggota jika kartu sudah dihubungkan (status: 'mapped' atau 'unmapped')."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Hubungkan (Map) Kartu RFID ke Anggota",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"card_uid\": \"0014829101\",\n    \"member_id\": 1,\n    \"device_id\": \"PRESENSI-V1\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/cards/map",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "cards",
+                                "map"
+                            ]
+                        },
+                        "description": "Menghubungkan kartu fisik RFID ke akun santri/guru yang dipilih."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Lepas Hubungan (Unmap) Kartu RFID",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"card_uid\": \"0014829101\",\n    \"member_id\": 1\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/cards/unmap",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "cards",
+                                "unmap"
+                            ]
+                        },
+                        "description": "Melepaskan kartu RFID dari anggota sehingga status kartu kembali 'unmapped' dan field UID pada anggota menjadi kosong (\"\")."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Hapus Kartu RFID dari Sistem",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/cards?card_uid=0014829101",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "cards"
+                            ],
+                            "query": [
+                                {
+                                    "key": "card_uid",
+                                    "value": "0014829101"
+                                }
+                            ]
+                        },
+                        "description": "Menghapus kartu RFID dari database rfid_cards dan melepas hubungan dari anggota terkait."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "5. Data Master Anggota (Santri & Guru)",
+            "item": [
+                {
+                    "name": "Get Semua Anggota (Filter Tipe & Search)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/members?tipe=all&search=",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "members"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tipe",
+                                    "value": "all",
+                                    "description": "all | siswa | guru"
+                                },
+                                {
+                                    "key": "search",
+                                    "value": "",
+                                    "description": "Cari nama, UID, NISN, atau kelas"
+                                }
+                            ]
+                        },
+                        "description": "Mengambil seluruh data santri atau guru yang terdaftar di database SQLite."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Tambah Anggota Baru",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"nis_nip\": \"2026001\",\n    \"uid\": \"0014829101\",\n    \"fingerprint_id\": 0,\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"no_hp\": \"081234567801\",\n    \"nama_ortu\": \"Bpk. Bambang Pratama\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/members",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "members"
+                            ]
+                        },
+                        "description": "Mendaftarkan anggota baru ke database.\n\n- nis_nip: Primary Unique Key anggota. Jika dikosongkan (\"\"), sistem otomatis men-generate nomor urut: Santri/Siswa = [Tahun]+3digit (contoh: 2026001), Guru/Pegawai = PG+3digit (contoh: PG001).\n- uid: Nomor kartu RFID fisik (Opsional). Boleh dikosongkan (\"\") jika kartu belum tersedia dan dapat di-mapping kemudian."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Tambah Anggota Baru (Auto-Generate NIS/NIP & Tanpa Kartu)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"nis_nip\": \"\",\n    \"uid\": \"\",\n    \"fingerprint_id\": 0,\n    \"nama\": \"Zaid Bin Haritsah\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 2\",\n    \"no_hp\": \"081234567814\",\n    \"nama_ortu\": \"Bpk. Haritsah\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/members",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "members"
+                            ]
+                        },
+                        "description": "Contoh penambahan anggota dengan mengosongkan NIS/NIP dan UID kartu. Backend akan otomatis mengalokasikan NIS (contoh: 2026002) dan UID string kosong."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Import Anggota Bulk dari Excel (Bulk Import)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"tipe\": \"siswa\",\n    \"members\": [\n        {\n            \"nis_nip\": \"2026001\",\n            \"nama\": \"Muhammad Rizky Pratama\",\n            \"kelas\": \"10 IPA 1\",\n            \"uid\": \"0014829101\",\n            \"no_hp\": \"081234567801\",\n            \"nama_ortu\": \"Bpk. Bambang Pratama\"\n        },\n        {\n            \"nis_nip\": \"\",\n            \"nama\": \"Aisyah Nurul Hidayah\",\n            \"kelas\": \"10 IPA 2\",\n            \"uid\": \"\",\n            \"no_hp\": \"081234567802\",\n            \"nama_ortu\": \"Ibu Hidayah\"\n        }\n    ]\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/members/bulk",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "members",
+                                "bulk"
+                            ]
+                        },
+                        "description": "Menyimpan banyak data anggota sekaligus hasil parsing file Excel (.xlsx).\n\n- Jika nis_nip dikosongkan, backend otomatis membuatkan nomor urut tahun/PG unik.\n- Jika uid kartu RFID dikosongkan, data anggota tetap tersimpan dengan uid kosong tanpa kartu."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Data Anggota",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"id\": 1,\n    \"uid\": \"0104830615\",\n    \"fingerprint_id\": 1,\n    \"nis_nip\": \"20261001\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"12 IPA 1\",\n    \"no_hp\": \"081299887766\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/members",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "members"
+                            ]
+                        },
+                        "description": "Mengubah informasi nama, UID kartu, NIS/NIP, kelas, atau nomor telepon anggota."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Hapus Anggota",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/members?id=1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "members"
+                            ],
+                            "query": [
+                                {
+                                    "key": "id",
+                                    "value": "1"
+                                }
+                            ]
+                        },
+                        "description": "Menghapus data anggota berdasarkan ID."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "6. Data Master Kelas & Jabatan",
+            "item": [
+                {
+                    "name": "Get Semua Kelas",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/classes",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "classes"
+                            ]
+                        },
+                        "description": "Mengambil daftar master nama kelas santri."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Tambah Kelas Baru",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"nama\": \"10 IPA 3\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/classes",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "classes"
+                            ]
+                        },
+                        "description": "Menambahkan data kelas baru."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Hapus Kelas",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/classes?id=1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "classes"
+                            ],
+                            "query": [
+                                {
+                                    "key": "id",
+                                    "value": "1"
+                                }
+                            ]
+                        },
+                        "description": "Menghapus master data kelas."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Semua Jabatan Guru/Staf",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/positions",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "positions"
+                            ]
+                        },
+                        "description": "Mengambil daftar master jabatan guru dan staf pondok."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Tambah Jabatan Baru",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"nama\": \"Guru Tahfidz\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/positions",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "positions"
+                            ]
+                        },
+                        "description": "Menambahkan jabatan guru baru."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Hapus Jabatan",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/positions?id=1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "positions"
+                            ],
+                            "query": [
+                                {
+                                    "key": "id",
+                                    "value": "1"
+                                }
+                            ]
+                        },
+                        "description": "Menghapus data master jabatan."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "7. Laporan & Presensi",
+            "item": [
+                {
+                    "name": "Get Laporan Harian (Tanggal)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance?tanggal=2026-09-03&tipe=all",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tanggal",
+                                    "value": "2026-09-03"
+                                },
+                                {
+                                    "key": "tipe",
+                                    "value": "all",
+                                    "description": "all | siswa | guru"
+                                }
+                            ]
+                        },
+                        "description": "Mengambil rekapitulasi data absensi berdasarkan tanggal tertentu."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Laporan Rekap Bulanan (Bulan)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance?bulan=2026-09&tipe=all",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance"
+                            ],
+                            "query": [
+                                {
+                                    "key": "bulan",
+                                    "value": "2026-09"
+                                },
+                                {
+                                    "key": "tipe",
+                                    "value": "all"
+                                }
+                            ]
+                        },
+                        "description": "Mengambil rekapitulasi kehadiran selama 1 bulan penuh untuk dicetak ke PDF."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Summary Kehadiran (Statistik Cepat)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance/summary?tanggal=2026-09-03",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance",
+                                "summary"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tanggal",
+                                    "value": "2026-09-03"
+                                }
+                            ]
+                        },
+                        "description": "Mengambil ringkasan jumlah hadir, telat, tepat, dan belum hadir."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Tambah Presensi Manual (Admin)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"uid\": \"0104830615\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"tanggal\": \"2026-09-03\",\n    \"waktu_masuk\": \"06:40:00\",\n    \"status_masuk\": \"tepat\",\n    \"waktu_keluar\": \"15:00:00\",\n    \"status_keluar\": \"tepat\",\n    \"id_mesin\": \"MANUAL\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance"
+                            ]
+                        },
+                        "description": "Input manual data presensi oleh administrator jika santri/guru berhalangan tap kartu."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Edit Jam & Status Presensi",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"id\": 1,\n    \"uid\": \"0104830615\",\n    \"nama\": \"Muhammad Rizky Pratama\",\n    \"tipe\": \"siswa\",\n    \"kelas\": \"10 IPA 1\",\n    \"tanggal\": \"2026-09-03\",\n    \"waktu_masuk\": \"06:30:00\",\n    \"status_masuk\": \"tepat\",\n    \"waktu_keluar\": \"15:15:00\",\n    \"status_keluar\": \"tepat\",\n    \"id_mesin\": \"PRESENSI-V1\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance"
+                            ]
+                        },
+                        "description": "Mengubah jam masuk/keluar atau status absensi pada rekaman yang sudah ada."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Hapus Data Presensi",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance?id=1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance"
+                            ],
+                            "query": [
+                                {
+                                    "key": "id",
+                                    "value": "1"
+                                }
+                            ]
+                        },
+                        "description": "Menghapus 1 baris rekaman presensi."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "8. Dashboard & Statistik",
+            "item": [
+                {
+                    "name": "Get Statistik Realtime Dashboard",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/stats/dashboard",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "stats",
+                                "dashboard"
+                            ]
+                        },
+                        "description": "Mengambil data statistik realtime: total santri, total guru, jumlah hadir hari ini, persentase kehadiran, dan daftar 10 aktivitas presensi terakhir."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Daftar Perangkat Mesin IoT",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/devices",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "devices"
+                            ]
+                        },
+                        "description": "Mengambil status online/offline mesin presensi ESP32."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "9. Pengaturan Sistem & Reset",
+            "item": [
+                {
+                    "name": "Get Pengaturan Sistem, Profil & Logo",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/settings",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "settings"
+                            ]
+                        },
+                        "description": "Mengambil data profil instansi, logo base64, alamat, kontak, dan batas jam masuk/pulang."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Simpan Pengaturan Sistem & Logo Instansi",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"instansi_nama\": \"YAYASAN PONDOK PESANTREN DIGITAL\",\n    \"instansi_sub_header\": \"AKREDITASI A - KEMENAG RI\",\n    \"instansi_alamat\": \"Jl. Pesantren Digital No. 01\",\n    \"instansi_kota\": \"Jawa Timur\",\n    \"instansi_telepon\": \"(031) 88997766\",\n    \"instansi_email\": \"info@siakadponpes.com\",\n    \"instansi_logo\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...\",\n    \"jam_masuk_batas\": \"07:00\",\n    \"jam_pulang_batas\": \"15:00\",\n    \"kepala_nama\": \"KH. Ahmad Zaki, Lc., M.Ag\",\n    \"kepala_nip\": \"198001012005011001\",\n    \"auto_register_rfid\": \"1\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/settings",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "settings"
+                            ]
+                        },
+                        "description": "Menyimpan pengaturan profil instansi, logo, batas jam presensi, dan kebijakan auto-register RFID ke database SQLite."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Regenerate IoT Secret API Key",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/settings/regenerate-api-key",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "settings",
+                                "regenerate-api-key"
+                            ]
+                        },
+                        "description": "Menghasilkan kunci IoT Secret API Key baru (kriptografis 48-hex). Kunci baru ini otomatis disimpan ke database dan harus disalin ke firmware ESP32 (apiKey)."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Generate Data Dummy Santri & Absensi",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/settings/seed-dummy",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "settings",
+                                "seed-dummy"
+                            ]
+                        },
+                        "description": "Mengisi database dengan 10 santri, 5 guru, dan data riwayat absensi beberapa hari."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Hapus Riwayat Absensi Saja",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/settings/reset-attendance",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "settings",
+                                "reset-attendance"
+                            ]
+                        },
+                        "description": "Mengosongkan riwayat kehadiran tanpa menghapus data santri/guru/sidik jari."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Reset Total Database (Factory Reset)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/settings/reset-all",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "settings",
+                                "reset-all"
+                            ]
+                        },
+                        "description": "Mengosongkan seluruh database (data anggota, sidik jari, dan absensi) agar kembali seperti awal."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Download Backup Database (.db)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/settings/backup-db",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "settings",
+                                "backup-db"
+                            ]
+                        },
+                        "description": "Mengunduh file snapshot database SQLite lengkap (.db) yang berisi data santri/siswa, guru, kelas, jabatan, sidik jari, dan absensi."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Upload & Restore Database (.db)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "database",
+                                    "type": "file",
+                                    "src": ""
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/settings/restore-db",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "settings",
+                                "restore-db"
+                            ]
+                        },
+                        "description": "Mengunggah file .db backup untuk memulihkan seluruh data sistem (database lama akan otomatis di-backup sebagai pengaman .bak di server)."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "10. Realtime & Health Check",
+            "item": [
+                {
+                    "name": "Health Check Backend",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/health",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "health"
+                            ]
+                        },
+                        "description": "Mengecek status kesehatan server dan koneksi database SQLite."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Server-Sent Events (SSE) Stream",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/realtime",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "realtime"
+                            ]
+                        },
+                        "description": "Membuka koneksi streaming HTTP SSE untuk menerima event realtime (attendance_tap, fingerprint_event, device_status)."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "11. Notifikasi Telegram",
+            "item": [
+                {
+                    "name": "Get Status Bot & Konfigurasi Telegram",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/telegram/status",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "telegram",
+                                "status"
+                            ]
+                        },
+                        "description": "Mengambil status verifikasi bot, token, dan template notifikasi aktif."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Uji Koneksi Bot Token (@BotFather)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"bot_token\": \"1234567890:ABCdefGHIjklMNOpqrsTUVwxyz123456789\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/telegram/test-bot",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "telegram",
+                                "test-bot"
+                            ]
+                        },
+                        "description": "Memvalidasi apakah Bot Token aktif ke server Telegram API."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Uji Kirim Pesan Test ke Chat ID (Modal Test)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"chat_id\": \"1234567890\",\n    \"pesan\": \"🔔 *TES NOTIFIKASI TELEGRAM*\\nAssalamu'alaikum Wr. Wb.\\nIni adalah pesan uji coba dari sistem SIAKAD PONPES.\\n\\nStatus: *Berhasil Terhubung! ✅*\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/telegram/send-test",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "telegram",
+                                "send-test"
+                            ]
+                        },
+                        "description": "Mengirimkan pesan uji coba ke Chat ID penerima tertentu."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Simpan Pengaturan Bot & Template Pesan",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"bot_token\": \"1234567890:ABCdefGHIjklMNOpqrsTUVwxyz123456789\",\n    \"enabled\": true,\n    \"notify_in\": true,\n    \"notify_out\": true,\n    \"admin_chat_ids\": \"1234567890, 987654321\",\n    \"notify_admin\": true,\n    \"template_admin\": \"📋 *LIVE MONITOR PRESENSI ADMIN*\\n👤 Nama: *{nama}*\\n🏷️ Tipe: {tipe}\\n🏫 Kelas/Jabatan: {kelas}\\n🔄 Aksi: *{aksi}* ({status})\\n📅 Tanggal: {tanggal}\\n⏰ Jam: {waktu}\\n📍 Mesin: {id_mesin}\\n_{instansi}_\",\n    \"template_in\": \"🔔 *NOTIFIKASI PRESENSI MASUK*\\nAssalamu'alaikum Wr. Wb.\\nYth. Orang Tua/Wali dari *{nama}*\\n\\nAlhamdulillah, santri telah tiba dan melakukan absensi masuk:\\n📅 Tanggal: {tanggal}\\n⏰ Jam: {waktu}\\n📌 Status: {status}\\n\\nTerima kasih.\\n_{instansi}_\",\n    \"template_out\": \"🔔 *NOTIFIKASI PRESENSI PULANG*\\nAssalamu'alaikum Wr. Wb.\\nYth. Orang Tua/Wali dari *{nama}*\\n\\nSantri telah melakukan absensi pulang:\\n📅 Tanggal: {tanggal}\\n⏰ Jam: {waktu}\\n📌 Status: {status}\\n\\nTerima kasih.\\n_{instansi}_\",\n    \"template_late\": \"⚠️ *PERINGATAN KETERLAMBATAN*\\nAssalamu'alaikum Wr. Wb.\\nYth. Orang Tua/Wali dari *{nama}*\\n\\nSantri tercatat terlambat melakukan absensi:\\n📅 Tanggal: {tanggal}\\n⏰ Jam: {waktu}\\n📌 Status: {status}\\n\\nMohon perhatiannya. Terima kasih.\\n_{instansi}_\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/telegram/settings",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "telegram",
+                                "settings"
+                            ]
+                        },
+                        "description": "Menyimpan seluruh konfigurasi Bot Token, sakelar notifikasi, dan template pesan masuk/pulang."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Chat ID & Nama Ortu Anggota",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"id\": 1,\n    \"nama_ortu\": \"Bp. Anwar TACOB (ALM) & Ibu NURHAYATI\",\n    \"telegram_chat_id\": \"1234567890\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/members/chat-id",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "members",
+                                "chat-id"
+                            ]
+                        },
+                        "description": "Memperbarui data Nama Orang Tua dan Telegram Chat ID anggota."
+                    },
+                    "response": []
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "https://absensi.smartapps.my.id",
+            "type": "string"
+        },
+        {
+            "key": "jwt_token",
+            "value": "",
+            "type": "string"
+        }
+    ]
 }
