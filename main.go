@@ -2195,6 +2195,35 @@ func handleUnmapCard(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// generateAutoNISNIP menghasilkan kode NIS/NIP otomatis jika dikosongkan oleh pengguna:
+// - Santri / Siswa: Tahun berjalan + 3 digit no urut (contoh: 2026001, 2026002, dst.)
+// - Guru / Pegawai: Awalan PG + 3 digit no urut (contoh: PG001, PG002, dst.)
+func generateAutoNISNIP(tipe string, usedBatch map[string]int) string {
+	currentYear := time.Now().Year()
+	isGuru := strings.ToLower(strings.TrimSpace(tipe)) == "guru"
+
+	for next := 1; ; next++ {
+		var candidate string
+		if isGuru {
+			candidate = fmt.Sprintf("PG%03d", next)
+		} else {
+			candidate = fmt.Sprintf("%d%03d", currentYear, next)
+		}
+
+		if usedBatch != nil {
+			if _, used := usedBatch[candidate]; used {
+				continue
+			}
+		}
+
+		var exists int
+		db.QueryRow("SELECT COUNT(*) FROM members WHERE nis_nip = ?", candidate).Scan(&exists)
+		if exists == 0 {
+			return candidate
+		}
+	}
+}
+
 // 4. CRUD MEMBERS (/api/members)
 func handleMembers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -2253,19 +2282,21 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		m.Tipe = strings.ToLower(strings.TrimSpace(m.Tipe))
 		m.TelegramChatID = strings.TrimSpace(m.TelegramChatID)
 
-		if m.NISNIP == "" {
-			writeJSONError(w, http.StatusBadRequest, "NIS / NIP wajib diisi sebagai identitas unik anggota.")
-			return
-		}
 		if m.Nama == "" {
 			writeJSONError(w, http.StatusBadRequest, "Nama Lengkap wajib diisi.")
 			return
 		}
-		if m.UID == "-" || strings.HasPrefix(m.UID, "PENDING-") || strings.HasPrefix(m.UID, "UNASSIGNED-") {
-			m.UID = ""
-		}
 		if m.Tipe != "siswa" && m.Tipe != "guru" {
 			m.Tipe = "siswa"
+		}
+
+		// Auto generate NIS/NIP jika pengguna tidak mengisi
+		if m.NISNIP == "" {
+			m.NISNIP = generateAutoNISNIP(m.Tipe, nil)
+		}
+
+		if m.UID == "-" || strings.HasPrefix(m.UID, "PENDING-") || strings.HasPrefix(m.UID, "UNASSIGNED-") {
+			m.UID = ""
 		}
 
 		// Jika UID diisi nyata, pastikan belum digunakan oleh anggota lain
@@ -2324,17 +2355,26 @@ func handleMembers(w http.ResponseWriter, r *http.Request) {
 		m.NamaOrtu = strings.TrimSpace(m.NamaOrtu)
 		m.TelegramChatID = strings.TrimSpace(m.TelegramChatID)
 
-		if m.NISNIP == "" {
-			writeJSONError(w, http.StatusBadRequest, "NIS / NIP wajib diisi sebagai identitas unik anggota.")
-			return
-		}
 		if m.Nama == "" {
 			writeJSONError(w, http.StatusBadRequest, "Nama Lengkap wajib diisi.")
 			return
 		}
 
 		var oldUID string
-		db.QueryRow("SELECT uid FROM members WHERE id = ?", m.ID).Scan(&oldUID)
+		var oldNISNIP string
+		var oldTipe string
+		db.QueryRow("SELECT uid, nis_nip, tipe FROM members WHERE id = ?", m.ID).Scan(&oldUID, &oldNISNIP, &oldTipe)
+
+		if m.Tipe == "" {
+			m.Tipe = oldTipe
+		}
+		if m.NISNIP == "" {
+			if oldNISNIP != "" {
+				m.NISNIP = oldNISNIP
+			} else {
+				m.NISNIP = generateAutoNISNIP(m.Tipe, nil)
+			}
+		}
 
 		if m.UID == "-" || strings.HasPrefix(m.UID, "PENDING-") || strings.HasPrefix(m.UID, "UNASSIGNED-") {
 			m.UID = ""
@@ -2526,34 +2566,24 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 		chatId := strings.TrimSpace(m.TelegramChatID)
 		uid := strings.ToUpper(strings.TrimSpace(m.UID))
 
-		// Validasi NIS / NIP (Wajib sebagai kunci unik)
+		// Jika NIS / NIP tidak diisi di Excel, generate otomatis oleh sistem
 		if nisNIP == "" {
-			labelID := "NIS"
-			if tipe == "guru" {
-				labelID = "NIP"
+			nisNIP = generateAutoNISNIP(tipe, usedBatchNISNIP)
+		} else {
+			// Validasi duplikasi NIS/NIP di dalam file Excel yang sama jika diisi manual
+			if prevRow, dup := usedBatchNISNIP[nisNIP]; dup {
+				labelID := "NIS"
+				if tipe == "guru" {
+					labelID = "NIP"
+				}
+				errorsList = append(errorsList, BulkErrorItem{
+					RowNumber: rowNum,
+					Nama:      nama,
+					Field:     labelID,
+					Error:     fmt.Sprintf("%s '%s' duplikat di file Excel (sudah dipakai di baris %d).", labelID, nisNIP, prevRow),
+				})
+				continue
 			}
-			errorsList = append(errorsList, BulkErrorItem{
-				RowNumber: rowNum,
-				Nama:      nama,
-				Field:     labelID,
-				Error:     fmt.Sprintf("%s wajib diisi sebagai identitas unik anggota.", labelID),
-			})
-			continue
-		}
-
-		// Validasi duplikasi NIS/NIP di dalam file Excel yang sama
-		if prevRow, dup := usedBatchNISNIP[nisNIP]; dup {
-			labelID := "NIS"
-			if tipe == "guru" {
-				labelID = "NIP"
-			}
-			errorsList = append(errorsList, BulkErrorItem{
-				RowNumber: rowNum,
-				Nama:      nama,
-				Field:     labelID,
-				Error:     fmt.Sprintf("%s '%s' duplikat di file Excel (sudah dipakai di baris %d).", labelID, nisNIP, prevRow),
-			})
-			continue
 		}
 		usedBatchNISNIP[nisNIP] = rowNum
 

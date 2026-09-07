@@ -40,11 +40,6 @@ export default function ModalMember({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.nis_nip.trim()) {
-      Swal.fire('Peringatan', `${isUmum ? 'NIP / NIK' : isGuru ? 'NIP' : 'NIS'} wajib diisi sebagai identitas unik anggota.`, 'warning');
-      return;
-    }
-
     if (!formData.nama.trim()) {
       Swal.fire('Peringatan', 'Nama Lengkap wajib diisi.', 'warning');
       return;
@@ -131,7 +126,7 @@ export default function ModalMember({
           {/* INPUT NIS / NIP */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              {labelIdNumber} <span className="text-rose-500">*</span>
+              {labelIdNumber} <span className="text-[10px] text-slate-400 font-normal">(Opsional - Otomatis jika kosong)</span>
             </label>
             <div className="relative">
               <Hash className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -139,8 +134,7 @@ export default function ModalMember({
                 type="text" 
                 value={formData.nis_nip} 
                 onChange={(e) => setFormData({ ...formData, nis_nip: e.target.value })}
-                required
-                placeholder={isUmum ? 'Contoh: 1985071201' : isGuru ? 'Contoh: 198507122010011001' : 'Contoh: 20261001'} 
+                placeholder={isGuru || isUmum ? 'Kosongkan untuk otomatis (contoh: PG001)' : 'Kosongkan untuk otomatis (contoh: 2026001)'} 
                 className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
