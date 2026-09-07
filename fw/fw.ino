@@ -1139,7 +1139,8 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
         finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
         showScannedMessage(nama, "Sudah Absen!");
-      } else if (status == "unmapped") {
+      } else if (status == "unmapped" || action == "fingerprint_unmapped") {
+        digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(80);
         digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
         finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 3);
         showScannedMessage("Slot #" + String(idFinger), "Belum Dimapping!");
@@ -1260,7 +1261,13 @@ void kirimPresensiRFID(String tagId) {
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
         finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
         showScannedMessage(nama, "Sudah Absen!");
-      } else if (status == "not_found") {
+      } else if (status == "unmapped" || action == "card_unmapped") {
+        // Tanda Kartu Baru belum di-mapping (Fungsi Kartu Baru Aktif)
+        digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(80);
+        digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
+        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 3);
+        showScannedMessage("Kartu Belum", "Di-mapping!");
+      } else if (status == "not_found" || action == "card_not_registered") {
         digitalWrite(BUZZ, HIGH); delay(300); digitalWrite(BUZZ, LOW);
         finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
         showScannedMessage("Kartu Tdk Dikenal", "Ditolak Sistem");
