@@ -41,8 +41,8 @@ const char* password   = "ridawahid123";
 // const char* password   = "123456789";
 
 // Konfigurasi API Endpoint & Perangkat (IoT Server)
-const char* serverUrl            = "https://absensi.smartapps.my.id/api/attendance/tap"; // Sesuaikan domain/IP server PHP Anda
-const char* apiKey               = "38b6661f20b376c37554ecc9b2f99eb643c85cefe0fe8a72";  // Harus sama dengan SECRET_API_KEY di PHP
+const char* serverUrl            = "https://siakadponpes.presensirfid.web.id/api/attendance/tap"; // Sesuaikan domain/IP server PHP Anda
+const char* apiKey               = "c1fbc172cefafd9c3becfd34f62ab6252fd80d4e7aa7d5cd";  // Harus sama dengan SECRET_API_KEY di PHP
 const char* deviceId             = "PRESENSI-V1";                             // ID unik mesin presensi ini
 const char* deviceHostNamePrefix = "siakadponpes";                        // Prefix nama perangkat di router WiFi (misal: siakadponpes.com-5F2AE4)
 String      deviceHostName       = "";                                        // Otomatis dibuat dari prefix + 3 byte terakhir MAC

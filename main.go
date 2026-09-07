@@ -2349,8 +2349,21 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	type BulkMemberItem struct {
+		RowNumber      int    `json:"row_number"`
+		UID            string `json:"uid"`
+		NISNIP         string `json:"nis_nip"`
+		Nama           string `json:"nama"`
+		NamaOrtu       string `json:"nama_ortu"`
+		Tipe           string `json:"tipe"`
+		Kelas          string `json:"kelas"`
+		NoHP           string `json:"no_hp"`
+		TelegramChatID string `json:"telegram_chat_id"`
+	}
+
 	var req struct {
-		Members []Member `json:"members"`
+		Tipe    string           `json:"tipe"`
+		Members []BulkMemberItem `json:"members"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -2363,63 +2376,282 @@ func handleBulkMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Gagal memulai transaksi database.")
-		return
+	// 1. Ambil daftar Kelas yang valid dari database untuk validasi case-insensitive
+	classMap := make(map[string]string) // lowercase -> canonical name
+	cRows, err := db.Query("SELECT nama FROM classes")
+	if err == nil {
+		defer cRows.Close()
+		for cRows.Next() {
+			var cName string
+			if err := cRows.Scan(&cName); err == nil {
+				cTrimmed := strings.TrimSpace(cName)
+				if cTrimmed != "" {
+					classMap[strings.ToLower(cTrimmed)] = cTrimmed
+				}
+			}
+		}
 	}
-	defer tx.Rollback()
 
-	stmt, err := tx.Prepare(`
-		INSERT INTO members (uid, nis_nip, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(uid) DO UPDATE SET
-			nis_nip = excluded.nis_nip,
-			nama = excluded.nama,
-			nama_ortu = excluded.nama_ortu,
-			tipe = excluded.tipe,
-			kelas = excluded.kelas,
-			no_hp = excluded.no_hp,
-			telegram_chat_id = excluded.telegram_chat_id
-	`)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("Gagal prepare statement: %v", err))
-		return
+	// 2. Ambil daftar Jabatan yang valid dari database untuk validasi case-insensitive
+	posMap := make(map[string]string) // lowercase -> canonical name
+	pRows, err := db.Query("SELECT nama FROM positions")
+	if err == nil {
+		defer pRows.Close()
+		for pRows.Next() {
+			var pName string
+			if err := pRows.Scan(&pName); err == nil {
+				pTrimmed := strings.TrimSpace(pName)
+				if pTrimmed != "" {
+					posMap[strings.ToLower(pTrimmed)] = pTrimmed
+				}
+			}
+		}
 	}
-	defer stmt.Close()
 
+	type BulkErrorItem struct {
+		RowNumber int    `json:"row_number"`
+		Nama      string `json:"nama"`
+		Field     string `json:"field"`
+		Error     string `json:"error"`
+	}
+
+	var errorsList []BulkErrorItem
 	var insertedCount int
-	for _, m := range req.Members {
-		uid := strings.TrimSpace(m.UID)
+	var updatedCount int
+	usedBatchUIDs := make(map[string]int) // uid -> row number
+
+	for idx, m := range req.Members {
+		rowNum := m.RowNumber
+		if rowNum <= 0 {
+			rowNum = idx + 1
+		}
+
 		nama := strings.TrimSpace(m.Nama)
-		tipe := strings.ToLower(strings.TrimSpace(m.Tipe))
-		if uid == "" || nama == "" {
+		if nama == "" {
+			errorsList = append(errorsList, BulkErrorItem{
+				RowNumber: rowNum,
+				Nama:      "-",
+				Field:     "Nama",
+				Error:     "Nama Lengkap wajib diisi (tidak boleh kosong).",
+			})
 			continue
+		}
+
+		tipe := strings.ToLower(strings.TrimSpace(m.Tipe))
+		if tipe == "" {
+			tipe = strings.ToLower(strings.TrimSpace(req.Tipe))
 		}
 		if tipe != "siswa" && tipe != "guru" {
 			tipe = "siswa"
 		}
+
 		nisNIP := strings.TrimSpace(m.NISNIP)
 		namaOrtu := strings.TrimSpace(m.NamaOrtu)
-		kelas := strings.TrimSpace(m.Kelas)
+		kelasInput := strings.TrimSpace(m.Kelas)
 		noHP := strings.TrimSpace(m.NoHP)
 		chatId := strings.TrimSpace(m.TelegramChatID)
+		uid := strings.ToUpper(strings.TrimSpace(m.UID))
 
-		_, err := stmt.Exec(uid, nisNIP, nama, namaOrtu, tipe, kelas, noHP, chatId)
-		if err == nil {
+		// Validasi Kelas / Jabatan
+		var canonicalGroup string
+		if tipe == "siswa" {
+			if kelasInput == "" {
+				errorsList = append(errorsList, BulkErrorItem{
+					RowNumber: rowNum,
+					Nama:      nama,
+					Field:     "Kelas",
+					Error:     "Nama Kelas wajib diisi.",
+				})
+				continue
+			}
+			matched, ok := classMap[strings.ToLower(kelasInput)]
+			if !ok {
+				errorsList = append(errorsList, BulkErrorItem{
+					RowNumber: rowNum,
+					Nama:      nama,
+					Field:     "Kelas",
+					Error:     fmt.Sprintf("Kelas '%s' tidak terdaftar di Master Kelas. Pastikan nama kelas sama persis dengan yang ada di menu Master Kelas.", kelasInput),
+				})
+				continue
+			}
+			canonicalGroup = matched
+		} else {
+			// Guru / Pegawai
+			if kelasInput == "" {
+				errorsList = append(errorsList, BulkErrorItem{
+					RowNumber: rowNum,
+					Nama:      nama,
+					Field:     "Jabatan",
+					Error:     "Nama Jabatan wajib diisi.",
+				})
+				continue
+			}
+			matched, ok := posMap[strings.ToLower(kelasInput)]
+			if !ok {
+				errorsList = append(errorsList, BulkErrorItem{
+					RowNumber: rowNum,
+					Nama:      nama,
+					Field:     "Jabatan",
+					Error:     fmt.Sprintf("Jabatan '%s' tidak terdaftar di Master Jabatan. Pastikan nama jabatan sama persis dengan yang ada di menu Master Jabatan.", kelasInput),
+				})
+				continue
+			}
+			canonicalGroup = matched
+		}
+
+		// Validasi UID Kartu RFID (Opsional)
+		var isRealUID = uid != "" && uid != "-"
+		if isRealUID {
+			if prevRow, dup := usedBatchUIDs[uid]; dup {
+				errorsList = append(errorsList, BulkErrorItem{
+					RowNumber: rowNum,
+					Nama:      nama,
+					Field:     "UID Kartu RFID",
+					Error:     fmt.Sprintf("UID Kartu RFID '%s' duplikat di file Excel (sudah dipakai di baris %d).", uid, prevRow),
+				})
+				continue
+			}
+			usedBatchUIDs[uid] = rowNum
+		}
+
+		// Cek apakah anggota sudah ada di database
+		// Prioritas pencarian: 1. By NIS/NIP jika ada, 2. By UID jika UID nyata diisi
+		var existingID int
+		var existingUID string
+		var existingName string
+
+		if nisNIP != "" {
+			db.QueryRow("SELECT id, uid, nama FROM members WHERE nis_nip = ? AND tipe = ? LIMIT 1", nisNIP, tipe).
+				Scan(&existingID, &existingUID, &existingName)
+		}
+
+		if existingID == 0 && isRealUID {
+			db.QueryRow("SELECT id, uid, nama FROM members WHERE uid = ? LIMIT 1", uid).
+				Scan(&existingID, &existingUID, &existingName)
+		}
+
+		if existingID > 0 {
+			// Jika UID baru nyata diisi dan berbeda dari UID lama, pastikan tidak bertabrakan dengan anggota lain
+			targetUID := existingUID
+			if isRealUID {
+				var conflictID int
+				var conflictName string
+				db.QueryRow("SELECT id, nama FROM members WHERE uid = ? AND id != ? LIMIT 1", uid, existingID).
+					Scan(&conflictID, &conflictName)
+				if conflictID > 0 {
+					errorsList = append(errorsList, BulkErrorItem{
+						RowNumber: rowNum,
+						Nama:      nama,
+						Field:     "UID Kartu RFID",
+						Error:     fmt.Sprintf("UID Kartu RFID '%s' sudah digunakan oleh %s.", uid, conflictName),
+					})
+					continue
+				}
+				targetUID = uid
+			}
+
+			// Lakukan update data anggota yang sudah ada
+			_, err := db.Exec(`
+				UPDATE members 
+				SET uid = ?, nis_nip = ?, nama = ?, nama_ortu = ?, tipe = ?, kelas = ?, no_hp = ?, telegram_chat_id = ?
+				WHERE id = ?
+			`, targetUID, nisNIP, nama, namaOrtu, tipe, canonicalGroup, noHP, chatId, existingID)
+
+			if err != nil {
+				errorsList = append(errorsList, BulkErrorItem{
+					RowNumber: rowNum,
+					Nama:      nama,
+					Field:     "Database",
+					Error:     fmt.Sprintf("Gagal memperbarui data: %v", err),
+				})
+				continue
+			}
+
+			if !strings.HasPrefix(targetUID, "PENDING-") && !strings.HasPrefix(targetUID, "UNASSIGNED-") {
+				db.Exec(`INSERT INTO rfid_cards (card_uid, member_id, status, updated_at)
+					VALUES (?, ?, 'mapped', CURRENT_TIMESTAMP)
+					ON CONFLICT(card_uid) DO UPDATE SET member_id = excluded.member_id, status = 'mapped', updated_at = CURRENT_TIMESTAMP`,
+					targetUID, existingID)
+			}
+			updatedCount++
+
+		} else {
+			// Anggota baru (INSERT)
+			targetUID := uid
+			if !isRealUID {
+				// RFID Opsional: alokasikan identitas sementara unik
+				targetUID = fmt.Sprintf("PENDING-%d-%d", time.Now().UnixNano(), rowNum)
+			} else {
+				// Cek tabrakan UID di database
+				var conflictID int
+				var conflictName string
+				db.QueryRow("SELECT id, nama FROM members WHERE uid = ? LIMIT 1", targetUID).
+					Scan(&conflictID, &conflictName)
+				if conflictID > 0 {
+					errorsList = append(errorsList, BulkErrorItem{
+						RowNumber: rowNum,
+						Nama:      nama,
+						Field:     "UID Kartu RFID",
+						Error:     fmt.Sprintf("UID Kartu RFID '%s' sudah terdaftar pada anggota '%s'.", targetUID, conflictName),
+					})
+					continue
+				}
+			}
+
+			res, err := db.Exec(`
+				INSERT INTO members (uid, nis_nip, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			`, targetUID, nisNIP, nama, namaOrtu, tipe, canonicalGroup, noHP, chatId)
+
+			if err != nil {
+				errorsList = append(errorsList, BulkErrorItem{
+					RowNumber: rowNum,
+					Nama:      nama,
+					Field:     "Database",
+					Error:     fmt.Sprintf("Gagal menyimpan data baru: %v", err),
+				})
+				continue
+			}
+
+			newID, _ := res.LastInsertId()
+			if !strings.HasPrefix(targetUID, "PENDING-") && !strings.HasPrefix(targetUID, "UNASSIGNED-") {
+				db.Exec(`INSERT INTO rfid_cards (card_uid, member_id, status, updated_at)
+					VALUES (?, ?, 'mapped', CURRENT_TIMESTAMP)
+					ON CONFLICT(card_uid) DO UPDATE SET member_id = excluded.member_id, status = 'mapped', updated_at = CURRENT_TIMESTAMP`,
+					targetUID, newID)
+			}
 			insertedCount++
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Gagal commit import database.")
-		return
+	var statusResult = "success"
+	totalSuccess := insertedCount + updatedCount
+	if len(errorsList) > 0 {
+		if totalSuccess > 0 {
+			statusResult = "partial"
+		} else {
+			statusResult = "error"
+		}
+	}
+
+	var message string
+	if len(errorsList) == 0 {
+		message = fmt.Sprintf("Sukses mengimpor %d data anggota (%d baru, %d diperbarui).", totalSuccess, insertedCount, updatedCount)
+	} else if totalSuccess > 0 {
+		message = fmt.Sprintf("%d data berhasil diproses (%d baru, %d diperbarui), namun ada %d baris bermasalah.", totalSuccess, insertedCount, updatedCount, len(errorsList))
+	} else {
+		message = fmt.Sprintf("Semua baris (%d data) gagal diimpor karena format atau data tidak sesuai.", len(errorsList))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":  "success",
-		"message": fmt.Sprintf("Berhasil mengimpor / memperbarui %d data anggota.", insertedCount),
-		"count":   insertedCount,
+		"status":         statusResult,
+		"message":        message,
+		"total_rows":     len(req.Members),
+		"inserted_count": insertedCount,
+		"updated_count":  updatedCount,
+		"success_count":  totalSuccess,
+		"error_count":    len(errorsList),
+		"errors":         errorsList,
 	})
 }
 

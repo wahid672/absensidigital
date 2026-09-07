@@ -19,6 +19,7 @@ import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 import { apiFetch } from '../api';
 import ModalMember from '../components/ModalMember';
+import ModalImportExcel from '../components/ModalImportExcel';
 import { isDemo, showDemoAlert } from '../utils/demo';
 
 export default function MembersView({ 
@@ -47,11 +48,11 @@ export default function MembersView({
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editMember, setEditMember] = useState(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -114,7 +115,7 @@ export default function MembersView({
     });
   };
 
-  // 1. DOWNLOAD TEMPLATE EXCEL (.XLSX) DENGAN LEBAR KOLOM & FORMAT RAPI
+  // 1. DOWNLOAD TEMPLATE EXCEL (.XLSX) DENGAN KETERANGAN WAJIB / OPSIONAL
   const downloadTemplate = () => {
     const wb = XLSX.utils.book_new();
 
@@ -122,45 +123,61 @@ export default function MembersView({
       // Data Sheet Santri / Siswa
       const sampleData = [
         {
-          'NIS': '20261001',
-          'Nama Lengkap': 'Muhammad Rizky Pratama',
-          'UID Kartu RFID': 'A1B2C301',
-          'Nama Kelas': classes[0]?.nama || '10 IPA 1',
-          'No WhatsApp': '081234567801'
+          'Nama Lengkap (Wajib)': 'Muhammad Rizky Pratama',
+          'Nama Kelas (Wajib)': classes[0]?.nama || '10 IPA 1',
+          'NIS (Opsional)': '20261001',
+          'UID Kartu RFID (Opsional)': '0014829101',
+          'No WhatsApp (Opsional)': '081234567801',
+          'Nama Orang Tua (Opsional)': 'Bapak Pratama'
         },
         {
-          'NIS': '20261002',
-          'Nama Lengkap': 'Aisyah Nurul Hidayah',
-          'UID Kartu RFID': 'A1B2C302',
-          'Nama Kelas': classes[1]?.nama || '10 IPA 2',
-          'No WhatsApp': '081234567802'
+          'Nama Lengkap (Wajib)': 'Aisyah Nurul Hidayah',
+          'Nama Kelas (Wajib)': classes[1]?.nama || '10 IPA 2',
+          'NIS (Opsional)': '20261002',
+          'UID Kartu RFID (Opsional)': '', // Contoh dikosongkan (Kartu bisa di-tap nanti)
+          'No WhatsApp (Opsional)': '081234567802',
+          'Nama Orang Tua (Opsional)': 'Ibu Hidayah'
         },
         {
-          'NIS': '20261003',
-          'Nama Lengkap': 'Fajar Dwi Santoso',
-          'UID Kartu RFID': 'A1B2C303',
-          'Nama Kelas': classes[2]?.nama || '11 IPA 1',
-          'No WhatsApp': '081234567803'
+          'Nama Lengkap (Wajib)': 'Fajar Dwi Santoso',
+          'Nama Kelas (Wajib)': classes[2]?.nama || (classes[0]?.nama || '10 IPA 1'),
+          'NIS (Opsional)': '20261003',
+          'UID Kartu RFID (Opsional)': '', // Contoh dikosongkan
+          'No WhatsApp (Opsional)': '',     // Contoh dikosongkan
+          'Nama Orang Tua (Opsional)': ''
         }
       ];
 
       const ws = XLSX.utils.json_to_sheet(sampleData);
-      // Format lebar kolom agar tidak terpotong saat dibuka di Excel
       ws['!cols'] = [
-        { wch: 18 }, // NIS
-        { wch: 32 }, // Nama Lengkap
-        { wch: 20 }, // UID Kartu RFID
-        { wch: 22 }, // Nama Kelas
-        { wch: 20 }  // No WhatsApp
+        { wch: 32 }, // Nama Lengkap (Wajib)
+        { wch: 24 }, // Nama Kelas (Wajib)
+        { wch: 18 }, // NIS (Opsional)
+        { wch: 28 }, // UID Kartu RFID (Opsional)
+        { wch: 24 }, // No WhatsApp (Opsional)
+        { wch: 26 }  // Nama Orang Tua (Opsional)
       ];
       ws['!rows'] = [{ hpx: 26 }, { hpx: 20 }, { hpx: 20 }, { hpx: 20 }];
-
       XLSX.utils.book_append_sheet(wb, ws, isPesantren ? 'DATA SANTRI' : 'DATA SISWA');
 
-      // Reference Sheet Kelas
+      // Sheet 2: Panduan & Keterangan Wajib / Opsional
+      const guideData = [
+        { 'Nama Kolom': 'Nama Lengkap (Wajib)', 'Status': 'WAJIB DIISI', 'Keterangan': 'Nama lengkap santri/siswa. Tidak boleh kosong.' },
+        { 'Nama Kolom': 'Nama Kelas (Wajib)', 'Status': 'WAJIB DIISI', 'Keterangan': 'Harus sama persis dengan nama kelas di Master Kelas (lihat sheet DAFTAR KELAS).' },
+        { 'Nama Kolom': 'NIS (Opsional)', 'Status': 'OPSIONAL', 'Keterangan': 'Nomor Induk Santri/Siswa. Boleh dikosongkan.' },
+        { 'Nama Kolom': 'UID Kartu RFID (Opsional)', 'Status': 'OPSIONAL (BOLEH KOSONG)', 'Keterangan': 'Boleh kosong jika belum ada kartu. Kartu fisik bisa ditempel nanti di menu Kartu RFID (Mapping).' },
+        { 'Nama Kolom': 'No WhatsApp (Opsional)', 'Status': 'OPSIONAL (BOLEH KOSONG)', 'Keterangan': 'Nomor WhatsApp untuk notifikasi presensi. Boleh dikosongkan.' },
+        { 'Nama Kolom': 'Nama Orang Tua (Opsional)', 'Status': 'OPSIONAL (BOLEH KOSONG)', 'Keterangan': 'Nama orang tua / wali santri. Boleh dikosongkan.' }
+      ];
+      const wsGuide = XLSX.utils.json_to_sheet(guideData);
+      wsGuide['!cols'] = [{ wch: 30 }, { wch: 26 }, { wch: 68 }];
+      wsGuide['!rows'] = [{ hpx: 24 }];
+      XLSX.utils.book_append_sheet(wb, wsGuide, 'PANDUAN & PETUNJUK');
+
+      // Sheet 3: Reference Kelas
       const classRef = classes.map(c => ({
         'ID Kelas': c.id,
-        'Nama Kelas': c.nama,
+        'Nama Kelas Resmi (Salin ke Kolom Kelas)': c.nama,
         'Tingkat': c.tingkat || '-',
         'Keterangan': c.keterangan || '-'
       }));
@@ -168,7 +185,7 @@ export default function MembersView({
         const wsRef = XLSX.utils.json_to_sheet(classRef);
         wsRef['!cols'] = [
           { wch: 12 },
-          { wch: 24 },
+          { wch: 38 },
           { wch: 18 },
           { wch: 35 }
         ];
@@ -179,54 +196,66 @@ export default function MembersView({
       XLSX.writeFile(wb, isPesantren ? 'Template_Import_Santri.xlsx' : 'Template_Import_Siswa.xlsx');
 
     } else {
-      // Data Sheet Guru
+      // Data Sheet Guru / Pegawai
       const sampleData = [
         {
-          'NIP': '198507122010011001',
-          'Nama Lengkap': 'Ustadz Ahmad Fauzi, S.Pd.I',
-          'UID Kartu RFID': 'A1B2C304',
-          'Nama Jabatan': positions[0]?.nama || 'Guru Fiqih & Hadits',
-          'No WhatsApp': '081234567804'
+          'Nama Lengkap (Wajib)': 'Ustadz Ahmad Fauzi, S.Pd.I',
+          'Nama Jabatan (Wajib)': positions[0]?.nama || 'Guru Fiqih & Hadits',
+          'NIP (Opsional)': '198507122010011001',
+          'UID Kartu RFID (Opsional)': '0014829104',
+          'No WhatsApp (Opsional)': '081234567804'
         },
         {
-          'NIP': '198803152012012002',
-          'Nama Lengkap': 'Ustadzah Fatimah Zahra, M.Pd',
-          'UID Kartu RFID': 'A1B2C305',
-          'Nama Jabatan': positions[1]?.nama || 'Guru Bahasa Arab',
-          'No WhatsApp': '081234567805'
+          'Nama Lengkap (Wajib)': 'Ustadzah Fatimah Zahra, M.Pd',
+          'Nama Jabatan (Wajib)': positions[1]?.nama || 'Guru Bahasa Arab',
+          'NIP (Opsional)': '198803152012012002',
+          'UID Kartu RFID (Opsional)': '', // Contoh dikosongkan (Kartu bisa di-tap nanti)
+          'No WhatsApp (Opsional)': '081234567805'
         },
         {
-          'NIP': '198211052008011003',
-          'Nama Lengkap': 'Ustadz Abdullah Yusuf, Lc',
-          'UID Kartu RFID': 'A1B2C306',
-          'Nama Jabatan': positions[2]?.nama || 'Guru Tahfidz & Quran',
-          'No WhatsApp': '081234567806'
+          'Nama Lengkap (Wajib)': 'Ustadz Abdullah Yusuf, Lc',
+          'Nama Jabatan (Wajib)': positions[2]?.nama || (positions[0]?.nama || 'Guru Tahfidz & Quran'),
+          'NIP (Opsional)': '198211052008011003',
+          'UID Kartu RFID (Opsional)': '', // Contoh dikosongkan
+          'No WhatsApp (Opsional)': ''      // Contoh dikosongkan
         }
       ];
 
       const ws = XLSX.utils.json_to_sheet(sampleData);
       ws['!cols'] = [
-        { wch: 24 }, // NIP
-        { wch: 32 }, // Nama Lengkap
-        { wch: 20 }, // UID Kartu RFID
-        { wch: 28 }, // Nama Jabatan
-        { wch: 20 }  // No WhatsApp
+        { wch: 32 }, // Nama Lengkap (Wajib)
+        { wch: 28 }, // Nama Jabatan (Wajib)
+        { wch: 24 }, // NIP (Opsional)
+        { wch: 28 }, // UID Kartu RFID (Opsional)
+        { wch: 24 }  // No WhatsApp (Opsional)
       ];
       ws['!rows'] = [{ hpx: 26 }, { hpx: 20 }, { hpx: 20 }, { hpx: 20 }];
-
       XLSX.utils.book_append_sheet(wb, ws, isUmum ? 'DATA PEGAWAI' : 'DATA GURU');
 
-      // Reference Sheet Jabatan
+      // Sheet 2: Panduan & Keterangan Wajib / Opsional
+      const guideData = [
+        { 'Nama Kolom': 'Nama Lengkap (Wajib)', 'Status': 'WAJIB DIISI', 'Keterangan': 'Nama lengkap guru/pegawai. Tidak boleh kosong.' },
+        { 'Nama Kolom': 'Nama Jabatan (Wajib)', 'Status': 'WAJIB DIISI', 'Keterangan': 'Harus sama persis dengan nama jabatan di Master Jabatan (lihat sheet DAFTAR JABATAN).' },
+        { 'Nama Kolom': 'NIP (Opsional)', 'Status': 'OPSIONAL', 'Keterangan': 'Nomor Induk Pegawai/Guru. Boleh dikosongkan.' },
+        { 'Nama Kolom': 'UID Kartu RFID (Opsional)', 'Status': 'OPSIONAL (BOLEH KOSONG)', 'Keterangan': 'Boleh kosong jika belum ada kartu. Kartu fisik bisa ditempel nanti di menu Kartu RFID (Mapping).' },
+        { 'Nama Kolom': 'No WhatsApp (Opsional)', 'Status': 'OPSIONAL (BOLEH KOSONG)', 'Keterangan': 'Nomor WhatsApp untuk notifikasi presensi. Boleh dikosongkan.' }
+      ];
+      const wsGuide = XLSX.utils.json_to_sheet(guideData);
+      wsGuide['!cols'] = [{ wch: 30 }, { wch: 26 }, { wch: 68 }];
+      wsGuide['!rows'] = [{ hpx: 24 }];
+      XLSX.utils.book_append_sheet(wb, wsGuide, 'PANDUAN & PETUNJUK');
+
+      // Sheet 3: Reference Jabatan
       const posRef = positions.map(p => ({
         'ID Jabatan': p.id,
-        'Nama Jabatan': p.nama,
+        'Nama Jabatan Resmi (Salin ke Kolom Jabatan)': p.nama,
         'Keterangan': p.keterangan || '-'
       }));
       if (posRef.length > 0) {
         const wsRef = XLSX.utils.json_to_sheet(posRef);
         wsRef['!cols'] = [
           { wch: 12 },
-          { wch: 28 },
+          { wch: 38 },
           { wch: 35 }
         ];
         wsRef['!rows'] = [{ hpx: 24 }];
@@ -271,109 +300,6 @@ export default function MembersView({
     XLSX.writeFile(wb, `Data_${labelMember.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  // 3. IMPORT EXCEL (.XLSX)
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    if (isDemoActive) {
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      showDemoAlert(`Import data ${labelMember} dari Excel`);
-      return;
-    }
-
-    setImporting(true);
-    const reader = new FileReader();
-
-    reader.onload = async (evt) => {
-      try {
-        const bstr = evt.target.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
-        if (!rows || rows.length === 0) {
-          Swal.fire('Peringatan', 'File Excel kosong atau format tidak sesuai.', 'warning');
-          setImporting(false);
-          return;
-        }
-
-        const parsedMembers = [];
-        for (const row of rows) {
-          // Normalize column names
-          let uid = '';
-          let nis_nip = '';
-          let nama = '';
-          let kelas = '';
-          let no_hp = '';
-
-          for (const key of Object.keys(row)) {
-            const k = key.toLowerCase().trim();
-            const val = String(row[key]).trim();
-
-            if (k.includes('uid') || k.includes('rfid')) {
-              uid = val.toUpperCase();
-            } else if (k === 'nis' || k === 'nip' || k.includes('nomor induk') || k.includes('nis_nip')) {
-              nis_nip = val;
-            } else if (k.includes('nama') || k === 'name') {
-              nama = val;
-            } else if (k.includes('kelas') || k.includes('jabatan') || k.includes('rombel') || k.includes('mapel')) {
-              kelas = val;
-            } else if (k.includes('wa') || k.includes('hp') || k.includes('telepon') || k.includes('telp')) {
-              no_hp = val;
-            }
-          }
-
-          if (nama) {
-            parsedMembers.push({
-              uid: uid || '',
-              nis_nip,
-              nama,
-              tipe,
-              kelas,
-              no_hp
-            });
-          }
-        }
-
-        if (parsedMembers.length === 0) {
-          Swal.fire('Gagal', 'Tidak ada baris data valid yang memiliki Nama Lengkap.', 'error');
-          setImporting(false);
-          return;
-        }
-
-        // Send to backend /api/members/bulk
-        const res = await apiFetch('/api/members/bulk', {
-          method: 'POST',
-          body: JSON.stringify({ members: parsedMembers })
-        });
-        const data = await res.json();
-
-        if (res.ok) {
-          Swal.fire({
-            icon: 'success',
-            title: 'Import Berhasil!',
-            text: data.message,
-            timer: 2000,
-            showConfirmButton: false
-          });
-          fetchMembers();
-        } else {
-          Swal.fire('Gagal', data.message || 'Gagal mengimpor data.', 'error');
-        }
-
-      } catch (err) {
-        Swal.fire('Error', 'Gagal memproses file Excel: ' + err.message, 'error');
-      } finally {
-        setImporting(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
-    };
-
-    reader.readAsBinaryString(file);
-  };
-
   const kotaInstansi = settings.instansi_kota || 'Kota Santri';
 
   return (
@@ -405,20 +331,18 @@ export default function MembersView({
 
           {/* Import Excel */}
           <button 
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold rounded-xl border border-amber-300 transition-all disabled:opacity-50"
+            onClick={() => {
+              if (isDemoActive) {
+                showDemoAlert(`Import data ${labelMember} dari Excel`);
+                return;
+              }
+              setImportModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold rounded-xl border border-amber-300 transition-all cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5 text-amber-600" />
-            <span>{importing ? 'Mengimpor...' : 'Import Excel'}</span>
+            <span>Import Excel</span>
           </button>
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileUpload} 
-            accept=".xlsx, .xls" 
-            className="hidden" 
-          />
 
           {/* Export Excel */}
           <button 
@@ -602,6 +526,21 @@ export default function MembersView({
           }}
         />
       )}
+
+      {/* MODAL IMPORT EXCEL */}
+      <ModalImportExcel 
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        tipe={tipe}
+        classes={classes}
+        positions={positions}
+        appMode={appMode}
+        onSuccess={() => {
+          fetchMembers();
+          if (onMembersUpdated) onMembersUpdated();
+        }}
+        onDownloadTemplate={downloadTemplate}
+      />
 
       {/* MODAL PRINT REKAP PDF */}
       {pdfModalOpen && (
