@@ -171,8 +171,10 @@ int masterTapCount = 0;
 // Variabel UI Dinamis saat status SCANNED
 String scanLine1 = "";
 String scanLine2 = "";
-int scanScrollIndex = 0;
-unsigned long lastScanScrollTime = 0;
+int scanScrollIndex1 = 0;
+int scanScrollIndex2 = 0;
+unsigned long lastScanScrollTime1 = 0;
+unsigned long lastScanScrollTime2 = 0;
 
 // Variabel Debounce Scan Cepat Non-Blocking
 unsigned long lastFingerScanTime = 0;
@@ -499,7 +501,8 @@ void printCentered(String text, int row) {
 void setStandbyMode() {
   currentMode = STANDBY;
   masterTapCount = 0;
-  scanScrollIndex = 0;
+  scanScrollIndex1 = 0;
+  scanScrollIndex2 = 0;
   lcd.clear();
   // Sensor ON Terus - LED Biru Solid Standby Siap Baca Cepat
   finger.LEDcontrol(FINGERPRINT_LED_ON, 0, FINGERPRINT_LED_BLUE, 0); 
@@ -510,29 +513,43 @@ void showScannedMessage(String line1, String line2) {
   scannedStartTime = millis(); 
   scanLine1 = line1;
   scanLine2 = line2;
-  scanScrollIndex = 0;
-  lastScanScrollTime = millis();
+  scanScrollIndex1 = 0;
+  scanScrollIndex2 = 0;
+  lastScanScrollTime1 = millis();
+  lastScanScrollTime2 = millis();
 
   lcd.clear();
   if (scanLine1.length() <= 16) {
     printCentered(scanLine1, 0);
   } else {
-    // Tampilkan 16 karakter pertama
+    // Tampilkan 16 karakter pertama baris 1
     lcd.setCursor(0, 0);
     lcd.print(scanLine1.substring(0, 16));
   }
-  printCentered(scanLine2, 1);
+
+  if (scanLine2.length() <= 16) {
+    printCentered(scanLine2, 1);
+  } else {
+    // Tampilkan 16 karakter pertama baris 2
+    lcd.setCursor(0, 1);
+    lcd.print(scanLine2.substring(0, 16));
+  }
 }
 
-// Menangani Tampilan & Auto-Scroll Baris 1 saat Respon Presensi Muncul
+// Menangani Tampilan & Auto-Scroll Baris 1 & Baris 2 saat Respon Presensi Muncul
 void handleScannedUI() {
   unsigned long elapsed = millis() - scannedStartTime;
   
-  // Hitung durasi dinamis: berikan waktu cukup jika nama panjang agar scroll terbaca utuh
+  // Hitung durasi dinamis: berikan waktu cukup jika teks nama (baris 1) atau respon presensi (baris 2) panjang agar scroll terbaca utuh
+  int maxLen = scanLine1.length();
+  if (scanLine2.length() > maxLen) {
+    maxLen = scanLine2.length();
+  }
+
   unsigned long duration = 5000;
-  if (scanLine1.length() > 16) {
-    duration = 1000 + ((scanLine1.length() - 16) * 300) + 2000; // jeda awal 1s + waktu scroll + jeda akhir 2s
-    if (duration > 8500) duration = 8500; // Maksimal 8.5 detik
+  if (maxLen > 16) {
+    duration = 1000 + ((maxLen - 16) * 300) + 2000; // jeda awal 1s + waktu scroll + jeda akhir 2s
+    if (duration > 9500) duration = 9500; // Maksimal 9.5 detik
   }
 
   if (elapsed >= duration) {
@@ -540,18 +557,34 @@ void handleScannedUI() {
     return;
   }
 
-  // Jika nama lebih dari 16 karakter, lakukan auto-scroll perlahan di baris 0
+  // Auto-scroll Baris 1 (Nama) jika panjang > 16 karakter
   if (scanLine1.length() > 16) {
     // Beri jeda 800ms di awal sebelum mulai scroll, lalu geser per 280ms
-    if (elapsed > 800 && (millis() - lastScanScrollTime >= 280)) {
-      lastScanScrollTime = millis();
-      int maxScroll = scanLine1.length() - 16;
-      if (scanScrollIndex <= maxScroll) {
-        String sub = scanLine1.substring(scanScrollIndex, scanScrollIndex + 16);
-        while (sub.length() < 16) sub += " ";
+    if (elapsed > 800 && (millis() - lastScanScrollTime1 >= 280)) {
+      lastScanScrollTime1 = millis();
+      int maxScroll1 = scanLine1.length() - 16;
+      if (scanScrollIndex1 <= maxScroll1) {
+        String sub1 = scanLine1.substring(scanScrollIndex1, scanScrollIndex1 + 16);
+        while (sub1.length() < 16) sub1 += " ";
         lcd.setCursor(0, 0);
-        lcd.print(sub);
-        scanScrollIndex++;
+        lcd.print(sub1);
+        scanScrollIndex1++;
+      }
+    }
+  }
+
+  // Auto-scroll Baris 2 (Respon Presensi: Telat / Tepat / Pulang / dsb) jika panjang > 16 karakter
+  if (scanLine2.length() > 16) {
+    // Beri jeda 800ms di awal sebelum mulai scroll, lalu geser per 280ms
+    if (elapsed > 800 && (millis() - lastScanScrollTime2 >= 280)) {
+      lastScanScrollTime2 = millis();
+      int maxScroll2 = scanLine2.length() - 16;
+      if (scanScrollIndex2 <= maxScroll2) {
+        String sub2 = scanLine2.substring(scanScrollIndex2, scanScrollIndex2 + 16);
+        while (sub2.length() < 16) sub2 += " ";
+        lcd.setCursor(0, 1);
+        lcd.print(sub2);
+        scanScrollIndex2++;
       }
     }
   }
