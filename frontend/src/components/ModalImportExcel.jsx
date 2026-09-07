@@ -45,7 +45,7 @@ export default function ModalImportExcel({
   const [filterStatus, setFilterStatus] = useState('all'); // 'all' | 'valid' | 'invalid'
   const fileInputRef = useRef(null);
 
-  // Normalisasi kolom Excel yang fleksibel
+  // Normalisasi kolom Excel yang fleksibel & akurat
   const normalizeRow = (row) => {
     let uid = '';
     let nis_nip = '';
@@ -58,29 +58,29 @@ export default function ModalImportExcel({
       const k = key.toLowerCase().trim();
       const val = String(row[key] ?? '').trim();
 
-      // UID RFID
+      // 1. UID RFID
       if (k.includes('uid') || k.includes('rfid') || k.includes('kartu')) {
         uid = val.toUpperCase();
       }
-      // NIS / NIP / NIK
+      // 2. NIS / NIP / NIK (Nomor Induk)
       else if (k.startsWith('nis') || k.startsWith('nip') || k.includes('induk') || k.includes('nik')) {
         nis_nip = val;
       }
-      // Nama Orang Tua (dicek lebih dulu sebelum nama biasa)
+      // 3. Nama Orang Tua / Wali (dicek sebelum nama biasa karena mengandung kata 'nama')
       else if (k.includes('ortu') || k.includes('orang tua') || k.includes('wali') || k.includes('ayah') || k.includes('ibu')) {
         nama_ortu = val;
       }
-      // Nama Lengkap
-      else if (k.includes('nama') || k === 'name' || k.includes('lengkap')) {
-        nama = val;
-      }
-      // Kelas / Jabatan / Rombel
-      else if (k.includes('kelas') || k.includes('jabatan') || k.includes('rombel') || k.includes('mapel') || k.includes('posisi') || k.includes('divisi')) {
+      // 4. Kelas / Jabatan / Rombel / Divisi (HARUS sebelum nama lengkap karena header template bernama 'Nama Kelas' atau 'Nama Jabatan')
+      else if (k.includes('kelas') || k.includes('jabatan') || k.includes('rombel') || k.includes('mapel') || k.includes('posisi') || k.includes('divisi') || k.includes('departemen')) {
         kelas = val;
       }
-      // WhatsApp / HP
-      else if (k.includes('wa') || k.includes('hp') || k.includes('whatsapp') || k.includes('telepon') || k.includes('telp') || k.includes('phone') || k.includes('kontak')) {
+      // 5. WhatsApp / Nomor HP / Telepon
+      else if (k.includes('wa') || k.includes('hp') || k.includes('whatsapp') || k.includes('telepon') || k.includes('telp') || k.includes('phone') || k.includes('kontak') || k.includes('ponsel')) {
         no_hp = val;
+      }
+      // 6. Nama Lengkap (hanya dicocokkan setelah ortu, kelas, dan jabatan terfilter)
+      else if (k.includes('nama') || k === 'name' || k.includes('lengkap') || k.includes('siswa') || k.includes('santri') || k.includes('guru') || k.includes('pegawai')) {
+        nama = val;
       }
     }
 
@@ -99,12 +99,42 @@ export default function ModalImportExcel({
       try {
         const bstr = evt.target.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
+
+        // Pilih sheet data utama: jika ada sheet berisi nama santri/siswa/guru/pegawai gunakan itu, atau sheet pertama
+        let targetSheetName = wb.SheetNames[0];
+        for (const sName of wb.SheetNames) {
+          const lower = sName.toLowerCase();
+          if (lower.includes('santri') || lower.includes('siswa') || lower.includes('guru') || lower.includes('pegawai') || lower.includes('data')) {
+            targetSheetName = sName;
+            break;
+          }
+        }
+        const ws = wb.Sheets[targetSheetName];
         const rawData = XLSX.utils.sheet_to_json(ws, { defval: '' });
 
         if (!rawData || rawData.length === 0) {
           Swal.fire('File Kosong', 'File Excel tidak memiliki data baris untuk diproses.', 'warning');
+          setParsedRows([]);
+          return;
+        }
+
+        // Filter baris kosong: abaikan baris yang tidak memiliki data apapun
+        const nonEmptyRawData = rawData
+          .map((raw, index) => ({ raw, rowNumber: index + 2 }))
+          .filter(({ raw }) => {
+            const n = normalizeRow(raw);
+            return (
+              Boolean(n.nama) ||
+              Boolean(n.nis_nip) ||
+              Boolean(n.kelas) ||
+              Boolean(n.uid) ||
+              Boolean(n.no_hp) ||
+              Boolean(n.nama_ortu)
+            );
+          });
+
+        if (nonEmptyRawData.length === 0) {
+          Swal.fire('File Kosong', 'Seluruh baris dalam file Excel kosong.', 'warning');
           setParsedRows([]);
           return;
         }
@@ -124,8 +154,7 @@ export default function ModalImportExcel({
 
         const seenUIDs = new Set();
         const seenNISNIP = new Set();
-        const validated = rawData.map((raw, index) => {
-          const rowNumber = index + 2; // Baris 1 adalah header di Excel
+        const validated = nonEmptyRawData.map(({ raw, rowNumber }) => {
           const normalized = normalizeRow(raw);
           const errors = [];
 
@@ -454,10 +483,10 @@ export default function ModalImportExcel({
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-100 text-slate-700 sticky top-0 z-10 font-bold border-b border-slate-200">
                   <tr>
-                    <th className="p-2.5 w-14 text-center">Baris</th>
                     <th className="p-2.5">{isGuru ? 'NIP' : 'NIS'}</th>
                     <th className="p-2.5">Nama Lengkap (Wajib)</th>
                     <th className="p-2.5">{labelGroup} (Wajib)</th>
+                    {!isGuru && <th className="p-2.5">Nama Orang Tua</th>}
                     <th className="p-2.5">UID RFID (Opsional)</th>
                     <th className="p-2.5">No WhatsApp</th>
                     <th className="p-2.5 text-center">Status / Info</th>
@@ -469,7 +498,6 @@ export default function ModalImportExcel({
                       key={r.rowNumber} 
                       className={r.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/50 hover:bg-rose-50'}
                     >
-                      <td className="p-2.5 text-center font-bold text-slate-500">{r.rowNumber}</td>
                       <td className="p-2.5 font-mono text-11px">
                         {r.nis_nip ? (
                           <span className={r.errors.some(e => e.includes('NIS') || e.includes('NIP')) ? 'text-rose-600 font-bold' : 'text-slate-700 font-semibold'}>
@@ -493,13 +521,18 @@ export default function ModalImportExcel({
                           <span className="text-rose-500 italic">(Kosong)</span>
                         )}
                       </td>
+                      {!isGuru && (
+                        <td className="p-2.5 text-slate-600 text-11px">
+                          {r.nama_ortu || <span className="text-slate-400 italic">Kosong</span>}
+                        </td>
+                      )}
                       <td className="p-2.5">
                         {r.uid && r.uid !== '-' ? (
                           <span className="font-mono text-11px px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200">
                             {r.uid}
                           </span>
                         ) : (
-                          <span className="text-slate-400 italic text-11px">Kosong (Opsional)</span>
+                          <span className="text-slate-400 italic text-11px">Kosong</span>
                         )}
                       </td>
                       <td className="p-2.5 text-slate-500 text-11px">{r.no_hp || <span className="text-slate-400 italic">Kosong</span>}</td>
