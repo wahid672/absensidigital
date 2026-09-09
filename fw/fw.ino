@@ -88,6 +88,14 @@ Preferences preferences;
 // Inisialisasi Fingerprint via UART2 (HardwareSerial)
 HardwareSerial mySerial(2);
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
+bool isFingerprintAvailable = false; // Flag otomatis: true jika modul terpasang, false jika hanya mode RFID
+
+// Helper proteksi LED Fingerprint agar tidak hang / timeout jika modul tidak terpasang
+void setFingerLED(uint8_t controlType, uint8_t speed, uint8_t colorIndex, uint8_t count) {
+  if (isFingerprintAvailable) {
+    finger.LEDcontrol(controlType, speed, colorIndex, count);
+  }
+}
 
 // Variabel Global
 String ID_TAG = "";
@@ -505,7 +513,7 @@ void setStandbyMode() {
   scanScrollIndex2 = 0;
   lcd.clear();
   // Sensor ON Terus - LED Biru Solid Standby Siap Baca Cepat
-  finger.LEDcontrol(FINGERPRINT_LED_ON, 0, FINGERPRINT_LED_BLUE, 0); 
+  setFingerLED(FINGERPRINT_LED_ON, 0, FINGERPRINT_LED_BLUE, 0); 
 }
 
 void showScannedMessage(String line1, String line2) {
@@ -768,6 +776,10 @@ uint8_t getFreeFingerprintID() {
 }
 
 void handleFingerprintEnroll() {
+  if (!isFingerprintAvailable) {
+    setStandbyMode();
+    return;
+  }
   if (millis() - enrollTimer > 30000) {
     setStandbyMode(); // Timeout, kembali ke awal
     return;
@@ -777,7 +789,7 @@ void handleFingerprintEnroll() {
     case ENROLL_START:
       currentEnrollID = getFreeFingerprintID();
       if (currentEnrollID == 0) {
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3); // Merah Gagal
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3); // Merah Gagal
         showScannedMessage("Memori Jari", "Penuh!");
         return;
       }
@@ -790,7 +802,7 @@ void handleFingerprintEnroll() {
     case WAIT_FINGER_1:
       if (finger.getImage() == FINGERPRINT_OK && finger.image2Tz(1) == FINGERPRINT_OK) {
         digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
-        finger.LEDcontrol(FINGERPRINT_LED_ON, 0, FINGERPRINT_LED_BLUE, 0); // Nyala statis biru sebentar
+        setFingerLED(FINGERPRINT_LED_ON, 0, FINGERPRINT_LED_BLUE, 0); // Nyala statis biru sebentar
         printCentered("Angkat Jari!", 1);
         enrollTimer = millis(); 
         enrollState = WAIT_REMOVE;
@@ -799,7 +811,7 @@ void handleFingerprintEnroll() {
 
     case WAIT_REMOVE:
       if (finger.getImage() == FINGERPRINT_NOFINGER) {
-        finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0); // Ungu nafas lagi
+        setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0); // Ungu nafas lagi
         printCentered("Tempel Lagi...", 1);
         enrollTimer = millis();
         enrollState = WAIT_FINGER_2;
@@ -811,17 +823,17 @@ void handleFingerprintEnroll() {
         if (finger.createModel() == FINGERPRINT_OK) {
           if (finger.storeModel(currentEnrollID) == FINGERPRINT_OK) {
             digitalWrite(BUZZ, HIGH); delay(300); digitalWrite(BUZZ, LOW);
-            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 5); // Biru kedip tanda sukses
+            setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 5); // Biru kedip tanda sukses
             showScannedMessage("Sidik Jari OK!", "Tersimpan ID:" + String(currentEnrollID));
 
             // AUTO-SYNC REAL-TIME: Kirim ID & template sidik jari baru ke server
             syncSingleEnroll(currentEnrollID);
           } else {
-            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+            setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
             showScannedMessage("Gagal Simpan!", "Coba Lagi");
           }
         } else {
-          finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+          setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
           showScannedMessage("Jari Berbeda!", "Gagal Merekam");
         }
       }
@@ -830,6 +842,10 @@ void handleFingerprintEnroll() {
 }
 
 void handleFingerprintDelete() {
+  if (!isFingerprintAvailable) {
+    setStandbyMode();
+    return;
+  }
   // Timeout jika 15 detik tidak ada jari yang ditempel
   if (millis() - deleteTimer > 15000) { 
     setStandbyMode();
@@ -845,19 +861,19 @@ void handleFingerprintDelete() {
       // Proses hapus dari memori
       if (finger.deleteModel(idToDelete) == FINGERPRINT_OK) {
         digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(100); digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 5); // Kedip ungu tanda berhasil dihapus
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 5); // Kedip ungu tanda berhasil dihapus
         showScannedMessage("Jari Dihapus!", "ID Jari: " + String(idToDelete));
 
         // AUTO-SYNC REAL-TIME: Hapus data ID dari server
         syncSingleDelete(idToDelete);
       } else {
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
         showScannedMessage("Gagal Menghapus!", "Sistem Error");
       }
     } else {
       // Jari yang ditempel tidak terdaftar, jadi tidak bisa dihapus
       digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+      setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
       showScannedMessage("Jari Tdk Dikenal", "Batal Menghapus");
     }
   }
@@ -868,10 +884,43 @@ void handleFingerprintDelete() {
 void syncDataFingerprint() {
   lcd.clear();
   printCentered("Sinkronisasi...", 0);
+
+  if (!isFingerprintAvailable) {
+    printCentered("Mode RFID Siap", 1);
+    delay(300);
+
+    // Beri tahu server bahwa device online (tanpa sidik jari)
+    if (WiFi.status() == WL_CONNECTED) {
+      DynamicJsonDocument doc(512);
+      doc["action"] = "sync";
+      doc["device_id"] = deviceId;
+      doc["total_fingerprints"] = 0;
+      doc.createNestedArray("active_fingerprints");
+
+      HTTPClient http;
+      http.begin(serverUrl);
+      http.setTimeout(4000);
+      http.addHeader("Content-Type", "application/json");
+      http.addHeader("X-API-KEY", apiKey);
+
+      String requestBody;
+      serializeJson(doc, requestBody);
+      http.POST(requestBody);
+      http.end();
+    }
+
+    lcd.clear();
+    printCentered("Sync Sukses!", 0);
+    printCentered("Mode Hanya RFID", 1);
+    digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
+    delay(500);
+    return;
+  }
+
   printCentered("Sync 0%", 1);
   
   // Indikator visual LED sensor (Ungu Bernafas)
-  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
+  setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
 
   DynamicJsonDocument doc(4096);
   doc["action"] = "sync";
@@ -934,7 +983,7 @@ void syncDataFingerprint() {
             lcd.clear();
             printCentered("Hapus Slot #" + String(delId), 0);
             printCentered("Sinkron Server", 1);
-            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 2);
+            setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 2);
 
             uint8_t p = finger.deleteModel(delId);
             if (p == FINGERPRINT_OK) {
@@ -953,7 +1002,7 @@ void syncDataFingerprint() {
       if (deletedCount > 0) {
         printCentered("Sync & Hapus OK", 0);
         printCentered(String(countFound) + " Jari Tersimpan", 1);
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
       } else {
         printCentered("Sync Sukses!", 0);
         printCentered(String(countFound) + " Jari Terdata", 1);
@@ -1088,7 +1137,7 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
   // 1. TAMPILKAN FEEDBACK INSTAN: Beep singkat + LED Ungu + Layar "Sedang Proses..."
   // Memberitahu user bahwa sidik jari sudah terbaca dan jari bisa langsung diangkat
   digitalWrite(BUZZ, HIGH); delay(60); digitalWrite(BUZZ, LOW);
-  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 40, FINGERPRINT_LED_PURPLE, 0);
+  setFingerLED(FINGERPRINT_LED_BREATHING, 40, FINGERPRINT_LED_PURPLE, 0);
   showScannedMessage(namaPreview, "Sedang Proses...");
 
   // 2. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
@@ -1100,10 +1149,10 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
       digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+      setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
     } else {
       digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+      setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
     }
     showScannedMessage(namaPreview, eval.displayLine2);
     return;
@@ -1152,34 +1201,34 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
       if (status == "success") {
         if (action == "check_out") {
           digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-          finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+          setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
           showScannedMessage(nama, "Keluar: " + waktuKeluar + " OK");
         } else {
           if (statusMasuk == "telat") {
             digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
             digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
             digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+            setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
             showScannedMessage(nama, "Masuk: Telat " + waktuMasuk);
           } else {
             digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+            setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
             showScannedMessage(nama, "Masuk: " + waktuMasuk + " OK");
           }
         }
       } else if (status == "already_attended") {
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(50);
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
         showScannedMessage(nama, "Sudah Absen!");
       } else if (status == "unmapped" || action == "fingerprint_unmapped") {
         digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(80);
         digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 3);
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 3);
         showScannedMessage("Slot #" + String(idFinger), "Belum Dimapping!");
       } else {
         digitalWrite(BUZZ, HIGH); delay(300); digitalWrite(BUZZ, LOW);
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
         showScannedMessage("Jari Ditolak!", "Tidak Terdaftar");
       }
     } else {
@@ -1194,10 +1243,10 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
       digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+      setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
     } else {
       digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+      setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
     }
     showScannedMessage(namaPreview, eval.displayLine2);
   }
@@ -1210,7 +1259,7 @@ void kirimPresensiRFID(String tagId) {
 
   // 1. TAMPILKAN FEEDBACK INSTAN: Beep singkat + LED Ungu + Layar "Sedang Proses..."
   digitalWrite(BUZZ, HIGH); delay(60); digitalWrite(BUZZ, LOW);
-  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 40, FINGERPRINT_LED_PURPLE, 0);
+  setFingerLED(FINGERPRINT_LED_BREATHING, 40, FINGERPRINT_LED_PURPLE, 0);
   showScannedMessage(namaPreview, "Sedang Proses...");
 
   // 2. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
@@ -1222,10 +1271,10 @@ void kirimPresensiRFID(String tagId) {
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
       digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+      setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
     } else {
       digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+      setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
     }
     showScannedMessage(namaPreview, eval.displayLine2);
     return;
@@ -1274,35 +1323,35 @@ void kirimPresensiRFID(String tagId) {
       if (status == "success") {
         if (action == "check_out") {
           digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-          finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+          setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
           showScannedMessage(nama, "Keluar: " + waktuKeluar + " OK");
         } else {
           if (statusMasuk == "telat") {
             digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
             digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
             digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+            setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
             showScannedMessage(nama, "Masuk: Telat " + waktuMasuk);
           } else {
             digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-            finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+            setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
             showScannedMessage(nama, "Masuk: " + waktuMasuk + " OK");
           }
         }
       } else if (status == "already_attended") {
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(50);
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
         showScannedMessage(nama, "Sudah Absen!");
       } else if (status == "unmapped" || action == "card_unmapped") {
         // Tanda Kartu Baru belum di-mapping (Fungsi Kartu Baru Aktif)
         digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(80);
         digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 3);
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 3);
         showScannedMessage("Kartu Belum", "Di-mapping!");
       } else if (status == "not_found" || action == "card_not_registered") {
         digitalWrite(BUZZ, HIGH); delay(300); digitalWrite(BUZZ, LOW);
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
         showScannedMessage("Kartu Tdk Dikenal", "Ditolak Sistem");
       } else {
         digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
@@ -1320,10 +1369,10 @@ void kirimPresensiRFID(String tagId) {
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
       digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+      setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
     } else {
       digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
+      setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
     }
     showScannedMessage(namaPreview, eval.displayLine2);
   }
@@ -1331,6 +1380,7 @@ void kirimPresensiRFID(String tagId) {
 }
 
 void checkFingerprintScan() {
+  if (!isFingerprintAvailable) return;
   // Hanya abaikan scan jika sedang di menu khusus rekam, hapus, atau adzan
   if (currentMode == ENROLL_FINGER || currentMode == DELETE_FINGER || currentMode == ADHAN || currentMode == MASTER_TAPPING) return; 
   
@@ -1366,7 +1416,7 @@ void checkFingerprintScan() {
 
     digitalWrite(BUZZ, HIGH); delay(40); digitalWrite(BUZZ, LOW); delay(40);
     digitalWrite(BUZZ, HIGH); delay(40); digitalWrite(BUZZ, LOW);
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3); // Kedip Merah Ditolak
+    setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3); // Kedip Merah Ditolak
     showScannedMessage("Jari Ditolak!", "Tidak Dikenal");
   }
 }
@@ -1388,14 +1438,14 @@ void checkServerConnection() {
   lcd.clear();
   printCentered("Tes Koneksi...", 0);
   printCentered("Menghubungkan...", 1);
-  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
+  setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
 
   Serial.println("\n[TES KONEKSI] Memulai pengecekan koneksi ke server...");
 
   // 1. Cek status koneksi WiFi lokal
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[TES KONEKSI] WiFi Gagal / Terputus!");
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+    setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(100);
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
     showScannedMessage("Status: OFFLINE", "WiFi Terputus!");
@@ -1414,21 +1464,21 @@ void checkServerConnection() {
 
   if (httpCode == 200 || httpCode == 201) {
     Serial.printf("[TES KONEKSI] Server ONLINE (HTTP %d, Latensi: %lums)\n", httpCode, rtt);
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
+    setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
     digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
     
     // Tampilkan hanya baris pertama 'Server ONLINE!' agar bersih dan tidak error
     showScannedMessage("Server ONLINE!", "");
   } else if (httpCode > 0) {
     Serial.printf("[TES KONEKSI] Respon Server Error (HTTP %d)\n", httpCode);
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+    setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(100);
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
     
     showScannedMessage("Server Error!", "HTTP " + String(httpCode));
   } else {
     Serial.printf("[TES KONEKSI] Gagal terhubung ke host: %s\n", http.errorToString(httpCode).c_str());
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+    setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
     digitalWrite(BUZZ, HIGH); delay(300); digitalWrite(BUZZ, LOW);
     
     showScannedMessage("Server Error!", "Host Timeout");
@@ -1462,6 +1512,12 @@ void checkRFID() {
   
   // TRIGGER MASTER CARD (REKAM 1x / HAPUS 5x) (UID: 0696781609 / 696781609)
   if (ID_TAG == "0696781609" || ID_TAG == "696781609") {
+    if (!isFingerprintAvailable) {
+      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(50);
+      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
+      showScannedMessage("Master Card", "Finger Tdk Ada");
+      return;
+    }
     // 1. Debounce 250ms agar tap berturut-turut terbaca mulus dan tidak terabaikan
     if (masterTapCount > 0 && (millis() - lastMasterTapTime < 250)) {
       return; 
@@ -1486,7 +1542,7 @@ void checkRFID() {
       
       // Feedback suara & LED Nafas Merah sebagai indikator Delete Mode
       digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_RED, 0); 
+      setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_RED, 0); 
     } 
     else if (masterTapCount == 1) {
       // TAP 1 KALI: Masuk mode hitung tap Master
@@ -1494,7 +1550,7 @@ void checkRFID() {
       lcd.clear();
       printCentered("Mode Master 1/5", 0);
       printCentered("Tap lg u/ Hapus", 1);
-      finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
+      setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
     } 
     else {
       // TAP 2, 3, 4 KALI: Tampilkan hitung mundur menuju 5x tap
@@ -1502,14 +1558,14 @@ void checkRFID() {
       lcd.clear();
       printCentered("Hapus Jari " + String(masterTapCount) + "/5", 0);
       printCentered("Tap " + String(5 - masterTapCount) + "x lagi", 1);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 30, FINGERPRINT_LED_RED, 0);
+      setFingerLED(FINGERPRINT_LED_FLASHING, 30, FINGERPRINT_LED_RED, 0);
     }
     return;
   }
   
   // TRIGGER RESTART (UID: 2054170372 / 02054170372)
   if (ID_TAG == "2054170372" || ID_TAG == "02054170372") {
-    finger.LEDcontrol(FINGERPRINT_LED_ON, 0, FINGERPRINT_LED_RED, 0);
+    setFingerLED(FINGERPRINT_LED_ON, 0, FINGERPRINT_LED_RED, 0);
     lcd.clear();
     printCentered("SYSTEM RESTART!", 0);
     printCentered("ID: " + ID_TAG, 1);
@@ -1858,6 +1914,11 @@ bool saveFingerprintTemplate(uint16_t id, String hexStr) {
 // --- FUNGSI PROSES SERIAL UPLOAD & DOWNLOAD ---
 
 void handleTemplateUpload() {
+  if (!isFingerprintAvailable) {
+    Serial.println("\n[UPLOAD] ERROR: Modul sidik jari tidak terpasang!");
+    showScannedMessage("Upload Ditolak", "Finger Tdk Ada");
+    return;
+  }
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("\n[UPLOAD] ERROR: WiFi tidak terhubung! Hubungkan WiFi terlebih dahulu.");
     showScannedMessage("Upload Gagal!", "WiFi Offline");
@@ -1871,7 +1932,7 @@ void handleTemplateUpload() {
   lcd.clear();
   printCentered("Upload Template", 0);
   printCentered("Memindai Jari...", 1);
-  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
+  setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
 
   DynamicJsonDocument doc(65536);
   doc["action"] = "upload_templates";
@@ -1917,19 +1978,24 @@ void handleTemplateUpload() {
     Serial.println("[UPLOAD] Respon Server: " + resp);
     
     digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 5);
+    setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 5);
     showScannedMessage("Upload Sukses!", String(totalFound) + " Jari Diupload");
   } else {
     Serial.printf("[UPLOAD] GAGAL kirim ke server: %s (HTTP %d)\n", http.errorToString(httpCode).c_str(), httpCode);
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(100);
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+    setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
     showScannedMessage("Upload Gagal!", "Server Err " + String(httpCode));
   }
   http.end();
 }
 
 void handleTemplateDownload() {
+  if (!isFingerprintAvailable) {
+    Serial.println("\n[DOWNLOAD] ERROR: Modul sidik jari tidak terpasang!");
+    showScannedMessage("Download Ditolak", "Finger Tdk Ada");
+    return;
+  }
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("\n[DOWNLOAD] ERROR: WiFi tidak terhubung! Hubungkan WiFi terlebih dahulu.");
     showScannedMessage("Download Gagal!", "WiFi Offline");
@@ -1945,7 +2011,7 @@ void handleTemplateDownload() {
   lcd.clear();
   printCentered("Download Server", 0);
   printCentered("Reset Memori...", 1);
-  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
+  setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
 
   if (finger.emptyDatabase() != FINGERPRINT_OK) {
     Serial.println("[DOWNLOAD] GAGAL mereset database sensor!");
@@ -2016,7 +2082,7 @@ void handleTemplateDownload() {
   Serial.println("==================================================");
 
   digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
-  finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 5);
+  setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 5);
   showScannedMessage("Download Sukses!", String(successCount) + " Jari Disimpan");
 }
 
@@ -2107,6 +2173,10 @@ void handleWebDeleteAllFinger() {
     webServer.send(303);
     return;
   }
+  if (!isFingerprintAvailable) {
+    webServer.send(200, "text/html", "<script>alert('Modul sidik jari tidak terpasang pada perangkat!');window.location.href='/';</script>");
+    return;
+  }
 
   Serial.println("[WEB] Menghapus SEMUA sidik jari dari sensor dan server...");
   lcd.clear();
@@ -2115,11 +2185,11 @@ void handleWebDeleteAllFinger() {
 
   if (finger.emptyDatabase() == FINGERPRINT_OK) {
     digitalWrite(BUZZ, HIGH); delay(800); digitalWrite(BUZZ, LOW);
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 15, FINGERPRINT_LED_PURPLE, 8);
+    setFingerLED(FINGERPRINT_LED_FLASHING, 15, FINGERPRINT_LED_PURPLE, 8);
     showScannedMessage("Semua Data Jari", "Dihapus (Web)!");
     syncDeleteAll(); // Hapus di database server juga
   } else {
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+    setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
     showScannedMessage("Gagal Hapus!", "Sistem Error");
   }
 
@@ -2141,7 +2211,7 @@ void handleWebDownloadBinTemplates() {
   lcd.clear();
   printCentered("Backup Template", 0);
   printCentered("Membaca Jari...", 1);
-  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
+  setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
 
   // Kumpulkan semua slot yang aktif
   uint16_t validSlots[MAX_FINGERPRINTS];
@@ -2186,7 +2256,7 @@ void handleWebDownloadBinTemplates() {
   Serial.printf("\n[BIN BACKUP] SELESAI! Berhasil mengekspor %d template ke file BIN.\n", totalFound);
 
   digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
-  finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
+  setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 3);
   showScannedMessage("Backup Selesai!", String(totalFound) + " Jari Diekspor");
 }
 
@@ -2240,7 +2310,7 @@ void handleWebUploadBinTemplates() {
   lcd.clear();
   printCentered("Restore Template", 0);
   printCentered("Menulis Sensor..", 1);
-  finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
+  setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
 
   int successCount = 0;
   Serial.printf("\n[BIN RESTORE] Memulai penulisan %d template ke sensor...\n", totalTemplates);
@@ -2337,7 +2407,7 @@ void handleWebUploadBinTemplates() {
 
   digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW); delay(50);
   digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
-  finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 5);
+  setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 5);
   showScannedMessage("Restore Sukses!", String(successCount) + " Jari Disimpan");
 
   DynamicJsonDocument resp(512);
@@ -2363,8 +2433,10 @@ void handleWebRoot() {
   }
 
   int totalJari = 0;
-  for (int i = 1; i <= MAX_FINGERPRINTS; i++) {
-    if (finger.loadModel(i) == FINGERPRINT_OK) totalJari++;
+  if (isFingerprintAvailable) {
+    for (int i = 1; i <= MAX_FINGERPRINTS; i++) {
+      if (finger.loadModel(i) == FINGERPRINT_OK) totalJari++;
+    }
   }
 
   struct tm timeinfo;
@@ -2403,7 +2475,11 @@ void handleWebRoot() {
   html += "<div class='box'><strong>IP ADDRESS</strong><span>" + WiFi.localIP().toString() + "</span></div>";
   html += "<div class='box'><strong>STATUS WIFI</strong><span>" + String(WiFi.SSID()) + " (" + String(WiFi.RSSI()) + " dBm)</span></div>";
   html += "<div class='box'><strong>HOSTNAME (DHCP)</strong><span>" + deviceHostName + "</span></div>";
-  html += "<div class='box'><strong>SIDIK JARI TERDAFTAR</strong><span>" + String(totalJari) + " / " + String(MAX_FINGERPRINTS) + " Slot</span></div>";
+  if (isFingerprintAvailable) {
+    html += "<div class='box'><strong>SIDIK JARI TERDAFTAR</strong><span>" + String(totalJari) + " / " + String(MAX_FINGERPRINTS) + " Slot</span></div>";
+  } else {
+    html += "<div class='box' style='border-left-color:#8b5cf6;'><strong>STATUS SENSOR</strong><span style='font-size:13px;'>Hanya RFID (Finger Nonaktif)</span></div>";
+  }
   html += "<div class='box'><strong>FREE HEAP RAM</strong><span>" + String(ESP.getFreeHeap() / 1024) + " KB</span></div>";
   html += "</div>";
   html += "<div class='box' style='margin-bottom:16px;border-left-color:#16a34a;'><strong>WAKTU SISTEM</strong><span>" + String(timeBuff) + "</span></div>";
@@ -2585,7 +2661,7 @@ void checkSerialCommand() {
         Serial.println("-> SUKSES: Semua memori sidik jari telah dikosongkan!");
         
         digitalWrite(BUZZ, HIGH); delay(1000); digitalWrite(BUZZ, LOW);
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 15, FINGERPRINT_LED_PURPLE, 10); 
+        setFingerLED(FINGERPRINT_LED_FLASHING, 15, FINGERPRINT_LED_PURPLE, 10); 
         
         showScannedMessage("Semua Data Jari", "Telah Dihapus!");
         
@@ -2593,7 +2669,7 @@ void checkSerialCommand() {
         syncDeleteAll();
       } else {
         Serial.println("-> GAGAL: Terjadi kesalahan sistem saat menghapus database.");
-        finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
         showScannedMessage("Gagal Menghapus", "Sistem Error");
       }
     }
@@ -2610,7 +2686,7 @@ void checkSerialCommand() {
           
           digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(100); 
           digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
-          finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 5); 
+          setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 5); 
           
           showScannedMessage("Jari Dihapus!", "ID: " + String(id) + " (Serial)");
 
@@ -2618,7 +2694,7 @@ void checkSerialCommand() {
           syncSingleDelete(id);
         } else {
           Serial.println("-> GAGAL: ID " + String(id) + " tidak ditemukan di memori.");
-          finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+          setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
           showScannedMessage("Gagal Hapus", "ID Tidak Ada");
         }
       } else {
@@ -2660,11 +2736,16 @@ void setup() {
   mySerial.begin(57600, SERIAL_8N1, 16, 17);
   finger.begin(57600);
   if (finger.verifyPassword()) {
+    isFingerprintAvailable = true;
     finger.setPacketSize(FINGERPRINT_PACKET_SIZE_128); // Standardisasi 128 bytes paket
     // LED Awal
-    finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_BLUE, 0); 
+    setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_BLUE, 0); 
+    Serial.println("[FINGERPRINT] Modul sensor terdeteksi dan siap digunakan.");
   } else {
-    printCentered("Fingerprint ERR!", 1); delay(2000);
+    isFingerprintAvailable = false;
+    Serial.println("[FINGERPRINT] Modul tidak terdeteksi. Berjalan otomatis dalam Mode Khusus RFID.");
+    printCentered("Mode Khusus RFID", 1);
+    delay(700);
   }
   
   lcd.clear();
@@ -2727,7 +2808,7 @@ void setup() {
     printCentered("Mode Offline", 1);
     digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(80);
     digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
-    finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 2);
+    setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 2);
     Serial.println("[WiFi] Gagal terhubung saat boot. Sistem berjalan offline.");
     delay(1500);
   }
@@ -2813,7 +2894,11 @@ void handleStandbyUI() {
       else strcpy(timeStringBuff, "Tgl Offline");
       printCentered(String(timeStringBuff), 1);
     } else if (altState == 2) {
-      printCentered("Tap Kartu / Jari", 1); 
+      if (isFingerprintAvailable) {
+        printCentered("Tap Kartu / Jari", 1);
+      } else {
+        printCentered("Silakan Tap Kartu", 1);
+      } 
     } else if (altState == 3 && ENABLE_JADWAL_SHOLAT) {
       if(timeValid) printCentered(getCountdownString(&timeinfo), 1);
       else printCentered("Tunggu Waktu", 1);
@@ -2873,7 +2958,7 @@ void loop() {
       // Feedback suara & visual saat WiFi terputus
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(80);
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
-      finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 2);
+      setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 2);
 
       // Tampilkan notifikasi di layar LCD
       showScannedMessage("WiFi Terputus!", "Mode Offline");
@@ -2906,14 +2991,17 @@ void loop() {
     handleFingerprintDelete();
   }
   else if (currentMode == MASTER_TAPPING) {
-    if (masterTapCount == 1) {
+    if (!isFingerprintAvailable) {
+      setStandbyMode();
+    }
+    else if (masterTapCount == 1) {
       // Jika hanya tap 1x dan tidak ada tap lanjutan selama 2.5 detik -> Masuk Mode Rekam Jari
       if (millis() - lastMasterTapTime >= 2500) {
         currentMode = ENROLL_FINGER;
         enrollState = ENROLL_START;
         enrollTimer = millis();
         masterTapCount = 0;
-        finger.LEDcontrol(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
+        setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_PURPLE, 0);
       }
     } 
     else {
