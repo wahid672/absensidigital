@@ -2160,7 +2160,6 @@ void printNetworkInfo() {
   Serial.printf ("  * Web Dashboard    : http://%s/\n", WiFi.localIP().toString().c_str());
   Serial.printf ("  * Signal (RSSI)    : %d dBm\n", WiFi.RSSI());
   Serial.printf ("  * MAC Address      : %s\n", WiFi.macAddress().c_str());
-  Serial.printf ("  * Arduino IDE OTA  : %s (Port Jaringan, Pass: %s)\n", deviceHostName.c_str(), otaPassword);
   Serial.println("=======================================================\n");
 }
 
