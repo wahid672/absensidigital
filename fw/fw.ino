@@ -59,6 +59,17 @@ const long  gmtOffset_sec = 7 * 3600;
 const int   daylightOffset_sec = 0;
 
 // =========================================================================
+// KONFIGURASI FITUR AUDIO / SUARA (MAX98357A I2S + MICRO SD + SERVER TTS)
+// "true"  = Aktifkan suara (ucapan selamat datang, respon absensi masuk/keluar, TTS cache SD)
+// "false" = Nonaktifkan suara (sistem berjalan murni seperti semula tanpa audio, hemat RAM & CPU)
+// =========================================================================
+String fiturAudio = "true"; // Pilihan: "true" atau "false"
+
+bool isAudioEnabled() {
+  return fiturAudio.equalsIgnoreCase("true") || fiturAudio == "1";
+}
+
+// =========================================================================
 // KONFIGURASI FITUR JADWAL SHOLAT
 // true  = Aktif (Tampil jadwal berjalan di LCD, countdown sholat, dan sync ke server)
 // false = Nonaktif Total (Tidak tampil di LCD dan tidak request ke server jadwal sholat)
@@ -1594,6 +1605,7 @@ String sanitizeFilename(String raw) {
 }
 
 bool initI2S() {
+  if (!isAudioEnabled()) return false;
   i2s_config_t i2s_config = {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
     .sample_rate = 22050,
@@ -1631,6 +1643,7 @@ bool initI2S() {
 }
 
 bool initSDCard() {
+  if (!isAudioEnabled()) return false;
   if (spiMutex != NULL) xSemaphoreTake(spiMutex, portMAX_DELAY);
 
   pinMode(SD_CS_PIN, OUTPUT);
@@ -1976,6 +1989,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
 }
 
 void stopAudioPlayback() {
+  if (!isAudioEnabled()) return;
   stopAudioFlag = true;
   if (audioQueue != NULL) {
     AudioRequest dummy;
@@ -1992,6 +2006,7 @@ void stopAudioPlayback() {
 }
 
 void queueAudio(const char* fixedPath, const char* fixedText, const char* namePath, const char* nameText) {
+  if (!isAudioEnabled()) return;
   if (!isSdCardAvailable && !isI2sAvailable) return;
   AudioRequest req;
   memset(&req, 0, sizeof(req));
@@ -2074,6 +2089,7 @@ void audioTask(void *pvParameters) {
 }
 
 void triggerAttendanceVoice(const String& status, const String& action, const String& nama) {
+  if (!isAudioEnabled()) return;
   String safeName = sanitizeFilename(nama);
   String nameFile = (nama.length() > 0) ? ("/tts/names/" + safeName + ".wav") : "";
   String nameText = (nama.length() > 0) ? (nama + ".") : "";
@@ -2862,6 +2878,7 @@ void printNetworkInfo() {
   Serial.printf ("  * Web Dashboard    : http://%s/\n", WiFi.localIP().toString().c_str());
   Serial.printf ("  * Signal (RSSI)    : %d dBm\n", WiFi.RSSI());
   Serial.printf ("  * MAC Address      : %s\n", WiFi.macAddress().c_str());
+  Serial.printf ("  * Fitur Audio      : %s\n", isAudioEnabled() ? "AKTIF (True)" : "NONAKTIF (False)");
   Serial.println("=======================================================\n");
 }
 
@@ -3507,24 +3524,26 @@ void setup() {
   // 1. Inisialisasi Modul RFID RC522 Lebih Awal (Hard-Reset & Verifikasi Register)
   initRC522();
 
-  // 2. Inisialisasi Micro SD Card (CS Pin 15)
-  isSdCardAvailable = initSDCard();
+  // 2. Inisialisasi Audio I2S & Micro SD Card (Hanya jika fiturAudio = "true")
+  if (isAudioEnabled()) {
+    Serial.println("[AUDIO] Fitur audio AKTIF (fiturAudio = \"true\"). Menginisialisasi modul...");
+    isSdCardAvailable = initSDCard();
+    isI2sAvailable = initI2S();
 
-  // 3. Inisialisasi I2S DAC MAX98357A
-  isI2sAvailable = initI2S();
-
-  // Buat Antrian & FreeRTOS Task Audio di Core 0
-  audioQueue = xQueueCreate(4, sizeof(AudioRequest));
-  if (audioQueue != NULL) {
-    xTaskCreatePinnedToCore(
-      audioTask,
-      "audioTask",
-      4096, // Optimasi stack 4KB hemat RAM
-      NULL,
-      1,
-      &audioTaskHandle,
-      1 // Pindahkan ke Core 1 agar Core 0 100% didedikasikan untuk WiFi & TCP/IP stack
-    );
+    audioQueue = xQueueCreate(4, sizeof(AudioRequest));
+    if (audioQueue != NULL) {
+      xTaskCreatePinnedToCore(
+        audioTask,
+        "audioTask",
+        4096, // Optimasi stack 4KB hemat RAM
+        NULL,
+        1,
+        &audioTaskHandle,
+        1 // Dijalankan di Core 1 agar Core 0 100% didedikasikan untuk WiFi & TCP/IP stack
+      );
+    }
+  } else {
+    Serial.println("[AUDIO] Fitur audio NONAKTIF (fiturAudio = \"false\"). Berjalan dalam mode standar.");
   }
 
   // 4. Inisialisasi SPIFFS untuk penyimpanan offline
@@ -3633,11 +3652,13 @@ void setup() {
   fetchMembersLocalCache();
   
   // Pemicu Ucapan Selamat Datang Saat Booting (String topMessage)
-  delay(500); // Beri jeda 500ms agar seluruh socket HTTP sinkronisasi selesai tertutup sebelum audio
-  String bootMsg = topMessage;
-  bootMsg.trim();
-  if (bootMsg.length() > 0) {
-    queueAudio("/tts/boot.wav", bootMsg.c_str(), "", "");
+  if (isAudioEnabled()) {
+    delay(500); // Beri jeda 500ms agar seluruh socket HTTP sinkronisasi selesai tertutup sebelum audio
+    String bootMsg = topMessage;
+    bootMsg.trim();
+    if (bootMsg.length() > 0) {
+      queueAudio("/tts/boot.wav", bootMsg.c_str(), "", "");
+    }
   }
 
   setStandbyMode(); // Panggil fungsi setup UI dan LED standby
