@@ -192,6 +192,7 @@ bool downloadTTSFile(const char* text, const char* filePath);
 void queueAudio(const char* fixedPath, const char* fixedText, const char* namePath = "", const char* nameText = "");
 void stopAudioPlayback();
 void triggerAttendanceVoice(const String& status, const String& action, const String& nama);
+void handleInitialAudioCacheSync();
 String urlEncode(const String& str);
 String sanitizeFilename(String raw);
 
@@ -2111,6 +2112,73 @@ void triggerAttendanceVoice(const String& status, const String& action, const St
   }
 }
 
+// =========================================================================
+// SINKRONISASI CACHE AUDIO DASAR (HANYA SETELAH MASUK STANDBY & IDLE)
+// =========================================================================
+bool isSystemInStandby = false;
+unsigned long standbyEnteredTime = 0;
+bool hasInitialAudioSynced = false;
+int initialAudioSyncStep = 0;
+unsigned long lastInitialSyncAttempt = 0;
+
+void handleInitialAudioCacheSync() {
+  if (!isAudioEnabled() || !isSdCardAvailable || hasInitialAudioSynced) return;
+  if (!isSystemInStandby || currentMode != STANDBY) return;
+  if (!isWifiConnected || WiFi.status() != WL_CONNECTED) return;
+  if (isServerHttpActive || isDownloadingTTS) return;
+
+  // Berikan jeda 3 detik setelah masuk standby agar seluruh socket koneksi server utama tertutup sempurna
+  if (millis() - standbyEnteredTime < 3000) return;
+
+  // Jeda minimal 1 detik antar unduhan agar tidak membebani heap / jaringan
+  if (millis() - lastInitialSyncAttempt < 1000) return;
+  lastInitialSyncAttempt = millis();
+
+  struct InitialAudioItem {
+    const char* path;
+    const char* text;
+  };
+
+  String bootMsg = topMessage;
+  bootMsg.trim();
+  if (bootMsg.length() == 0) bootMsg = "Selamat Datang";
+
+  const InitialAudioItem items[] = {
+    { "/tts/sukses.wav",      "Absensi Berhasil." },
+    { "/tts/keluar.wav",      "Absensi keluar berhasil." },
+    { "/tts/sudah_absen.wav", "Anda sudah absensi masuk." },
+    { "/tts/gagal.wav",       "Absensi gagal, kartu atau jari belum terdaftar." },
+    { "/tts/boot.wav",        bootMsg.c_str() }
+  };
+  const int totalItems = 5;
+
+  if (initialAudioSyncStep < totalItems) {
+    const char* targetPath = items[initialAudioSyncStep].path;
+    const char* targetText = items[initialAudioSyncStep].text;
+
+    bool fileExists = false;
+    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+      fileExists = SD.exists(targetPath);
+      xSemaphoreGive(spiMutex);
+    }
+
+    if (!fileExists) {
+      Serial.printf("[INIT TTS] Mengunduh cache audio dasar (%d/%d): %s\n", initialAudioSyncStep + 1, totalItems, targetPath);
+      downloadTTSFile(targetText, targetPath);
+    } else {
+      Serial.printf("[INIT TTS] Cache audio dasar (%d/%d) sudah siap: %s\n", initialAudioSyncStep + 1, totalItems, targetPath);
+    }
+
+    initialAudioSyncStep++;
+  } else {
+    hasInitialAudioSynced = true;
+    Serial.println("\n[INIT TTS] >>> Seluruh audio dasar berhasil disiapkan di Micro SD! <<<");
+
+    // Putar ucapan selamat datang booting dari cache lokal SD Card
+    queueAudio("/tts/boot.wav", bootMsg.c_str(), "", "");
+  }
+}
+
 // Inisialisasi & Reset Kuat Hardware RC522 (Anti-Hang / Anti-Freeze)
 bool initRC522() {
   if (spiMutex != NULL) xSemaphoreTake(spiMutex, portMAX_DELAY);
@@ -3651,17 +3719,9 @@ void setup() {
   syncDataFingerprint();
   fetchMembersLocalCache();
   
-  // Pemicu Ucapan Selamat Datang Saat Booting (String topMessage)
-  if (isAudioEnabled()) {
-    delay(500); // Beri jeda 500ms agar seluruh socket HTTP sinkronisasi selesai tertutup sebelum audio
-    String bootMsg = topMessage;
-    bootMsg.trim();
-    if (bootMsg.length() > 0) {
-      queueAudio("/tts/boot.wav", bootMsg.c_str(), "", "");
-    }
-  }
-
   setStandbyMode(); // Panggil fungsi setup UI dan LED standby
+  isSystemInStandby = true;
+  standbyEnteredTime = millis();
 }
 
 void handleAdhanUI() {
@@ -3869,6 +3929,9 @@ void loop() {
     webServer.handleClient();
     ArduinoOTA.handle();
   }
+
+  // Sinkronisasi file audio TTS dasar hanya saat mesin telah masuk mode standby & jaringan idle
+  handleInitialAudioCacheSync();
 
   checkRFID(); 
   checkFingerprintScan();
