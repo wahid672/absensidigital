@@ -136,6 +136,7 @@ void fetchMembersLocalCache();
 void printNetworkInfo();
 void setupWebServer();
 void setupOTA();
+bool initRC522();
 
 // Struktur Data Cache Anggota Offline
 struct CachedMember {
@@ -1427,6 +1428,48 @@ void checkFingerprintScan() {
 
 // --- FUNGSI RFID & SHOLAT ---
 
+// Inisialisasi & Reset Kuat Hardware RC522 (Anti-Hang / Anti-Freeze)
+bool initRC522() {
+  pinMode(SS_PIN, OUTPUT);
+  digitalWrite(SS_PIN, HIGH);
+  pinMode(RST_PIN, OUTPUT);
+
+  // Pulsa Hard Reset ke pin RST modul RC522
+  digitalWrite(RST_PIN, LOW);
+  delay(50);
+  digitalWrite(RST_PIN, HIGH);
+  delay(50);
+
+  SPI.begin();
+  delay(10);
+  mfrc522.PCD_Init();
+  delay(20);
+
+  // Cek apakah modul RC522 merespon register versi
+  byte version = mfrc522.PCD_ReadRegister(mfrc522.VersionReg);
+  int retries = 0;
+  while ((version == 0x00 || version == 0xFF) && retries < 4) {
+    retries++;
+    Serial.printf("[RFID] Percobaan pulsa reset RC522 ke-%d (Versi terbaca: 0x%02X)...\n", retries, version);
+    digitalWrite(RST_PIN, LOW);
+    delay(40);
+    digitalWrite(RST_PIN, HIGH);
+    delay(40);
+    mfrc522.PCD_Init();
+    delay(20);
+    version = mfrc522.PCD_ReadRegister(mfrc522.VersionReg);
+  }
+
+  if (version != 0x00 && version != 0xFF) {
+    mfrc522.PCD_SetAntennaGain(mfrc522.RxGain_max); // Sensitivitas antena maksimal (48 dB)
+    Serial.printf("[RFID] RC522 Siap & Aktif! Versi Chip: 0x%02X\n", version);
+    return true;
+  } else {
+    Serial.printf("[RFID] PERINGATAN: Modul RC522 tidak merespon (Versi: 0x%02X). Periksa kabel SPI & power 3.3V.\n", version);
+    return false;
+  }
+}
+
 void readRFID(byte *buffer, byte bufferSize) {
   unsigned long decimal_ID = ((unsigned long)buffer[3] << 24) | ((unsigned long)buffer[2] << 16) | 
                              ((unsigned long)buffer[1] << 8)  | ((unsigned long)buffer[0]);
@@ -1492,10 +1535,24 @@ void checkServerConnection() {
 
 void checkRFID() {
   if (currentMode == ENROLL_FINGER || currentMode == DELETE_FINGER || currentMode == ADHAN) return;
+
+  // Watchdog RC522: Setiap 4 detik, pastikan komunikasi chip RC522 tidak hang/beku
+  static unsigned long lastRfidWatchdog = 0;
+  if (millis() - lastRfidWatchdog >= 4000) {
+    lastRfidWatchdog = millis();
+    byte ver = mfrc522.PCD_ReadRegister(mfrc522.VersionReg);
+    if (ver == 0x00 || ver == 0xFF) {
+      Serial.printf("[RFID WATCHDOG] Komunikasi RC522 beku (Versi: 0x%02X). Me-reset modul...\n", ver);
+      initRC522();
+      return;
+    }
+  }
+
   if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) return;
   
   readRFID(mfrc522.uid.uidByte, mfrc522.uid.size);
   mfrc522.PICC_HaltA(); 
+  mfrc522.PCD_StopCrypto1(); // Menghentikan enkripsi agar modul siap membaca kartu berikutnya tanpa tersangkut 
 
   // Debounce kartu yang sama dalam kurun 6 detik
   if (ID_TAG == lastScannedRfid && (millis() - lastRfidScanTime < 6000)) {
@@ -2737,6 +2794,9 @@ void setup() {
     Serial.println("[SPIFFS] Sistem File SPIFFS siap.");
   }
   
+  // 2. Inisialisasi SPI & Modul RFID RC522 Lebih Awal (Hard-Reset & Verifikasi Register)
+  initRC522();
+  
   mySerial.begin(57600, SERIAL_8N1, 16, 17);
   finger.begin(57600);
   if (finger.verifyPassword()) {
@@ -2817,8 +2877,11 @@ void setup() {
     delay(1500);
   }
   
-  SPI.begin();
-  mfrc522.PCD_Init();
+  // Pastikan RC522 tetap aktif dan merespon sebelum masuk standby
+  byte rfidVerCheck = mfrc522.PCD_ReadRegister(mfrc522.VersionReg);
+  if (rfidVerCheck == 0x00 || rfidVerCheck == 0xFF) {
+    initRC522();
+  }
 
   // === PROSES SINKRONISASI DATA FINGERPRINT & ANGGOTA SAAT PERTAMA HIDUP ===
   syncDataFingerprint();
