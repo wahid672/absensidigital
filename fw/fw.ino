@@ -1596,42 +1596,96 @@ bool initI2S() {
 }
 
 bool initSDCard() {
-  pinMode(SD_CS_PIN, OUTPUT);
-  digitalWrite(SD_CS_PIN, HIGH);
-
-  bool success = false;
   if (spiMutex != NULL) xSemaphoreTake(spiMutex, portMAX_DELAY);
 
-  // Coba inisialisasi SD Card dengan frekuensi 10MHz
-  if (SD.begin(SD_CS_PIN, SPI, 10000000)) {
+  // Pastikan RC522 tidak aktif (SS HIGH & RST HIGH) saat inisialisasi SD Card
+  pinMode(SS_PIN, OUTPUT);
+  digitalWrite(SS_PIN, HIGH);
+  pinMode(RST_PIN, OUTPUT);
+  digitalWrite(RST_PIN, HIGH);
+
+  pinMode(SD_CS_PIN, OUTPUT);
+  digitalWrite(SD_CS_PIN, HIGH);
+  delay(10);
+
+  bool success = false;
+
+  // Bersihkan mount driver SD sebelumnya jika ada
+  SD.end();
+  delay(20);
+
+  // Percobaan 1: Frekuensi standar 4MHz (Default ESP32)
+  Serial.println("[SD CARD] Mencoba inisialisasi pada GPIO 15 (Frekuensi 4 MHz)...");
+  if (SD.begin(SD_CS_PIN)) {
     success = true;
   } else {
+    SD.end();
     delay(50);
-    // Coba frekuensi 4MHz jika kabel jumper panjang / sensitif
-    if (SD.begin(SD_CS_PIN, SPI, 4000000)) {
+    // Percobaan 2: Frekuensi rendah 1MHz (Toleran terhadap kabel jumper & noise)
+    Serial.println("[SD CARD] Gagal 4 MHz. Mencoba frekuensi 1 MHz...");
+    if (SD.begin(SD_CS_PIN, SPI, 1000000)) {
       success = true;
+    } else {
+      SD.end();
+      delay(50);
+      // Percobaan 3: Frekuensi safe mode 400 kHz
+      Serial.println("[SD CARD] Gagal 1 MHz. Mencoba 400 kHz (Safe Mode)...");
+      if (SD.begin(SD_CS_PIN, SPI, 400000)) {
+        success = true;
+      }
     }
   }
 
   if (success) {
     uint8_t cardType = SD.cardType();
-    Serial.printf("[SD CARD] Terdeteksi (Tipe: %d, Kapasitas: %llu MB)\n", cardType, SD.cardSize() / (1024 * 1024));
-    if (!SD.exists("/tts")) {
-      SD.mkdir("/tts");
-    }
-    if (!SD.exists("/tts/names")) {
-      SD.mkdir("/tts/names");
+    String typeStr = "UNKNOWN";
+    if (cardType == CARD_MMC) typeStr = "MMC";
+    else if (cardType == CARD_SD) typeStr = "SDSC";
+    else if (cardType == CARD_SDHC) typeStr = "SDHC";
+
+    if (cardType == CARD_NONE) {
+      Serial.println("[SD CARD] PERINGATAN: Modul merespon tetapi kartu tidak terdeteksi di slot (CARD_NONE).");
+      Serial.println("  -> Pastikan kartu Micro SD sudah didorong sampai berbunyi 'klik' dan terkunci di slot.");
+      success = false;
+      SD.end();
+    } else {
+      uint64_t cardSizeMB = SD.cardSize() / (1024 * 1024);
+      Serial.printf("[SD CARD] Berhasil aktif! Tipe: %s, Kapasitas: %llu MB\n", typeStr.c_str(), cardSizeMB);
+      if (!SD.exists("/tts")) {
+        SD.mkdir("/tts");
+      }
+      if (!SD.exists("/tts/names")) {
+        SD.mkdir("/tts/names");
+      }
     }
   } else {
-    Serial.println("[SD CARD] Gagal inisialisasi! Pastikan Micro SD terpasang dan pin CS di GPIO 15.");
+    Serial.println("[SD CARD] Gagal inisialisasi total!");
+    Serial.println("  ================ PETUNJUK PENGECEKAN HARDWARE ================");
+    Serial.println("  1. Pin VCC Modul Micro SD:");
+    Serial.println("     - Jika modul memiliki chip regulator kecil 3.3V (AMS1117 / 662K),");
+    Serial.println("       Wajib sambungkan VCC modul ke pin 5V (VIN) ESP32, BUKAN ke 3.3V!");
+    Serial.println("  2. Format Micro SD:");
+    Serial.println("     - Format kartu WAJIB FAT32 (bukan exFAT / NTFS).");
+    Serial.println("     - Kapasitas yang didukung: 2GB s.d. 32GB.");
+    Serial.println("  3. Kabel SPI (Pastikan terhubung kencang):");
+    Serial.println("     - CS   -> GPIO 15");
+    Serial.println("     - SCK  -> GPIO 18");
+    Serial.println("     - MOSI -> GPIO 23");
+    Serial.println("     - MISO -> GPIO 19");
+    Serial.println("     - GND  -> GND bersama");
+    Serial.println("  ===============================================================");
   }
 
   if (spiMutex != NULL) xSemaphoreGive(spiMutex);
+  isSdCardAvailable = success;
   return success;
 }
 
 bool playWavFile(const char* filePath) {
-  if (!isSdCardAvailable || !isI2sAvailable) return false;
+  if (!isSdCardAvailable) {
+    if (!initSDCard()) return false;
+  }
+  if (!isI2sAvailable) return false;
 
   File wavFile;
   if (spiMutex != NULL) {
@@ -1777,8 +1831,11 @@ bool downloadTTSFile(const char* text, const char* filePath) {
     return false;
   }
   if (!isSdCardAvailable) {
-    Serial.println("[TTS] Gagal unduh: Micro SD tidak siap.");
-    return false;
+    // Coba re-koneksi otomatis jika Micro SD baru dipasang/diperbaiki
+    if (!initSDCard()) {
+      Serial.println("[TTS] Gagal unduh: Micro SD tidak siap.");
+      return false;
+    }
   }
 
   String pathStr = String(filePath);
@@ -3364,7 +3421,9 @@ void setup() {
   // Inisialisasi Mutex SPI untuk pembagian bus antara RC522 & Micro SD Card
   spiMutex = xSemaphoreCreateMutex();
 
-  // Inisialisasi Pin Chip Select SPI dalam kondisi HIGH (non-aktif)
+  // Inisialisasi Pin Chip Select & Reset SPI dalam kondisi HIGH (non-aktif)
+  pinMode(RST_PIN, OUTPUT);
+  digitalWrite(RST_PIN, HIGH);
   pinMode(SS_PIN, OUTPUT);
   digitalWrite(SS_PIN, HIGH);
   pinMode(SD_CS_PIN, OUTPUT);
@@ -3385,11 +3444,14 @@ void setup() {
   // Inisialisasi SPI Bus Utama (SCK 18, MISO 19, MOSI 23)
   SPI.begin();
 
-  // Inisialisasi I2S DAC MAX98357A
-  isI2sAvailable = initI2S();
+  // 1. Inisialisasi Modul RFID RC522 Lebih Awal (Hard-Reset & Verifikasi Register)
+  initRC522();
 
-  // Inisialisasi Micro SD Card (CS Pin 15)
+  // 2. Inisialisasi Micro SD Card (CS Pin 15)
   isSdCardAvailable = initSDCard();
+
+  // 3. Inisialisasi I2S DAC MAX98357A
+  isI2sAvailable = initI2S();
 
   // Buat Antrian & FreeRTOS Task Audio di Core 0
   audioQueue = xQueueCreate(4, sizeof(AudioRequest));
@@ -3405,15 +3467,12 @@ void setup() {
     );
   }
 
-  // 1. Inisialisasi SPIFFS untuk penyimpanan offline
+  // 4. Inisialisasi SPIFFS untuk penyimpanan offline
   if (!SPIFFS.begin(true)) {
     Serial.println("[SPIFFS] Gagal menginisialisasi partisi SPIFFS!");
   } else {
     Serial.println("[SPIFFS] Sistem File SPIFFS siap.");
   }
-  
-  // 2. Inisialisasi SPI & Modul RFID RC522 Lebih Awal (Hard-Reset & Verifikasi Register)
-  initRC522();
   
   mySerial.begin(57600, SERIAL_8N1, 16, 17);
   finger.begin(57600);
