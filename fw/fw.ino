@@ -20,6 +20,7 @@
 #include <Wire.h>
 #include <SPI.h>
 #include <FS.h>
+#include <SD.h>
 #include <SPIFFS.h>
 #include <MFRC522.h>
 #include <LiquidCrystal_I2C.h>
@@ -30,6 +31,7 @@
 #include <WebServer.h>
 #include <ArduinoOTA.h>
 #include "mbedtls/base64.h"
+#include <driver/i2s.h>
 
 // Instansiasi Web Server ESP32 (Port 80)
 WebServer webServer(80); 
@@ -72,10 +74,17 @@ const int KOREKSI_ASHAR   = -2;
 const int KOREKSI_MAGHRIB = -2;
 const int KOREKSI_ISYA    = -2;
 
-// Konfigurasi Pin
+// Konfigurasi Pin RFID & Buzzer
 #define SS_PIN 5  
 #define RST_PIN 4 
 #define BUZZ 2
+
+// Konfigurasi Pin Audio I2S MAX98357A & Micro SD Card SPI
+#define I2S_BCLK_PIN 27
+#define I2S_LRC_PIN  14
+#define I2S_DIN_PIN  13
+#define SD_CS_PIN    15
+#define I2S_NUM      I2S_NUM_0
 
 // Kapasitas Maksimal Sidik Jari Sensor (R503 / R303)
 #define MAX_FINGERPRINTS 500
@@ -125,6 +134,22 @@ bool isWifiConnected = false;
 unsigned long lastWifiCheckTime = 0;
 unsigned long lastWifiReconnectAttempt = 0;
 
+// Manajemen SPI Mutex & Audio Non-Blocking (I2S MAX98357A + Micro SD)
+SemaphoreHandle_t spiMutex = NULL;
+TaskHandle_t audioTaskHandle = NULL;
+QueueHandle_t audioQueue = NULL;
+volatile bool stopAudioFlag = false;
+bool isSdCardAvailable = false;
+bool isI2sAvailable = false;
+uint32_t currentI2SSampleRate = 22050;
+
+struct AudioRequest {
+  char fixedPath[48];   // Misal: "/tts/sukses.wav"
+  char fixedText[96];   // Misal: "Absensi Berhasil."
+  char namePath[64];    // Misal: "/tts/names/Wahid_Alimudin.wav"
+  char nameText[96];    // Misal: "Wahid Alimudin."
+};
+
 // Forward Declarations
 void sendSensorPacket(uint8_t pid, uint8_t *payload, uint16_t length);
 String extractFingerprintTemplate(uint16_t id);
@@ -137,6 +162,16 @@ void printNetworkInfo();
 void setupWebServer();
 void setupOTA();
 bool initRC522();
+bool initI2S();
+bool initSDCard();
+void audioTask(void *pvParameters);
+bool playWavFile(const char* filePath);
+bool downloadTTSFile(const char* text, const char* filePath);
+void queueAudio(const char* fixedPath, const char* fixedText, const char* namePath = "", const char* nameText = "");
+void stopAudioPlayback();
+void triggerAttendanceVoice(const String& status, const String& action, const String& nama);
+String urlEncode(const String& str);
+String sanitizeFilename(String raw);
 
 // Struktur Data Cache Anggota Offline
 struct CachedMember {
@@ -1136,6 +1171,7 @@ void flushOfflineLogs() {
 // --- FUNGSI PENGIRIMAN DATA PRESENSI (HYBRID ONLINE/OFFLINE) ---
 
 void kirimPresensiFingerprint(uint8_t idFinger) {
+  stopAudioPlayback();
   CachedMember localM = findMemberOffline((int)idFinger, "");
   String namaPreview = localM.found ? localM.nama : ("Slot #" + String(idFinger));
 
@@ -1160,6 +1196,15 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
       setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
     }
     showScannedMessage(namaPreview, eval.displayLine2);
+    if (localM.found) {
+      if (eval.statusKeluar != "-") {
+        triggerAttendanceVoice("success", "check_out", localM.nama);
+      } else {
+        triggerAttendanceVoice("success", "check_in", localM.nama);
+      }
+    } else {
+      triggerAttendanceVoice("unmapped", "fingerprint_unmapped", "");
+    }
     return;
   }
 
@@ -1208,6 +1253,7 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
           digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
           setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
           showScannedMessage(nama, "Keluar: " + waktuKeluar + " OK");
+          triggerAttendanceVoice("success", "check_out", nama);
         } else {
           if (statusMasuk == "telat") {
             digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
@@ -1220,25 +1266,30 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
             setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
             showScannedMessage(nama, "Masuk: " + waktuMasuk + " OK");
           }
+          triggerAttendanceVoice("success", "check_in", nama);
         }
       } else if (status == "already_attended") {
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(50);
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
         setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
         showScannedMessage(nama, "Sudah Absen!");
+        triggerAttendanceVoice("already_attended", "", nama);
       } else if (status == "unmapped" || action == "fingerprint_unmapped") {
         digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(80);
         digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
         setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 3);
         showScannedMessage("Slot #" + String(idFinger), "Belum Dimapping!");
+        triggerAttendanceVoice("unmapped", "fingerprint_unmapped", "");
       } else {
         digitalWrite(BUZZ, HIGH); delay(300); digitalWrite(BUZZ, LOW);
         setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
         showScannedMessage("Jari Ditolak!", "Tidak Terdaftar");
+        triggerAttendanceVoice("rejected", "finger_not_registered", "");
       }
     } else {
       digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
       showScannedMessage("Presensi Sukses", "Slot #" + String(idFinger));
+      triggerAttendanceVoice("success", "check_in", namaPreview);
     }
   } else {
     Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke offline buffer...\n", http.errorToString(httpCode).c_str());
@@ -1254,11 +1305,21 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
       setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
     }
     showScannedMessage(namaPreview, eval.displayLine2);
+    if (localM.found) {
+      if (eval.statusKeluar != "-") {
+        triggerAttendanceVoice("success", "check_out", localM.nama);
+      } else {
+        triggerAttendanceVoice("success", "check_in", localM.nama);
+      }
+    } else {
+      triggerAttendanceVoice("unmapped", "fingerprint_unmapped", "");
+    }
   }
   http.end();
 }
 
 void kirimPresensiRFID(String tagId) {
+  stopAudioPlayback();
   CachedMember localM = findMemberOffline(0, tagId);
   String namaPreview = localM.found ? localM.nama : ("RFID: " + tagId);
 
@@ -1282,6 +1343,15 @@ void kirimPresensiRFID(String tagId) {
       setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
     }
     showScannedMessage(namaPreview, eval.displayLine2);
+    if (localM.found) {
+      if (eval.statusKeluar != "-") {
+        triggerAttendanceVoice("success", "check_out", localM.nama);
+      } else {
+        triggerAttendanceVoice("success", "check_in", localM.nama);
+      }
+    } else {
+      triggerAttendanceVoice("unmapped", "card_unmapped", "");
+    }
     return;
   }
 
@@ -1330,6 +1400,7 @@ void kirimPresensiRFID(String tagId) {
           digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
           setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
           showScannedMessage(nama, "Keluar: " + waktuKeluar + " OK");
+          triggerAttendanceVoice("success", "check_out", nama);
         } else {
           if (statusMasuk == "telat") {
             digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
@@ -1342,29 +1413,35 @@ void kirimPresensiRFID(String tagId) {
             setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
             showScannedMessage(nama, "Masuk: " + waktuMasuk + " OK");
           }
+          triggerAttendanceVoice("success", "check_in", nama);
         }
       } else if (status == "already_attended") {
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(50);
         digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
         setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
         showScannedMessage(nama, "Sudah Absen!");
+        triggerAttendanceVoice("already_attended", "", nama);
       } else if (status == "unmapped" || action == "card_unmapped") {
         // Tanda Kartu Baru belum di-mapping (Fungsi Kartu Baru Aktif)
         digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(80);
         digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
         setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 3);
         showScannedMessage("Kartu Belum", "Di-mapping!");
+        triggerAttendanceVoice("unmapped", "card_unmapped", "");
       } else if (status == "not_found" || action == "card_not_registered") {
         digitalWrite(BUZZ, HIGH); delay(300); digitalWrite(BUZZ, LOW);
         setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
         showScannedMessage("Kartu Tdk Dikenal", "Ditolak Sistem");
+        triggerAttendanceVoice("not_found", "card_not_registered", "");
       } else {
         digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
         showScannedMessage(nama, "Presensi OK");
+        triggerAttendanceVoice("success", "check_in", nama);
       }
     } else {
       digitalWrite(BUZZ, HIGH); delay(120); digitalWrite(BUZZ, LOW);
       showScannedMessage("Kartu Terbaca", tagId);
+      triggerAttendanceVoice("success", "check_in", namaPreview);
     }
   } else {
     Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke offline buffer...\n", http.errorToString(httpCode).c_str());
@@ -1380,6 +1457,15 @@ void kirimPresensiRFID(String tagId) {
       setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 2);
     }
     showScannedMessage(namaPreview, eval.displayLine2);
+    if (localM.found) {
+      if (eval.statusKeluar != "-") {
+        triggerAttendanceVoice("success", "check_out", localM.nama);
+      } else {
+        triggerAttendanceVoice("success", "check_in", localM.nama);
+      }
+    } else {
+      triggerAttendanceVoice("unmapped", "card_unmapped", "");
+    }
   }
   http.end();
 }
@@ -1411,6 +1497,8 @@ void checkFingerprintScan() {
     lastScannedFingerID = finger.fingerID;
     lastFingerScanTime = millis();
 
+    stopAudioPlayback(); // Hentikan audio sebelumnya seketika saat jari baru di-scan
+
     // Kirim dan tampilkan data presensi
     kirimPresensiFingerprint(finger.fingerID);
   } else {
@@ -1419,17 +1507,494 @@ void checkFingerprintScan() {
     lastFingerScanTime = millis();
     lastScannedFingerID = -1;
 
+    stopAudioPlayback(); // Hentikan audio sebelumnya seketika saat jari ditolak
+
     digitalWrite(BUZZ, HIGH); delay(40); digitalWrite(BUZZ, LOW); delay(40);
     digitalWrite(BUZZ, HIGH); delay(40); digitalWrite(BUZZ, LOW);
     setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3); // Kedip Merah Ditolak
     showScannedMessage("Jari Ditolak!", "Tidak Dikenal");
+    triggerAttendanceVoice("rejected", "finger_not_registered", "");
   }
 }
 
 // --- FUNGSI RFID & SHOLAT ---
 
+// =========================================================================
+// SISTEM AUDIO I2S MAX98357A & TEXT-TO-SPEECH (TTS) DENGAN CACHE SD CARD
+// =========================================================================
+
+String urlEncode(const String& str) {
+  String encoded = "";
+  for (int i = 0; i < str.length(); i++) {
+    char c = str.charAt(i);
+    if (c == ' ') {
+      encoded += "%20";
+    } else if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+      encoded += c;
+    } else {
+      char buf[4];
+      sprintf(buf, "%%%02X", (unsigned char)c);
+      encoded += buf;
+    }
+  }
+  return encoded;
+}
+
+String sanitizeFilename(String raw) {
+  raw.trim();
+  String out = "";
+  for (int i = 0; i < raw.length(); i++) {
+    char c = raw[i];
+    if (isalnum(c)) {
+      out += c;
+    } else if (c == ' ' || c == '_' || c == '-') {
+      if (out.length() > 0 && out[out.length() - 1] != '_') {
+        out += '_';
+      }
+    }
+    if (out.length() >= 28) break;
+  }
+  if (out.length() == 0) out = "member";
+  return out;
+}
+
+bool initI2S() {
+  i2s_config_t i2s_config = {
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+    .sample_rate = 22050,
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+    .dma_buf_count = 8,
+    .dma_buf_len = 256,
+    .use_apll = false,
+    .tx_desc_auto_clear = true
+  };
+
+  i2s_pin_config_t pin_config = {
+    .bck_io_num = I2S_BCLK_PIN,
+    .ws_io_num = I2S_LRC_PIN,
+    .data_out_num = I2S_DIN_PIN,
+    .data_in_num = I2S_PIN_NO_CHANGE
+  };
+
+  esp_err_t err = i2s_driver_install(I2S_NUM, &i2s_config, 0, NULL);
+  if (err != ESP_OK) {
+    Serial.printf("[I2S] Gagal inisialisasi driver: %d\n", err);
+    return false;
+  }
+  err = i2s_set_pin(I2S_NUM, &pin_config);
+  if (err != ESP_OK) {
+    Serial.printf("[I2S] Gagal konfigurasi pin: %d\n", err);
+    return false;
+  }
+  i2s_zero_dma_buffer(I2S_NUM);
+  currentI2SSampleRate = 22050;
+  Serial.println("[I2S] Driver MAX98357A siap (BCLK:27, LRC:14, DIN:13).");
+  return true;
+}
+
+bool initSDCard() {
+  pinMode(SD_CS_PIN, OUTPUT);
+  digitalWrite(SD_CS_PIN, HIGH);
+
+  bool success = false;
+  if (spiMutex != NULL) xSemaphoreTake(spiMutex, portMAX_DELAY);
+
+  // Coba inisialisasi SD Card dengan frekuensi 10MHz
+  if (SD.begin(SD_CS_PIN, SPI, 10000000)) {
+    success = true;
+  } else {
+    delay(50);
+    // Coba frekuensi 4MHz jika kabel jumper panjang / sensitif
+    if (SD.begin(SD_CS_PIN, SPI, 4000000)) {
+      success = true;
+    }
+  }
+
+  if (success) {
+    uint8_t cardType = SD.cardType();
+    Serial.printf("[SD CARD] Terdeteksi (Tipe: %d, Kapasitas: %llu MB)\n", cardType, SD.cardSize() / (1024 * 1024));
+    if (!SD.exists("/tts")) {
+      SD.mkdir("/tts");
+    }
+    if (!SD.exists("/tts/names")) {
+      SD.mkdir("/tts/names");
+    }
+  } else {
+    Serial.println("[SD CARD] Gagal inisialisasi! Pastikan Micro SD terpasang dan pin CS di GPIO 15.");
+  }
+
+  if (spiMutex != NULL) xSemaphoreGive(spiMutex);
+  return success;
+}
+
+bool playWavFile(const char* filePath) {
+  if (!isSdCardAvailable || !isI2sAvailable) return false;
+
+  File wavFile;
+  if (spiMutex != NULL) {
+    if (xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) != pdTRUE) return false;
+    wavFile = SD.open(filePath, FILE_READ);
+    xSemaphoreGive(spiMutex);
+  } else {
+    wavFile = SD.open(filePath, FILE_READ);
+  }
+
+  if (!wavFile) {
+    Serial.printf("[AUDIO] File tidak ditemukan: %s\n", filePath);
+    return false;
+  }
+
+  uint8_t riffHeader[12];
+  size_t rLen = 0;
+  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    rLen = wavFile.read(riffHeader, 12);
+    xSemaphoreGive(spiMutex);
+  }
+  if (rLen < 12 || memcmp(riffHeader, "RIFF", 4) != 0 || memcmp(riffHeader + 8, "WAVE", 4) != 0) {
+    Serial.printf("[AUDIO] Format bukan WAV valid: %s\n", filePath);
+    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+      wavFile.close();
+      xSemaphoreGive(spiMutex);
+    }
+    return false;
+  }
+
+  uint16_t numChannels = 1;
+  uint32_t sampleRate = 22050;
+  uint16_t bitsPerSample = 16;
+  uint32_t dataSize = 0;
+  bool foundData = false;
+
+  while (wavFile.available() && !foundData) {
+    char chunkId[4];
+    uint32_t chunkSize = 0;
+    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+      wavFile.read((uint8_t*)chunkId, 4);
+      wavFile.read((uint8_t*)&chunkSize, 4);
+      xSemaphoreGive(spiMutex);
+    } else {
+      break;
+    }
+
+    if (memcmp(chunkId, "fmt ", 4) == 0) {
+      uint8_t fmtBuf[16];
+      if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        wavFile.read(fmtBuf, 16);
+        if (chunkSize > 16) {
+          wavFile.seek(wavFile.position() + (chunkSize - 16));
+        }
+        xSemaphoreGive(spiMutex);
+      }
+      uint16_t audioFormat = fmtBuf[0] | (fmtBuf[1] << 8);
+      numChannels = fmtBuf[2] | (fmtBuf[3] << 8);
+      sampleRate = fmtBuf[4] | (fmtBuf[5] << 8) | (fmtBuf[6] << 16) | (fmtBuf[7] << 24);
+      bitsPerSample = fmtBuf[14] | (fmtBuf[15] << 8);
+
+      if (audioFormat != 1) {
+        Serial.printf("[AUDIO] Format bukan PCM (%d)\n", audioFormat);
+        break;
+      }
+    } else if (memcmp(chunkId, "data", 4) == 0) {
+      dataSize = chunkSize;
+      foundData = true;
+      break;
+    } else {
+      if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        wavFile.seek(wavFile.position() + chunkSize);
+        xSemaphoreGive(spiMutex);
+      }
+    }
+  }
+
+  if (!foundData) {
+    Serial.printf("[AUDIO] Chunk data audio tidak ditemukan: %s\n", filePath);
+    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+      wavFile.close();
+      xSemaphoreGive(spiMutex);
+    }
+    return false;
+  }
+
+  if (sampleRate != currentI2SSampleRate && sampleRate > 0) {
+    i2s_set_sample_rates(I2S_NUM, sampleRate);
+    currentI2SSampleRate = sampleRate;
+  }
+
+  int16_t rawBuf[256];
+  int16_t stereoBuf[512];
+  uint32_t remaining = dataSize;
+
+  while (remaining > 0 && !stopAudioFlag) {
+    size_t toRead = (remaining > sizeof(rawBuf)) ? sizeof(rawBuf) : remaining;
+    size_t bytesRead = 0;
+
+    if (spiMutex != NULL) {
+      if (xSemaphoreTake(spiMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        bytesRead = wavFile.read((uint8_t*)rawBuf, toRead);
+        xSemaphoreGive(spiMutex);
+      }
+    } else {
+      bytesRead = wavFile.read((uint8_t*)rawBuf, toRead);
+    }
+
+    if (bytesRead == 0) break;
+    remaining -= bytesRead;
+
+    if (numChannels == 1) {
+      int samples = bytesRead / 2;
+      for (int i = 0; i < samples; i++) {
+        stereoBuf[i * 2] = rawBuf[i];
+        stereoBuf[i * 2 + 1] = rawBuf[i];
+      }
+      size_t bytesWritten = 0;
+      i2s_write(I2S_NUM, (const char*)stereoBuf, samples * 4, &bytesWritten, portMAX_DELAY);
+    } else {
+      size_t bytesWritten = 0;
+      i2s_write(I2S_NUM, (const char*)rawBuf, bytesRead, &bytesWritten, portMAX_DELAY);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+
+  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    wavFile.close();
+    xSemaphoreGive(spiMutex);
+  }
+
+  if (stopAudioFlag) {
+    i2s_zero_dma_buffer(I2S_NUM);
+  }
+
+  return true;
+}
+
+bool downloadTTSFile(const char* text, const char* filePath) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[TTS] Gagal unduh: WiFi tidak terhubung.");
+    return false;
+  }
+  if (!isSdCardAvailable) {
+    Serial.println("[TTS] Gagal unduh: Micro SD tidak siap.");
+    return false;
+  }
+
+  String pathStr = String(filePath);
+  int lastSlash = pathStr.lastIndexOf('/');
+  if (lastSlash > 0) {
+    String parentDir = pathStr.substring(0, lastSlash);
+    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+      if (!SD.exists(parentDir)) {
+        SD.mkdir(parentDir);
+      }
+      xSemaphoreGive(spiMutex);
+    }
+  }
+
+  String encodedText = urlEncode(String(text));
+  String ttsUrl = "https://tts.smartapps.my.id/tts?text=" + encodedText;
+  Serial.printf("[TTS] Mengunduh: \"%s\" -> %s\n", text, filePath);
+
+  HTTPClient httpAudio;
+  httpAudio.begin(ttsUrl);
+  httpAudio.setTimeout(10000);
+  httpAudio.addHeader("X-API-Key", "P8xK2mQ7Za");
+
+  int httpCode = httpAudio.GET();
+  if (httpCode != 200) {
+    Serial.printf("[TTS] Respon server error HTTP %d\n", httpCode);
+    httpAudio.end();
+    return false;
+  }
+
+  int totalLen = httpAudio.getSize();
+  WiFiClient* stream = httpAudio.getStreamPtr();
+  if (!stream) {
+    Serial.println("[TTS] Stream HTTP tidak valid.");
+    httpAudio.end();
+    return false;
+  }
+
+  String tempPath = String(filePath) + ".tmp";
+  File f;
+  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+    if (SD.exists(tempPath)) SD.remove(tempPath);
+    f = SD.open(tempPath, FILE_WRITE);
+    xSemaphoreGive(spiMutex);
+  }
+
+  if (!f) {
+    Serial.println("[TTS] Gagal membuat file temp di Micro SD.");
+    httpAudio.end();
+    return false;
+  }
+
+  uint8_t dlBuf[512];
+  unsigned long startDl = millis();
+  int downloaded = 0;
+
+  while (httpAudio.connected() && (downloaded < totalLen || totalLen < 0)) {
+    if (stopAudioFlag) {
+      Serial.println("[TTS] Download dibatalkan karena kartu/jari baru di-tap.");
+      break;
+    }
+
+    size_t avail = stream->available();
+    if (avail > 0) {
+      size_t readSize = (avail > sizeof(dlBuf)) ? sizeof(dlBuf) : avail;
+      int r = stream->readBytes(dlBuf, readSize);
+      if (r > 0) {
+        if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+          f.write(dlBuf, r);
+          xSemaphoreGive(spiMutex);
+        }
+        downloaded += r;
+      }
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    if (millis() - startDl > 15000) {
+      Serial.println("[TTS] Timeout download stream.");
+      break;
+    }
+  }
+
+  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+    f.close();
+    if (downloaded >= 44 && !stopAudioFlag) {
+      if (SD.exists(filePath)) SD.remove(filePath);
+      SD.rename(tempPath, filePath);
+      Serial.printf("[TTS] Berhasil di-cache: %s (%d bytes)\n", filePath, downloaded);
+    } else {
+      if (SD.exists(tempPath)) SD.remove(tempPath);
+      Serial.println("[TTS] Download tidak lengkap atau dibatalkan.");
+    }
+    xSemaphoreGive(spiMutex);
+  }
+
+  httpAudio.end();
+  return (downloaded >= 44 && !stopAudioFlag);
+}
+
+void stopAudioPlayback() {
+  stopAudioFlag = true;
+  if (audioQueue != NULL) {
+    AudioRequest dummy;
+    while (xQueueReceive(audioQueue, &dummy, 0) == pdTRUE) {}
+  }
+  if (isI2sAvailable) {
+    i2s_zero_dma_buffer(I2S_NUM);
+  }
+}
+
+void queueAudio(const char* fixedPath, const char* fixedText, const char* namePath, const char* nameText) {
+  if (!isSdCardAvailable && !isI2sAvailable) return;
+  AudioRequest req;
+  memset(&req, 0, sizeof(req));
+  if (fixedPath) strncpy(req.fixedPath, fixedPath, sizeof(req.fixedPath) - 1);
+  if (fixedText) strncpy(req.fixedText, fixedText, sizeof(req.fixedText) - 1);
+  if (namePath)  strncpy(req.namePath,  namePath,  sizeof(req.namePath) - 1);
+  if (nameText)  strncpy(req.nameText,  nameText,  sizeof(req.nameText) - 1);
+
+  if (audioQueue != NULL) {
+    if (uxQueueMessagesWaiting(audioQueue) > 0) {
+      AudioRequest dummy;
+      xQueueReceive(audioQueue, &dummy, 0);
+    }
+    xQueueSend(audioQueue, &req, 0);
+  }
+}
+
+void audioTask(void *pvParameters) {
+  AudioRequest req;
+  while (true) {
+    if (xQueueReceive(audioQueue, &req, portMAX_DELAY) == pdTRUE) {
+      stopAudioFlag = false;
+
+      // 1. Putar bagian kalimat tetap (Fixed Phrase)
+      if (strlen(req.fixedPath) > 0) {
+        bool fixedExists = false;
+        if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+          fixedExists = SD.exists(req.fixedPath);
+          xSemaphoreGive(spiMutex);
+        }
+
+        if (!fixedExists && strlen(req.fixedText) > 0 && WiFi.status() == WL_CONNECTED) {
+          downloadTTSFile(req.fixedText, req.fixedPath);
+          if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            fixedExists = SD.exists(req.fixedPath);
+            xSemaphoreGive(spiMutex);
+          }
+        }
+
+        if (fixedExists && !stopAudioFlag) {
+          playWavFile(req.fixedPath);
+        }
+      }
+
+      // Jeda singkat sebelum nama
+      if (!stopAudioFlag && strlen(req.namePath) > 0) {
+        vTaskDelay(pdMS_TO_TICKS(60));
+      }
+
+      // 2. Putar bagian nama (Member Name)
+      if (!stopAudioFlag && strlen(req.namePath) > 0) {
+        bool nameExists = false;
+        if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+          nameExists = SD.exists(req.namePath);
+          xSemaphoreGive(spiMutex);
+        }
+
+        // Hit server HANYA jika belum ada di cache & internet aktif
+        if (!nameExists && strlen(req.nameText) > 0 && WiFi.status() == WL_CONNECTED) {
+          downloadTTSFile(req.nameText, req.namePath);
+          if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            nameExists = SD.exists(req.namePath);
+            xSemaphoreGive(spiMutex);
+          }
+        }
+
+        // Putar jika ada di cache. Jika offline dan belum pernah di-cache, otomatis lewati nama!
+        if (nameExists && !stopAudioFlag) {
+          playWavFile(req.namePath);
+        }
+      }
+    }
+  }
+}
+
+void triggerAttendanceVoice(const String& status, const String& action, const String& nama) {
+  String safeName = sanitizeFilename(nama);
+  String nameFile = (nama.length() > 0) ? ("/tts/names/" + safeName + ".wav") : "";
+  String nameText = (nama.length() > 0) ? (nama + ".") : "";
+
+  if (status == "success") {
+    if (action == "check_out") {
+      queueAudio("/tts/keluar.wav", "Absensi keluar berhasil.", nameFile.c_str(), nameText.c_str());
+    } else {
+      queueAudio("/tts/sukses.wav", "Absensi Berhasil.", nameFile.c_str(), nameText.c_str());
+    }
+  } else if (status == "already_attended") {
+    queueAudio("/tts/sudah_absen.wav", "Anda sudah absensi masuk.", nameFile.c_str(), nameText.c_str());
+  } else if (status == "unmapped" || action == "fingerprint_unmapped" || action == "card_unmapped" ||
+             status == "not_found" || action == "card_not_registered") {
+    queueAudio("/tts/gagal.wav", "Absensi gagal, kartu atau jari belum terdaftar.", "", "");
+  } else {
+    // Ditolak sistem
+    queueAudio("/tts/gagal.wav", "Absensi gagal, kartu atau jari belum terdaftar.", "", "");
+  }
+}
+
 // Inisialisasi & Reset Kuat Hardware RC522 (Anti-Hang / Anti-Freeze)
 bool initRC522() {
+  if (spiMutex != NULL) xSemaphoreTake(spiMutex, portMAX_DELAY);
+
+  pinMode(SD_CS_PIN, OUTPUT);
+  digitalWrite(SD_CS_PIN, HIGH); // Pastikan SD Card terlepas saat reset RC522
+
   pinMode(SS_PIN, OUTPUT);
   digitalWrite(SS_PIN, HIGH);
   pinMode(RST_PIN, OUTPUT);
@@ -1440,8 +2005,6 @@ bool initRC522() {
   digitalWrite(RST_PIN, HIGH);
   delay(50);
 
-  SPI.begin();
-  delay(10);
   mfrc522.PCD_Init();
   delay(20);
 
@@ -1460,14 +2023,18 @@ bool initRC522() {
     version = mfrc522.PCD_ReadRegister(mfrc522.VersionReg);
   }
 
+  bool success = false;
   if (version != 0x00 && version != 0xFF) {
     mfrc522.PCD_SetAntennaGain(mfrc522.RxGain_max); // Sensitivitas antena maksimal (48 dB)
     Serial.printf("[RFID] RC522 Siap & Aktif! Versi Chip: 0x%02X\n", version);
-    return true;
+    success = true;
   } else {
     Serial.printf("[RFID] PERINGATAN: Modul RC522 tidak merespon (Versi: 0x%02X). Periksa kabel SPI & power 3.3V.\n", version);
-    return false;
+    success = false;
   }
+
+  if (spiMutex != NULL) xSemaphoreGive(spiMutex);
+  return success;
 }
 
 void readRFID(byte *buffer, byte bufferSize) {
@@ -1536,6 +2103,12 @@ void checkServerConnection() {
 void checkRFID() {
   if (currentMode == ENROLL_FINGER || currentMode == DELETE_FINGER || currentMode == ADHAN) return;
 
+  if (spiMutex != NULL) {
+    if (xSemaphoreTake(spiMutex, pdMS_TO_TICKS(15)) != pdTRUE) {
+      return;
+    }
+  }
+
   // Watchdog RC522: Setiap 4 detik, pastikan komunikasi chip RC522 tidak hang/beku
   static unsigned long lastRfidWatchdog = 0;
   if (millis() - lastRfidWatchdog >= 4000) {
@@ -1543,16 +2116,28 @@ void checkRFID() {
     byte ver = mfrc522.PCD_ReadRegister(mfrc522.VersionReg);
     if (ver == 0x00 || ver == 0xFF) {
       Serial.printf("[RFID WATCHDOG] Komunikasi RC522 beku (Versi: 0x%02X). Me-reset modul...\n", ver);
+      if (spiMutex != NULL) xSemaphoreGive(spiMutex);
       initRC522();
       return;
     }
   }
 
-  if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) return;
+  bool cardPresent = mfrc522.PICC_IsNewCardPresent();
+  bool cardRead = false;
+  if (cardPresent) {
+    cardRead = mfrc522.PICC_ReadCardSerial();
+  }
+
+  if (!cardPresent || !cardRead) {
+    if (spiMutex != NULL) xSemaphoreGive(spiMutex);
+    return;
+  }
   
   readRFID(mfrc522.uid.uidByte, mfrc522.uid.size);
   mfrc522.PICC_HaltA(); 
   mfrc522.PCD_StopCrypto1(); // Menghentikan enkripsi agar modul siap membaca kartu berikutnya tanpa tersangkut 
+
+  if (spiMutex != NULL) xSemaphoreGive(spiMutex);
 
   // Debounce kartu yang sama dalam kurun 6 detik
   if (ID_TAG == lastScannedRfid && (millis() - lastRfidScanTime < 6000)) {
@@ -1561,6 +2146,8 @@ void checkRFID() {
   lastScannedRfid = ID_TAG;
   lastRfidScanTime = millis();
   
+  stopAudioPlayback(); // Hentikan audio sebelumnya seketika saat kartu baru di-tap
+
   for(int b = 0; b < 2; b++){
     digitalWrite(BUZZ, HIGH); delay(60); digitalWrite(BUZZ, LOW); delay(30);
   }
@@ -2774,6 +3361,15 @@ void setup() {
   lcd.begin(16, 2); lcd.init(); lcd.backlight();
   printCentered("Inisialisasi...", 0);
 
+  // Inisialisasi Mutex SPI untuk pembagian bus antara RC522 & Micro SD Card
+  spiMutex = xSemaphoreCreateMutex();
+
+  // Inisialisasi Pin Chip Select SPI dalam kondisi HIGH (non-aktif)
+  pinMode(SS_PIN, OUTPUT);
+  digitalWrite(SS_PIN, HIGH);
+  pinMode(SD_CS_PIN, OUTPUT);
+  digitalWrite(SD_CS_PIN, HIGH);
+
   // Inisialisasi I2C & Auto-Detect RTC (DS3231 vs DS1307 vs NTP)
   Wire.begin();
   scanAndDetectRTC();
@@ -2786,6 +3382,29 @@ void setup() {
   // Muat jadwal batas jam presensi dari NVS lokal
   loadScheduleConfigFromNVS();
   
+  // Inisialisasi SPI Bus Utama (SCK 18, MISO 19, MOSI 23)
+  SPI.begin();
+
+  // Inisialisasi I2S DAC MAX98357A
+  isI2sAvailable = initI2S();
+
+  // Inisialisasi Micro SD Card (CS Pin 15)
+  isSdCardAvailable = initSDCard();
+
+  // Buat Antrian & FreeRTOS Task Audio di Core 0
+  audioQueue = xQueueCreate(4, sizeof(AudioRequest));
+  if (audioQueue != NULL) {
+    xTaskCreatePinnedToCore(
+      audioTask,
+      "audioTask",
+      8192,
+      NULL,
+      1,
+      &audioTaskHandle,
+      0
+    );
+  }
+
   // 1. Inisialisasi SPIFFS untuk penyimpanan offline
   if (!SPIFFS.begin(true)) {
     Serial.println("[SPIFFS] Gagal menginisialisasi partisi SPIFFS!");
@@ -2877,7 +3496,9 @@ void setup() {
   }
   
   // Pastikan RC522 tetap aktif dan merespon sebelum masuk standby
+  if (spiMutex != NULL) xSemaphoreTake(spiMutex, portMAX_DELAY);
   byte rfidVerCheck = mfrc522.PCD_ReadRegister(mfrc522.VersionReg);
+  if (spiMutex != NULL) xSemaphoreGive(spiMutex);
   if (rfidVerCheck == 0x00 || rfidVerCheck == 0xFF) {
     initRC522();
   }
@@ -2886,6 +3507,13 @@ void setup() {
   syncDataFingerprint();
   fetchMembersLocalCache();
   
+  // Pemicu Ucapan Selamat Datang Saat Booting (String topMessage)
+  String bootMsg = topMessage;
+  bootMsg.trim();
+  if (bootMsg.length() > 0) {
+    queueAudio("/tts/boot.wav", bootMsg.c_str(), "", "");
+  }
+
   setStandbyMode(); // Panggil fungsi setup UI dan LED standby
 }
 
