@@ -168,9 +168,19 @@ struct ScheduleConfig {
 
 ScheduleConfig scheduleConfig = { 7, 0, 15, 0, "Presensi Digital", false };
 
-// Forward Declarations untuk fungsi yang mengembalikan custom struct
+// =========================================================================
+// SISTEM RTC HARDWARE OTOMATIS: DS3231 vs DS1307 vs FALLBACK NTP
+// =========================================================================
+enum RtcType {
+  RTC_TYPE_NONE   = 0, // Tidak ada modul RTC hardware -> Gunakan NTP WiFi
+  RTC_TYPE_DS3231 = 1, // Modul DS3231 (TCXO Presisi Tinggi) terdeteksi
+  RTC_TYPE_DS1307 = 2  // Modul DS1307 (Real-Time Clock) terdeteksi
+};
+
+// Forward Declarations untuk fungsi yang mengembalikan custom struct / enum
 OfflineAttendanceResult evaluateAttendanceOffline();
 CachedMember findMemberOffline(int fingerId, String rfidTag);
+RtcType scanAndDetectRTC();
 
 // Variabel Tap Kartu Master
 unsigned long lastMasterTapTime = 0;
@@ -217,14 +227,8 @@ PrayerTime pt[8] = {
 };
 
 // =========================================================================
-// SISTEM RTC HARDWARE OTOMATIS: DS3231 vs DS1307 vs FALLBACK NTP
+// VARIABEL SISTEM RTC HARDWARE (DS3231 vs DS1307 vs FALLBACK NTP)
 // =========================================================================
-enum RtcType {
-  RTC_TYPE_NONE   = 0, // Tidak ada modul RTC hardware -> Gunakan NTP WiFi
-  RTC_TYPE_DS3231 = 1, // Modul DS3231 (TCXO Presisi Tinggi) terdeteksi
-  RTC_TYPE_DS1307 = 2  // Modul DS1307 (Real-Time Clock) terdeteksi
-};
-
 RtcType detectedRTC = RTC_TYPE_NONE;
 String  rtcName     = "NTP (Tanpa Hardware RTC)";
 unsigned long lastHourlySyncTime = 0;
