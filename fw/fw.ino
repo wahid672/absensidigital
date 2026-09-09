@@ -148,6 +148,8 @@ SemaphoreHandle_t spiMutex = NULL;
 TaskHandle_t audioTaskHandle = NULL;
 QueueHandle_t audioQueue = NULL;
 volatile bool stopAudioFlag = false;
+volatile bool isServerHttpActive = false; // Flag status transaksi aktif ke server siakadponpes
+volatile bool isDownloadingTTS = false;   // Flag status unduh TTS aktif
 bool isSdCardAvailable = false;
 bool isI2sAvailable = false;
 uint32_t currentI2SSampleRate = 22050;
@@ -1234,6 +1236,7 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
   }
 
   // 3. JIKA ONLINE: Kirim ke server & tampilkan respon resmi
+  isServerHttpActive = true;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
@@ -1343,6 +1346,7 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
     }
   }
   http.end();
+  isServerHttpActive = false;
 }
 
 void kirimPresensiRFID(String tagId) {
@@ -1383,6 +1387,7 @@ void kirimPresensiRFID(String tagId) {
   }
 
   // 3. JIKA ONLINE: Kirim ke server & tampilkan respon resmi
+  isServerHttpActive = true;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
@@ -1497,6 +1502,7 @@ void kirimPresensiRFID(String tagId) {
     }
   }
   http.end();
+  isServerHttpActive = false;
 }
 
 void checkFingerprintScan() {
@@ -1851,10 +1857,16 @@ bool downloadTTSFile(const char* text, const char* filePath) {
     Serial.println("[TTS] Gagal unduh: WiFi tidak terhubung.");
     return false;
   }
+  if (isServerHttpActive) {
+    Serial.println("[TTS] Tunda unduh: Server sedang sibuk transaksi presensi.");
+    return false;
+  }
+  isDownloadingTTS = true;
   if (!isSdCardAvailable) {
     // Coba re-koneksi otomatis jika Micro SD baru dipasang/diperbaiki
     if (!initSDCard()) {
       Serial.println("[TTS] Gagal unduh: Micro SD tidak siap.");
+      isDownloadingTTS = false;
       return false;
     }
   }
@@ -1886,6 +1898,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   if (httpCode != 200) {
     Serial.printf("[TTS] Respon server error HTTP %d\n", httpCode);
     httpAudio.end();
+    isDownloadingTTS = false;
     return false;
   }
 
@@ -1894,6 +1907,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   if (!stream) {
     Serial.println("[TTS] Stream HTTP tidak valid.");
     httpAudio.end();
+    isDownloadingTTS = false;
     return false;
   }
 
@@ -1908,6 +1922,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   if (!f) {
     Serial.println("[TTS] Gagal membuat file temp di Micro SD.");
     httpAudio.end();
+    isDownloadingTTS = false;
     return false;
   }
 
@@ -1956,6 +1971,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   }
 
   httpAudio.end();
+  isDownloadingTTS = false;
   return (downloaded >= 44 && !stopAudioFlag);
 }
 
@@ -1967,6 +1983,11 @@ void stopAudioPlayback() {
   }
   if (isI2sAvailable) {
     i2s_zero_dma_buffer(I2S_NUM);
+  }
+  // Beri jeda singkat agar socket HTTP TTS benar-benar tertutup jika ada unduhan yang sedang dibatalkan
+  unsigned long t0 = millis();
+  while (isDownloadingTTS && (millis() - t0 < 120)) {
+    delay(10);
   }
 }
 
@@ -2003,7 +2024,10 @@ void audioTask(void *pvParameters) {
         }
 
         if (!fixedExists && strlen(req.fixedText) > 0 && WiFi.status() == WL_CONNECTED) {
-          downloadTTSFile(req.fixedText, req.fixedPath);
+          while (isServerHttpActive && !stopAudioFlag) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+          }
+          if (!stopAudioFlag) downloadTTSFile(req.fixedText, req.fixedPath);
           if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             fixedExists = SD.exists(req.fixedPath);
             xSemaphoreGive(spiMutex);
@@ -2030,7 +2054,10 @@ void audioTask(void *pvParameters) {
 
         // Hit server HANYA jika belum ada di cache & internet aktif
         if (!nameExists && strlen(req.nameText) > 0 && WiFi.status() == WL_CONNECTED) {
-          downloadTTSFile(req.nameText, req.namePath);
+          while (isServerHttpActive && !stopAudioFlag) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+          }
+          if (!stopAudioFlag) downloadTTSFile(req.nameText, req.namePath);
           if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             nameExists = SD.exists(req.namePath);
             xSemaphoreGive(spiMutex);
@@ -3492,11 +3519,11 @@ void setup() {
     xTaskCreatePinnedToCore(
       audioTask,
       "audioTask",
-      8192,
+      4096, // Optimasi stack 4KB hemat RAM
       NULL,
       1,
       &audioTaskHandle,
-      0
+      1 // Pindahkan ke Core 1 agar Core 0 100% didedikasikan untuk WiFi & TCP/IP stack
     );
   }
 
@@ -3606,6 +3633,7 @@ void setup() {
   fetchMembersLocalCache();
   
   // Pemicu Ucapan Selamat Datang Saat Booting (String topMessage)
+  delay(500); // Beri jeda 500ms agar seluruh socket HTTP sinkronisasi selesai tertutup sebelum audio
   String bootMsg = topMessage;
   bootMsg.trim();
   if (bootMsg.length() > 0) {
