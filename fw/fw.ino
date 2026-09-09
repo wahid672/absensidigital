@@ -74,17 +74,25 @@ const int KOREKSI_ASHAR   = -2;
 const int KOREKSI_MAGHRIB = -2;
 const int KOREKSI_ISYA    = -2;
 
-// Konfigurasi Pin RFID & Buzzer
+// Konfigurasi Pin RFID & Buzzer (Hardware VSPI Default: SCK 18, MISO 19, MOSI 23)
 #define SS_PIN 5  
 #define RST_PIN 4 
 #define BUZZ 2
 
-// Konfigurasi Pin Audio I2S MAX98357A & Micro SD Card SPI
+// Konfigurasi Pin Audio I2S MAX98357A
 #define I2S_BCLK_PIN 27
 #define I2S_LRC_PIN  14
 #define I2S_DIN_PIN  13
-#define SD_CS_PIN    15
 #define I2S_NUM      I2S_NUM_0
+
+// Konfigurasi Pin Micro SD Card (Dedicated Hardware HSPI - Pisah Jalur dari RC522)
+#define SD_CS_PIN    15
+#define SD_SCK_PIN   25
+#define SD_MISO_PIN  26
+#define SD_MOSI_PIN  32
+
+// Instansiasi Bus SPI Mandiri untuk Micro SD Card (HSPI)
+SPIClass spiSD(HSPI);
 
 // Kapasitas Maksimal Sidik Jari Sensor (R503 / R303)
 #define MAX_FINGERPRINTS 500
@@ -1598,12 +1606,6 @@ bool initI2S() {
 bool initSDCard() {
   if (spiMutex != NULL) xSemaphoreTake(spiMutex, portMAX_DELAY);
 
-  // Pastikan RC522 tidak aktif (SS HIGH & RST HIGH) saat inisialisasi SD Card
-  pinMode(SS_PIN, OUTPUT);
-  digitalWrite(SS_PIN, HIGH);
-  pinMode(RST_PIN, OUTPUT);
-  digitalWrite(RST_PIN, HIGH);
-
   pinMode(SD_CS_PIN, OUTPUT);
   digitalWrite(SD_CS_PIN, HIGH);
   delay(10);
@@ -1614,23 +1616,26 @@ bool initSDCard() {
   SD.end();
   delay(20);
 
-  // Percobaan 1: Frekuensi standar 4MHz (Default ESP32)
-  Serial.println("[SD CARD] Mencoba inisialisasi pada GPIO 15 (Frekuensi 4 MHz)...");
-  if (SD.begin(SD_CS_PIN)) {
+  // Inisialisasi bus HSPI mandiri untuk Micro SD Card
+  spiSD.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
+
+  // Percobaan 1: Frekuensi standar 4MHz via spiSD
+  Serial.println("[SD CARD] Mencoba inisialisasi pada HSPI (CS:15, SCK:25, MISO:26, MOSI:32)...");
+  if (SD.begin(SD_CS_PIN, spiSD, 4000000)) {
     success = true;
   } else {
     SD.end();
     delay(50);
-    // Percobaan 2: Frekuensi rendah 1MHz (Toleran terhadap kabel jumper & noise)
-    Serial.println("[SD CARD] Gagal 4 MHz. Mencoba frekuensi 1 MHz...");
-    if (SD.begin(SD_CS_PIN, SPI, 1000000)) {
+    // Percobaan 2: Frekuensi rendah 1MHz
+    Serial.println("[SD CARD] Percobaan 1 gagal. Mencoba frekuensi 1 MHz...");
+    if (SD.begin(SD_CS_PIN, spiSD, 1000000)) {
       success = true;
     } else {
       SD.end();
       delay(50);
       // Percobaan 3: Frekuensi safe mode 400 kHz
-      Serial.println("[SD CARD] Gagal 1 MHz. Mencoba 400 kHz (Safe Mode)...");
-      if (SD.begin(SD_CS_PIN, SPI, 400000)) {
+      Serial.println("[SD CARD] Percobaan 2 gagal. Mencoba 400 kHz (Safe Mode)...");
+      if (SD.begin(SD_CS_PIN, spiSD, 400000)) {
         success = true;
       }
     }
@@ -1650,7 +1655,7 @@ bool initSDCard() {
       SD.end();
     } else {
       uint64_t cardSizeMB = SD.cardSize() / (1024 * 1024);
-      Serial.printf("[SD CARD] Berhasil aktif! Tipe: %s, Kapasitas: %llu MB\n", typeStr.c_str(), cardSizeMB);
+      Serial.printf("[SD CARD] Berhasil aktif di HSPI! Tipe: %s, Kapasitas: %llu MB\n", typeStr.c_str(), cardSizeMB);
       if (!SD.exists("/tts")) {
         SD.mkdir("/tts");
       }
@@ -1659,19 +1664,14 @@ bool initSDCard() {
       }
     }
   } else {
-    Serial.println("[SD CARD] Gagal inisialisasi total!");
-    Serial.println("  ================ PETUNJUK PENGECEKAN HARDWARE ================");
-    Serial.println("  1. Pin VCC Modul Micro SD:");
-    Serial.println("     - Jika modul memiliki chip regulator kecil 3.3V (AMS1117 / 662K),");
-    Serial.println("       Wajib sambungkan VCC modul ke pin 5V (VIN) ESP32, BUKAN ke 3.3V!");
-    Serial.println("  2. Format Micro SD:");
-    Serial.println("     - Format kartu WAJIB FAT32 (bukan exFAT / NTFS).");
-    Serial.println("     - Kapasitas yang didukung: 2GB s.d. 32GB.");
-    Serial.println("  3. Kabel SPI (Pastikan terhubung kencang):");
+    Serial.println("[SD CARD] Gagal inisialisasi HSPI!");
+    Serial.println("  ================ PETUNJUK PIN HSPI MICRO SD ================");
+    Serial.println("  Pindahkan kabel Micro SD ke pin HSPI agar tidak bentrok MISO dengan RC522:");
     Serial.println("     - CS   -> GPIO 15");
-    Serial.println("     - SCK  -> GPIO 18");
-    Serial.println("     - MOSI -> GPIO 23");
-    Serial.println("     - MISO -> GPIO 19");
+    Serial.println("     - SCK  -> GPIO 25");
+    Serial.println("     - MISO -> GPIO 26");
+    Serial.println("     - MOSI -> GPIO 32");
+    Serial.println("     - VCC  -> 5V (VIN)");
     Serial.println("     - GND  -> GND bersama");
     Serial.println("  ===============================================================");
   }
