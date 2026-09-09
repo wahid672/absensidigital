@@ -75,7 +75,7 @@ const int KOREKSI_ISYA    = -2;
 // Konfigurasi Pin
 #define SS_PIN 5  
 #define RST_PIN 4 
-#define BUZZ 33
+#define BUZZ 2
 
 // Kapasitas Maksimal Sidik Jari Sensor (R503 / R303)
 #define MAX_FINGERPRINTS 500
