@@ -16,6 +16,7 @@
  ***********************************/
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <time.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -438,8 +439,10 @@ void fetchScheduleFromServer() {
   Serial.println("\n[SCHEDULE] Mengunduh konfigurasi jadwal & waktu dari server...");
   String url = String(serverUrl) + "?action=get_schedule&device_id=" + String(deviceId);
 
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(url);
+  http.begin(client, url);
   http.setTimeout(8000);
   http.addHeader("X-API-KEY", apiKey);
 
@@ -658,9 +661,11 @@ void fetchMembersLocalCache() {
   }
   String membersUrl = baseUrl + "/api/members?tipe=all";
 
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(membersUrl);
-  http.setTimeout(8000);
+  http.begin(client, membersUrl);
+  http.setTimeout(10000);
   http.addHeader("X-API-KEY", apiKey);
 
   int httpCode = http.GET();
@@ -753,9 +758,11 @@ void syncSingleEnroll(uint16_t id) {
     doc["template_data"] = hexData;
   }
 
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(serverUrl);
-  http.setTimeout(5000);
+  http.begin(client, serverUrl);
+  http.setTimeout(8000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", apiKey);
 
@@ -780,9 +787,11 @@ void syncSingleDelete(uint16_t id) {
   doc["device_id"] = deviceId;
   doc["fingerprint_id"] = id;
 
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(serverUrl);
-  http.setTimeout(5000);
+  http.begin(client, serverUrl);
+  http.setTimeout(8000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", apiKey);
 
@@ -802,9 +811,11 @@ void syncDeleteAll() {
   doc["action"] = "delete_all_fingerprints";
   doc["device_id"] = deviceId;
 
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(serverUrl);
-  http.setTimeout(5000);
+  http.begin(client, serverUrl);
+  http.setTimeout(8000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", apiKey);
 
@@ -945,9 +956,11 @@ void syncDataFingerprint() {
       doc["total_fingerprints"] = 0;
       doc.createNestedArray("active_fingerprints");
 
+      WiFiClientSecure client;
+      client.setInsecure();
       HTTPClient http;
-      http.begin(serverUrl);
-      http.setTimeout(4000);
+      http.begin(client, serverUrl);
+      http.setTimeout(8000);
       http.addHeader("Content-Type", "application/json");
       http.addHeader("X-API-KEY", apiKey);
 
@@ -1001,8 +1014,10 @@ void syncDataFingerprint() {
   if (WiFi.status() == WL_CONNECTED) {
     printCentered("Mengirim Data...", 1);
 
+    WiFiClientSecure client;
+    client.setInsecure();
     HTTPClient http;
-    http.begin(serverUrl);
+    http.begin(client, serverUrl);
     http.setTimeout(8000);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-API-KEY", apiKey);
@@ -1153,9 +1168,11 @@ void flushOfflineLogs() {
 
   Serial.printf("[OFFLINE SYNC] Mengirim %d data offline ke server...\n", totalPending);
 
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(serverUrl);
-  http.setTimeout(8000);
+  http.begin(client, serverUrl);
+  http.setTimeout(10000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", apiKey);
 
@@ -1217,9 +1234,11 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
   }
 
   // 3. JIKA ONLINE: Kirim ke server & tampilkan respon resmi
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(serverUrl);
-  http.setTimeout(3500); // Timeout 3.5 detik
+  http.begin(client, serverUrl);
+  http.setTimeout(8000); // Timeout 8 detik aman untuk TLS handshake
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", apiKey);
 
@@ -1364,9 +1383,11 @@ void kirimPresensiRFID(String tagId) {
   }
 
   // 3. JIKA ONLINE: Kirim ke server & tampilkan respon resmi
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(serverUrl);
-  http.setTimeout(3500);
+  http.begin(client, serverUrl);
+  http.setTimeout(8000); // Timeout 8 detik aman untuk TLS handshake
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", apiKey);
 
@@ -1854,8 +1875,10 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   String ttsUrl = "https://tts.smartapps.my.id/tts?text=" + encodedText;
   Serial.printf("[TTS] Mengunduh: \"%s\" -> %s\n", text, filePath);
 
+  WiFiClientSecure clientAudio;
+  clientAudio.setInsecure();
   HTTPClient httpAudio;
-  httpAudio.begin(ttsUrl);
+  httpAudio.begin(clientAudio, ttsUrl);
   httpAudio.setTimeout(10000);
   httpAudio.addHeader("X-API-Key", "P8xK2mQ7Za");
 
@@ -2124,9 +2147,11 @@ void checkServerConnection() {
   }
 
   // 2. Cek koneksi ke Endpoint Server API
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(serverUrl);
-  http.setTimeout(5000); // 5 detik timeout
+  http.begin(client, serverUrl);
+  http.setTimeout(8000); // 8 detik timeout
   http.addHeader("X-API-KEY", apiKey);
 
   unsigned long startTime = millis();
@@ -2326,9 +2351,11 @@ void fetchJadwal() {
   if (!ENABLE_JADWAL_SHOLAT) return; // Fitur sholat dimatikan: jangan hubungi API server
 
   if (WiFi.status() == WL_CONNECTED) {
+    WiFiClientSecure client;
+    client.setInsecure();
     HTTPClient http;
     String url = "https://api.myquran.com/v3/sholat/jadwal/b3e3e393c77e35a4a3f3cbd1e429b5dc/today?tz=Asia%2FJakarta";
-    http.begin(url);
+    http.begin(client, url);
     int httpCode = http.GET();
     if (httpCode > 0) { 
       String payload = http.getString();
@@ -2667,8 +2694,10 @@ void handleTemplateUpload() {
   Serial.printf("\n[UPLOAD] Mengunggah %d template ke server API...\n", totalFound);
   printCentered("Mengirim Server", 1);
 
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(serverUrl);
+  http.begin(client, serverUrl);
   http.setTimeout(15000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", apiKey);
@@ -2729,9 +2758,11 @@ void handleTemplateDownload() {
   Serial.println("[DOWNLOAD] Mengambil data template dari server...");
   printCentered("Mengambil Data..", 1);
 
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
   String url = String(serverUrl) + "?action=get_templates&device_id=" + String(deviceId);
-  http.begin(url);
+  http.begin(client, url);
   http.setTimeout(15000);
   http.addHeader("X-API-KEY", apiKey);
 
@@ -3085,8 +3116,10 @@ void handleWebUploadBinTemplates() {
       }
     }
 
+    WiFiClientSecure client;
+    client.setInsecure();
     HTTPClient http;
-    http.begin(serverUrl);
+    http.begin(client, serverUrl);
     http.setTimeout(10000);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-API-KEY", apiKey);
@@ -3499,6 +3532,7 @@ void setup() {
   
   // Inisialisasi Hostname DHCP unik dari eFuse Hardware MAC (misal: siakadponpes.com-5F2AE4)
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false); // Matikan modem power-saving agar sinyal WiFi stabil & tidak flapping
   uint64_t chipMac = ESP.getEfuseMac();
   uint8_t b3 = (uint8_t)(chipMac >> 24);
   uint8_t b4 = (uint8_t)(chipMac >> 32);
@@ -3510,9 +3544,14 @@ void setup() {
 
   WiFi.begin(ssid, password);
   int wifiAttempts = 0;
-  // Timeout max 5 detik saat boot agar tidak macet jika tidak ada WiFi
-  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 10) {
-    delay(500); wifiAttempts++;
+  // Timeout hingga 12.5 detik saat boot agar router memiliki cukup waktu memberikan IP DHCP
+  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 25) {
+    delay(500);
+    wifiAttempts++;
+    if (wifiAttempts % 2 == 0) {
+      lcd.setCursor(7 + (wifiAttempts / 2) % 8, 1);
+      lcd.print(".");
+    }
   }
   
   if (WiFi.status() == WL_CONNECTED) {
@@ -3668,57 +3707,62 @@ void loop() {
   }
   if (timeValid) checkAdhan(&timeinfo);
 
-  // --- DETEKSI STATUS WIFI & OFFLINE AUTO-SYNC (NON-BLOCKING) ---
+  // --- DETEKSI STATUS WIFI & OFFLINE AUTO-SYNC (NON-BLOCKING DENGAN DEBOUNCE) ---
   unsigned long currentMillis = millis();
   if (currentMillis - lastWifiCheckTime >= 3000) {
     lastWifiCheckTime = currentMillis;
-    bool currentWifiStatus = (WiFi.status() == WL_CONNECTED);
+    bool currentWifiStatus = (WiFi.status() == WL_CONNECTED || (WiFi.localIP() != IPAddress(0, 0, 0, 0)));
+    static int wifiDisconnectCount = 0;
 
     // 1. Transisi TERPUTUS -> TERSAMBUNG KEMBALI
-    if (!isWifiConnected && currentWifiStatus) {
-      isWifiConnected = true;
-      Serial.println("\n[WiFi] >>> WiFi Tersambung Kembali! <<<");
+    if (currentWifiStatus) {
+      wifiDisconnectCount = 0;
+      if (!isWifiConnected) {
+        isWifiConnected = true;
+        Serial.println("\n[WiFi] >>> WiFi Tersambung Kembali! <<<");
 
-      // Tampilkan informasi IP lengkap di Serial Monitor
-      printNetworkInfo();
-      setupWebServer();
-      setupOTA();
+        // Tampilkan informasi IP lengkap di Serial Monitor
+        printNetworkInfo();
+        setupWebServer();
+        setupOTA();
 
-      // Tampilkan notifikasi "WiFi Terhubung!" di layar LCD
-      lcd.clear();
-      printCentered("WiFi Terhubung!", 0);
-      printCentered("Sinkronisasi...", 1);
-      digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
-      delay(1000);
+        // Tampilkan notifikasi "WiFi Terhubung!" di layar LCD
+        lcd.clear();
+        printCentered("WiFi Terhubung!", 0);
+        printCentered("Sinkronisasi...", 1);
+        digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
+        delay(1000);
 
-      configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-      syncRTCFromNTP();
-      fetchScheduleFromServer();
-      fetchJadwal();
-      flushOfflineLogs(); // Otomatis kirim seluruh antrean presensi offline
-      
-      // Jalankan proses sinkronisasi sidik jari (menampilkan progress "Sync 10%" ...)
-      syncDataFingerprint();
-      fetchMembersLocalCache();
+        configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+        syncRTCFromNTP();
+        fetchScheduleFromServer();
+        fetchJadwal();
+        flushOfflineLogs(); // Otomatis kirim seluruh antrean presensi offline
+        
+        // Jalankan proses sinkronisasi sidik jari (menampilkan progress "Sync 10%" ...)
+        syncDataFingerprint();
+        fetchMembersLocalCache();
 
-      setStandbyMode();
+        setStandbyMode();
+      }
     }
-    // 2. Transisi TERSAMBUNG -> TERPUTUS
-    else if (isWifiConnected && !currentWifiStatus) {
-      isWifiConnected = false;
-      Serial.println("\n[WiFi] >>> WiFi Terputus! Sistem tetap aktif dalam Mode Offline <<<");
+    // 2. Transisi TERSAMBUNG -> TERPUTUS (Debounce 3x berturut-turut / 9-10 detik agar tidak flapping)
+    else {
+      wifiDisconnectCount++;
+      if (isWifiConnected && wifiDisconnectCount >= 3) {
+        isWifiConnected = false;
+        Serial.println("\n[WiFi] >>> WiFi Terputus! Sistem tetap aktif dalam Mode Offline <<<");
 
-      // Feedback suara & visual saat WiFi terputus
-      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(80);
-      digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
-      setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 2);
+        // Feedback suara & visual saat WiFi terputus
+        digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(80);
+        digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
+        setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 2);
 
-      // Tampilkan notifikasi di layar LCD
-      showScannedMessage("WiFi Terputus!", "Mode Offline");
-    }
-    // 3. Jika sedang Offline, coba sambung ulang di background tanpa memblokir proses presensi
-    else if (!currentWifiStatus) {
-      if (currentMillis - lastWifiReconnectAttempt >= 15000) {
+        // Tampilkan notifikasi di layar LCD
+        showScannedMessage("WiFi Terputus!", "Mode Offline");
+      }
+      // 3. Jika sedang Offline, coba sambung ulang di background tanpa memblokir proses presensi
+      else if (!isWifiConnected && currentMillis - lastWifiReconnectAttempt >= 15000) {
         lastWifiReconnectAttempt = currentMillis;
         Serial.println("[WiFi] Mencoba menyambungkan kembali ke WiFi di background...");
         WiFi.reconnect();
