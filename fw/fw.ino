@@ -2211,7 +2211,7 @@ void handleInitialAudioCacheSync() {
     { "/tts/sudah_absen.wav",           "Anda sudah absensi masuk." },
     { "/tts/gagal.wav",                 "Absensi gagal, kartu atau jari belum terdaftar." },
     { "/tts/server_online.wav",         "Server online." },
-    { "/tts/instruksi_rfid_finger.wav", "Silahkan Tap Kartu atau Tempelkan jari anda." },
+    { "/tts/instruksi_rfid_finger.wav", "Silahkan Tap Kartu atau T'emmpelkan jari anda." },
     { "/tts/instruksi_rfid.wav",        "Silahkan Tap Kartu." },
     { "/tts/boot.wav",                  bootMsg.c_str() }
   };
@@ -3700,6 +3700,25 @@ void setupWebServer() {
   webServer.on("/upload-bin", HTTP_POST, handleWebUploadBinTemplates);
   webServer.on("/upload-json", HTTP_POST, handleWebUploadBinTemplates);
   webServer.on("/del-all-finger", HTTP_GET, handleWebDeleteAllFinger);
+  webServer.on("/del-file", HTTP_GET, []() {
+    if (!isWebAuthenticated()) { webServer.sendHeader("Location", "/login"); webServer.send(303); return; }
+    String file = webServer.arg("file");
+    file.trim();
+    if (file.length() == 0) {
+      webServer.send(400, "text/plain", "Error: Parameter 'file' wajib diisi (Contoh: /del-file?file=/tts/boot.wav)");
+      return;
+    }
+    if (!file.startsWith("/")) file = "/" + file;
+
+    bool deleted = false;
+    if (isSdCardAvailable && spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+      if (SD.exists(file.c_str())) {
+        deleted = SD.remove(file.c_str());
+      }
+      xSemaphoreGive(spiMutex);
+    }
+    webServer.send(200, "text/plain", deleted ? ("SUKSES: File '" + file + "' berhasil dihapus dari Micro SD.") : ("GAGAL: File '" + file + "' tidak ditemukan atau tidak dapat dihapus."));
+  });
   webServer.on("/restart", HTTP_GET, []() {
     if (!isWebAuthenticated()) { webServer.sendHeader("Location", "/login"); webServer.send(303); return; }
     webServer.send(200, "text/html", "<p>Merestart ESP32... Silakan buka kembali dalam 5 detik.</p><script>setTimeout(()=>{window.location.href='/'}, 5000);</script>");
@@ -3744,24 +3763,95 @@ void setupOTA() {
 
 void checkSerialCommand() {
   if (Serial.available() > 0) {
-    String input = Serial.readStringUntil('\n');
-    input.trim();
-    input.toUpperCase();
+    String rawInput = Serial.readStringUntil('\n');
+    rawInput.trim();
+    if (rawInput.length() == 0) return;
+
+    String upperInput = rawInput;
+    upperInput.toUpperCase();
 
     // 1. Perintah Cek IP & Status Jaringan
-    if (input == "IP" || input == "STATUS") {
+    if (upperInput == "IP" || upperInput == "STATUS") {
       printNetworkInfo();
     }
     // 2. Perintah UPLOAD Template ke Server
-    else if (input == "UPLOAD") {
+    else if (upperInput == "UPLOAD") {
       handleTemplateUpload();
     }
     // 3. Perintah DOWNLOAD Template dari Server (Reset All + Download)
-    else if (input == "DOWNLOAD") {
+    else if (upperInput == "DOWNLOAD") {
       handleTemplateDownload();
     }
-    // 4. Perintah DEL ALL (Hapus semua memori sensor)
-    else if (input == "DEL ALL") {
+    // 4. Perintah LIHAT DAFTAR FILE SD CARD (LS / DIR / LS_SD / DIR_SD)
+    else if (upperInput == "LS" || upperInput == "DIR" || upperInput == "LS_SD" || upperInput == "DIR_SD" || upperInput == "LIST SD") {
+      if (!isSdCardAvailable) {
+        Serial.println("[SD CARD] Modul Micro SD tidak aktif atau belum terpasang.");
+        return;
+      }
+      Serial.println("\n================ [ DAFTAR FILE MICRO SD ] ================");
+      if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        File root = SD.open("/");
+        if (root && root.isDirectory()) {
+          File f = root.openNextFile();
+          while (f) {
+            if (f.isDirectory()) {
+              Serial.printf(" [DIR]  /%s\n", f.name());
+              File sub = SD.open(String("/") + f.name());
+              if (sub && sub.isDirectory()) {
+                File sf = sub.openNextFile();
+                while (sf) {
+                  Serial.printf("        -> /%s/%-24s (%u bytes)\n", f.name(), sf.name(), (unsigned int)sf.size());
+                  sf.close();
+                  sf = sub.openNextFile();
+                }
+                sub.close();
+              }
+            } else {
+              Serial.printf(" [FILE] /%-30s (%u bytes)\n", f.name(), (unsigned int)f.size());
+            }
+            f.close();
+            f = root.openNextFile();
+          }
+          root.close();
+        }
+        xSemaphoreGive(spiMutex);
+      }
+      Serial.println("==========================================================\n");
+    }
+    // 5. Perintah HAPUS FILE SD CARD
+    // Format: HAPUS <filepath> atau DEL_SD <filepath> atau RM <filepath>
+    // Contoh: Hapus /tts/instruksi_rfid_finger.wav
+    else if (upperInput.startsWith("HAPUS ") || upperInput.startsWith("DEL_SD ") || upperInput.startsWith("RM ")) {
+      int spaceIdx = rawInput.indexOf(' ');
+      String filePath = rawInput.substring(spaceIdx + 1);
+      filePath.trim();
+      if (!filePath.startsWith("/")) filePath = "/" + filePath;
+
+      if (!isSdCardAvailable) {
+        Serial.println("[SD CARD] Gagal: Modul Micro SD tidak aktif atau belum terpasang.");
+        return;
+      }
+
+      Serial.printf("[SD CARD] Memeriksa file: %s ...\n", filePath.c_str());
+      if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        if (SD.exists(filePath.c_str())) {
+          bool ok = SD.remove(filePath.c_str());
+          xSemaphoreGive(spiMutex);
+          if (ok) {
+            Serial.printf("-> SUKSES: File '%s' berhasil dihapus dari Micro SD!\n", filePath.c_str());
+          } else {
+            Serial.printf("-> GAGAL: Tidak dapat menghapus file '%s' dari Micro SD.\n", filePath.c_str());
+          }
+        } else {
+          xSemaphoreGive(spiMutex);
+          Serial.printf("-> GAGAL: File '%s' tidak ditemukan di Micro SD.\n", filePath.c_str());
+        }
+      } else {
+        Serial.println("-> GAGAL: SPI Bus sedang sibuk.");
+      }
+    }
+    // 6. Perintah DEL ALL (Hapus semua memori sensor sidik jari)
+    else if (upperInput == "DEL ALL") {
       Serial.println("Mencoba menghapus SEMUA ID sidik jari...");
       lcd.clear();
       printCentered("Menghapus Data...", 0);
@@ -3782,33 +3872,65 @@ void checkSerialCommand() {
         showScannedMessage("Gagal Menghapus", "Sistem Error");
       }
     }
-    // 5. Perintah DEL <ID> (Hapus 1 ID spesifik)
-    else if (input.startsWith("DEL ")) {
-      String idString = input.substring(4);
-      int id = idString.toInt();
-      
-      if (id > 0 && id <= MAX_FINGERPRINTS) {
-        Serial.println("Mencoba menghapus ID: " + String(id) + "...");
-        
-        if (finger.deleteModel(id) == FINGERPRINT_OK) {
-          Serial.println("-> SUKSES: ID " + String(id) + " berhasil dihapus!");
-          
-          digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(100); 
-          digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
-          setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 5); 
-          
-          showScannedMessage("Jari Dihapus!", "ID: " + String(id) + " (Serial)");
+    // 7. Perintah DEL <ID> (sidik jari) atau DEL <filepath> (file SD Card)
+    else if (upperInput.startsWith("DEL ")) {
+      String arg = rawInput.substring(4);
+      arg.trim();
 
-          // AUTO-SYNC REAL-TIME: Hapus ID dari database server
-          syncSingleDelete(id);
+      // Cek apakah argumen adalah file path di SD Card (diawali '/' atau mengandung ekstensi seperti .wav)
+      if (arg.startsWith("/") || arg.indexOf('.') != -1) {
+        String filePath = arg;
+        if (!filePath.startsWith("/")) filePath = "/" + filePath;
+
+        if (!isSdCardAvailable) {
+          Serial.println("[SD CARD] Gagal: Modul Micro SD tidak aktif atau belum terpasang.");
+          return;
+        }
+
+        Serial.printf("[SD CARD] Memeriksa file: %s ...\n", filePath.c_str());
+        if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+          if (SD.exists(filePath.c_str())) {
+            bool ok = SD.remove(filePath.c_str());
+            xSemaphoreGive(spiMutex);
+            if (ok) {
+              Serial.printf("-> SUKSES: File '%s' berhasil dihapus dari Micro SD!\n", filePath.c_str());
+            } else {
+              Serial.printf("-> GAGAL: Tidak dapat menghapus file '%s' dari Micro SD.\n", filePath.c_str());
+            }
+          } else {
+            xSemaphoreGive(spiMutex);
+            Serial.printf("-> GAGAL: File '%s' tidak ditemukan di Micro SD.\n", filePath.c_str());
+          }
         } else {
-          Serial.println("-> GAGAL: ID " + String(id) + " tidak ditemukan di memori.");
-          setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
-          showScannedMessage("Gagal Hapus", "ID Tidak Ada");
+          Serial.println("-> GAGAL: SPI Bus sedang sibuk.");
         }
       } else {
-        Serial.println("-> ERROR: Format salah atau ID di luar batas (1-" + String(MAX_FINGERPRINTS) + ").");
-        Serial.println("   Gunakan format: DEL <ID> (Contoh: DEL 5)");
+        // Hapus 1 ID Fingerprint
+        int id = arg.toInt();
+        if (id > 0 && id <= MAX_FINGERPRINTS) {
+          Serial.println("Mencoba menghapus ID: " + String(id) + "...");
+          
+          if (finger.deleteModel(id) == FINGERPRINT_OK) {
+            Serial.println("-> SUKSES: ID " + String(id) + " berhasil dihapus!");
+            
+            digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(100); 
+            digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
+            setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_PURPLE, 5); 
+            
+            showScannedMessage("Jari Dihapus!", "ID: " + String(id) + " (Serial)");
+
+            // AUTO-SYNC REAL-TIME: Hapus ID dari database server
+            syncSingleDelete(id);
+          } else {
+            Serial.println("-> GAGAL: ID " + String(id) + " tidak ditemukan di memori.");
+            setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
+            showScannedMessage("Gagal Hapus", "ID Tidak Ada");
+          }
+        } else {
+          Serial.println("-> ERROR: Format salah atau ID di luar batas (1-" + String(MAX_FINGERPRINTS) + ").");
+          Serial.println("   Untuk hapus jari    : DEL <ID> (Contoh: DEL 5)");
+          Serial.println("   Untuk hapus file SD : Hapus <path> (Contoh: Hapus /tts/instruksi_rfid_finger.wav)");
+        }
       }
     }
   }
