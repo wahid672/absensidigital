@@ -126,7 +126,7 @@ int getAutoRebootMinute() {
 // true  = Aktif (Tampil jadwal berjalan di LCD, countdown sholat, dan sync ke server)
 // false = Nonaktif Total (Tidak tampil di LCD dan tidak request ke server jadwal sholat)
 // =========================================================================
-const bool ENABLE_JADWAL_SHOLAT = false; // Ubah ke false untuk menonaktifkan fitur sholat
+const bool ENABLE_JADWAL_SHOLAT = true; // Ubah ke false untuk menonaktifkan fitur sholat
 
 // Konfigurasi Koreksi Waktu Sholat
 const int KOREKSI_IMSAK   = -2;
@@ -211,6 +211,7 @@ SemaphoreHandle_t spiMutex = NULL;
 TaskHandle_t audioTaskHandle = NULL;
 QueueHandle_t audioQueue = NULL;
 volatile bool stopAudioFlag = false;
+volatile bool isAudioPlaying = false; // Flag status aktif pemutaran file audio WAV
 volatile bool isServerHttpActive = false; // Flag status transaksi aktif ke server siakadponpes
 volatile bool isDownloadingTTS = false;   // Flag status unduh TTS aktif
 bool isSdCardAvailable = false;
@@ -1941,6 +1942,7 @@ bool playWavFile(const char* filePath) {
     if (!initSDCard()) return false;
   }
   if (!isI2sAvailable) return false;
+  if (stopAudioFlag) return false; // Jangan mulai jika ada perintah interupsi baru
 
   File wavFile;
   if (spiMutex != NULL) {
@@ -1967,6 +1969,8 @@ bool playWavFile(const char* filePath) {
     if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
       wavFile.close();
       xSemaphoreGive(spiMutex);
+    } else {
+      wavFile.close();
     }
     return false;
   }
@@ -1977,7 +1981,7 @@ bool playWavFile(const char* filePath) {
   uint32_t dataSize = 0;
   bool foundData = false;
 
-  while (wavFile.available() && !foundData) {
+  while (wavFile.available() && !foundData && !stopAudioFlag) {
     char chunkId[4];
     uint32_t chunkSize = 0;
     if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
@@ -2018,11 +2022,13 @@ bool playWavFile(const char* filePath) {
     }
   }
 
-  if (!foundData) {
-    Serial.printf("[AUDIO] Chunk data audio tidak ditemukan: %s\n", filePath);
+  if (!foundData || stopAudioFlag) {
+    if (!foundData) Serial.printf("[AUDIO] Chunk data audio tidak ditemukan: %s\n", filePath);
     if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
       wavFile.close();
       xSemaphoreGive(spiMutex);
+    } else {
+      wavFile.close();
     }
     return false;
   }
@@ -2033,6 +2039,7 @@ bool playWavFile(const char* filePath) {
   }
 
   if (isI2sAvailable) {
+    i2s_zero_dma_buffer(I2S_NUM);
     i2s_start(I2S_NUM); // Aktifkan clock I2S hanya saat memutar audio
   }
 
@@ -2065,7 +2072,8 @@ bool playWavFile(const char* filePath) {
         stereoBuf[i * 2 + 1] = s;
       }
       size_t bytesWritten = 0;
-      i2s_write(I2S_NUM, (const char*)stereoBuf, samples * 4, &bytesWritten, portMAX_DELAY);
+      // Gunakan timeout 50ms (anti-deadlock saat terjadi interupsi scan kartu/jari)
+      i2s_write(I2S_NUM, (const char*)stereoBuf, samples * 4, &bytesWritten, pdMS_TO_TICKS(50));
     } else {
       if (vol < 100) {
         int samples = bytesRead / 2;
@@ -2074,15 +2082,23 @@ bool playWavFile(const char* filePath) {
         }
       }
       size_t bytesWritten = 0;
-      i2s_write(I2S_NUM, (const char*)rawBuf, bytesRead, &bytesWritten, portMAX_DELAY);
+      // Gunakan timeout 50ms (anti-deadlock saat terjadi interupsi scan kartu/jari)
+      i2s_write(I2S_NUM, (const char*)rawBuf, bytesRead, &bytesWritten, pdMS_TO_TICKS(50));
     }
 
     vTaskDelay(pdMS_TO_TICKS(1));
   }
 
-  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+  // Pastikan file SD selalu ditutup dengan aman
+  if (spiMutex != NULL) {
+    if (xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+      wavFile.close();
+      xSemaphoreGive(spiMutex);
+    } else {
+      wavFile.close();
+    }
+  } else {
     wavFile.close();
-    xSemaphoreGive(spiMutex);
   }
 
   if (isI2sAvailable) {
@@ -2233,17 +2249,28 @@ bool downloadTTSFile(const char* text, const char* filePath) {
 void stopAudioPlayback() {
   if (!isAudioEnabled()) return;
   stopAudioFlag = true;
+
+  // 1. Kosongkan antrean audio yang menunggu agar request usang dibuang
   if (audioQueue != NULL) {
     AudioRequest dummy;
     while (xQueueReceive(audioQueue, &dummy, 0) == pdTRUE) {}
   }
+
+  // 2. Tunggu audioTask keluar dari loop pemutaran WAV saat ini (maksimal 60ms)
+  unsigned long t0 = millis();
+  while (isAudioPlaying && (millis() - t0 < 60)) {
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+
+  // 3. Pastikan buffer DMA bersih dan I2S dimatikan seketika
   if (isI2sAvailable) {
     i2s_zero_dma_buffer(I2S_NUM);
     i2s_stop(I2S_NUM);
   }
-  // Beri jeda singkat agar socket HTTP TTS benar-benar tertutup jika ada unduhan yang sedang dibatalkan
-  unsigned long t0 = millis();
-  while (isDownloadingTTS && (millis() - t0 < 120)) {
+
+  // 4. Beri jeda singkat agar socket HTTP TTS benar-benar tertutup jika ada unduhan yang sedang dibatalkan
+  t0 = millis();
+  while (isDownloadingTTS && (millis() - t0 < 100)) {
     delay(10);
   }
 }
@@ -2259,11 +2286,24 @@ void queueAudio(const char* fixedPath, const char* fixedText, const char* namePa
   if (nameText)  strncpy(req.nameText,  nameText,  sizeof(req.nameText) - 1);
 
   if (audioQueue != NULL) {
-    if (uxQueueMessagesWaiting(audioQueue) > 0) {
-      AudioRequest dummy;
-      xQueueReceive(audioQueue, &dummy, 0);
+    // 1. Jika audio sebelumnya masih bersuara, hentikan seketika
+    if (isAudioPlaying) {
+      stopAudioFlag = true;
+      unsigned long t0 = millis();
+      while (isAudioPlaying && (millis() - t0 < 60)) {
+        vTaskDelay(pdMS_TO_TICKS(5));
+      }
     }
-    xQueueSend(audioQueue, &req, 0);
+
+    // 2. Bersihkan sisa pesan usang dalam antrean
+    AudioRequest dummy;
+    while (xQueueReceive(audioQueue, &dummy, 0) == pdTRUE) {}
+
+    // 3. Pastikan flag penghenti dimatikan untuk audio baru ini
+    stopAudioFlag = false;
+
+    // 4. Masukkan permintaan audio baru ke antrean
+    xQueueSend(audioQueue, &req, pdMS_TO_TICKS(100));
   }
 }
 
@@ -2272,9 +2312,10 @@ void audioTask(void *pvParameters) {
   while (true) {
     if (xQueueReceive(audioQueue, &req, portMAX_DELAY) == pdTRUE) {
       stopAudioFlag = false;
+      isAudioPlaying = true;
 
       // 1. Putar bagian kalimat tetap (Fixed Phrase) dari cache Micro SD
-      if (strlen(req.fixedPath) > 0) {
+      if (strlen(req.fixedPath) > 0 && !stopAudioFlag) {
         bool fixedExists = false;
         if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
           fixedExists = SD.exists(req.fixedPath);
@@ -2286,9 +2327,9 @@ void audioTask(void *pvParameters) {
         }
       }
 
-      // Jeda singkat sebelum ucapan berikutnya (nama / instruksi tambahan)
-      if (!stopAudioFlag && strlen(req.namePath) > 0) {
-        vTaskDelay(pdMS_TO_TICKS(120));
+      // Jeda responsif sebelum ucapan berikutnya (nama / instruksi tambahan)
+      for (int d = 0; d < 12 && !stopAudioFlag; d++) {
+        vTaskDelay(pdMS_TO_TICKS(10));
       }
 
       // 2. Putar bagian nama anggota jika sudah tersedia di cache Micro SD
@@ -2303,6 +2344,8 @@ void audioTask(void *pvParameters) {
           playWavFile(req.namePath);
         }
       }
+
+      isAudioPlaying = false;
     }
   }
 }
