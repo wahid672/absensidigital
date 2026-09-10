@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -360,6 +361,11 @@ func initDatabase() {
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_in', '🔔 *NOTIFIKASI PRESENSI MASUK*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nAlhamdulillah, santri telah tiba dan melakukan presensi masuk:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_out', '🔔 *NOTIFIKASI PRESENSI PULANG*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri telah melakukan presensi pulang:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nTerima kasih.\n_{instansi}_')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('telegram_template_late', '⚠️ *PERINGATAN KETERLAMBATAN*\nAssalamu''alaikum Wr. Wb.\nYth. Orang Tua/Wali dari *{nama}*\n\nSantri tercatat terlambat melakukan presensi:\n📅 Tanggal: {tanggal}\n⏰ Jam: {waktu}\n📌 Status: {status}\n\nMohon perhatiannya. Terima kasih.\n_{instansi}_')")
+
+	// Default Text-To-Speech (TTS) settings
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('tts_enabled', '1')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('tts_server_url', 'https://tts.smartapps.my.id/tts')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('tts_api_key', 'P8xK2mQ7Za')")
 
 	seedInitialData()
 }
@@ -3990,6 +3996,185 @@ func spaHandler() http.Handler {
 	})
 }
 
+// -------------------------------------------------------------
+// TEXT-TO-SPEECH (TTS) PROXY & LOCAL SERVER CACHE
+// -------------------------------------------------------------
+
+// GET /api/tts?text=... (Public / IoT Endpoint untuk Mesin ESP32 & Web Audio)
+func handleTTSProxy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method GET yang diizinkan.")
+		return
+	}
+
+	text := strings.TrimSpace(r.URL.Query().Get("text"))
+	if text == "" {
+		writeJSONError(w, http.StatusBadRequest, "Parameter 'text' tidak boleh kosong.")
+		return
+	}
+
+	// Ambil konfigurasi TTS dari database
+	var ttsEnabled, ttsServerURL, ttsAPIKey string
+	db.QueryRow("SELECT value FROM settings WHERE key = 'tts_enabled'").Scan(&ttsEnabled)
+	db.QueryRow("SELECT value FROM settings WHERE key = 'tts_server_url'").Scan(&ttsServerURL)
+	db.QueryRow("SELECT value FROM settings WHERE key = 'tts_api_key'").Scan(&ttsAPIKey)
+
+	if ttsEnabled == "0" {
+		writeJSONError(w, http.StatusForbidden, "Fitur TTS dinonaktifkan di pengaturan server.")
+		return
+	}
+
+	if ttsServerURL == "" {
+		ttsServerURL = "https://tts.smartapps.my.id/tts"
+	}
+	if ttsAPIKey == "" {
+		ttsAPIKey = "P8xK2mQ7Za"
+	}
+
+	// Direktori cache WAV lokal di server
+	cacheDir := filepath.Join(filepath.Dir(dbPath), "tts_cache")
+	_ = os.MkdirAll(cacheDir, 0755)
+
+	// Hash nama file unik dari teks yang diminta (SHA-256 16 byte hex = 32 char)
+	hashBytes := sha256.Sum256([]byte(strings.ToLower(text)))
+	cacheFile := filepath.Join(cacheDir, hex.EncodeToString(hashBytes[:16])+".wav")
+
+	// 1. Cek Cache Lokal Server: Jika file audio sudah ada di server, sajikan instan!
+	if fi, err := os.Stat(cacheFile); err == nil && fi.Size() > 44 {
+		audioData, err := os.ReadFile(cacheFile)
+		if err == nil {
+			w.Header().Set("Content-Type", "audio/wav")
+			w.Header().Set("Content-Length", strconv.Itoa(len(audioData)))
+			w.Header().Set("X-TTS-Cache", "HIT")
+			w.Header().Set("Cache-Control", "public, max-age=31536000")
+			w.WriteHeader(http.StatusOK)
+			w.Write(audioData)
+			return
+		}
+	}
+
+	// 2. Jika belum ada di cache, backend server yang menghubungi server TTS eksternal
+	client := &http.Client{Timeout: 20 * time.Second}
+	reqURL := fmt.Sprintf("%s?text=%s", ttsServerURL, url.QueryEscape(text))
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Gagal membuat request TTS: "+err.Error())
+		return
+	}
+	req.Header.Set("X-API-Key", ttsAPIKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[TTS PROXY] Gagal menghubungi server TTS eksternal (%s): %v", ttsServerURL, err)
+		writeJSONError(w, http.StatusBadGateway, "Gagal menghubungi server TTS: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyErr, _ := io.ReadAll(resp.Body)
+		log.Printf("[TTS PROXY] Server TTS merespon error HTTP %d: %s", resp.StatusCode, string(bodyErr))
+		writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("Server TTS error (HTTP %d)", resp.StatusCode))
+		return
+	}
+
+	audioBytes, err := io.ReadAll(resp.Body)
+	if err != nil || len(audioBytes) < 44 {
+		writeJSONError(w, http.StatusBadGateway, "Format audio dari server TTS tidak valid.")
+		return
+	}
+
+	// Simpan ke disk cache lokal server secara otomatis
+	_ = os.WriteFile(cacheFile, audioBytes, 0644)
+	log.Printf("[TTS PROXY] Berhasil cache audio: \"%s\" (%d bytes) -> %s", text, len(audioBytes), cacheFile)
+
+	w.Header().Set("Content-Type", "audio/wav")
+	w.Header().Set("Content-Length", strconv.Itoa(len(audioBytes)))
+	w.Header().Set("X-TTS-Cache", "MISS")
+	w.Header().Set("Cache-Control", "public, max-age=31536000")
+	w.WriteHeader(http.StatusOK)
+	w.Write(audioBytes)
+}
+
+// POST /api/settings/test-tts (Admin Test Connection ke Server TTS)
+func handleTestTTS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Hanya method POST yang diizinkan.")
+		return
+	}
+
+	var payload struct {
+		ServerURL string `json:"tts_server_url"`
+		APIKey    string `json:"tts_api_key"`
+		Text      string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Payload JSON tidak valid.")
+		return
+	}
+
+	if payload.ServerURL == "" {
+		payload.ServerURL = "https://tts.smartapps.my.id/tts"
+	}
+	if payload.APIKey == "" {
+		payload.APIKey = "P8xK2mQ7Za"
+	}
+	if payload.Text == "" {
+		payload.Text = "Tes koneksi Text to Speech berhasil."
+	}
+
+	startTime := time.Now()
+	client := &http.Client{Timeout: 12 * time.Second}
+	reqURL := fmt.Sprintf("%s?text=%s", payload.ServerURL, url.QueryEscape(payload.Text))
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Format URL server TTS tidak valid: "+err.Error())
+		return
+	}
+	req.Header.Set("X-API-Key", payload.APIKey)
+
+	resp, err := client.Do(req)
+	latency := time.Since(startTime).Milliseconds()
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "error",
+			"message": "Gagal terhubung ke server TTS: " + err.Error(),
+			"latency": latency,
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":      "error",
+			"http_status": resp.StatusCode,
+			"message":     fmt.Sprintf("Server TTS merespon HTTP %d: %s", resp.StatusCode, string(bodyBytes)),
+			"latency":     latency,
+		})
+		return
+	}
+
+	audioBytes, err := io.ReadAll(resp.Body)
+	if err != nil || len(audioBytes) < 44 {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "error",
+			"message": "Respon diterima dari server TTS namun format audio WAV tidak valid.",
+			"latency": latency,
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":       "success",
+		"message":      fmt.Sprintf("Koneksi berhasil! Audio WAV diterima (%d bytes, latensi %d ms).", len(audioBytes), latency),
+		"latency":      latency,
+		"audio_bytes":  len(audioBytes),
+		"audio_base64": base64.StdEncoding.EncodeToString(audioBytes),
+	})
+}
+
 func writeJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -4064,6 +4249,8 @@ func main() {
 	mux.HandleFunc("/api/telegram/test-bot", authMiddleware(handleTelegramTestBot))
 	mux.HandleFunc("/api/telegram/send-test", authMiddleware(handleTelegramSendTest))
 	mux.HandleFunc("/api/telegram/settings", authMiddleware(handleTelegramSettings))
+	mux.HandleFunc("/api/tts", handleTTSProxy)
+	mux.HandleFunc("/api/settings/test-tts", authMiddleware(handleTestTTS))
 	mux.HandleFunc("/api/realtime", handleSSE)
 	mux.HandleFunc("/api/health", handleHealth)
 

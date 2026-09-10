@@ -26,7 +26,12 @@ import {
   RefreshCw,
   Sliders,
   Layers,
-  Key
+  Key,
+  Volume2,
+  VolumeX,
+  Eye,
+  EyeOff,
+  Play
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiFetch, getAuthToken, getApiBaseUrl } from '../api';
@@ -47,7 +52,10 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
     jam_masuk_batas: settings.jam_masuk_batas || '07:00',
     jam_pulang_batas: settings.jam_pulang_batas || '15:00',
     kepala_nama: settings.kepala_nama || '',
-    iot_api_key: settings.iot_api_key || ''
+    iot_api_key: settings.iot_api_key || '',
+    tts_enabled: settings.tts_enabled !== undefined ? settings.tts_enabled : '1',
+    tts_server_url: settings.tts_server_url || 'https://tts.smartapps.my.id/tts',
+    tts_api_key: settings.tts_api_key || 'P8xK2mQ7Za'
   });
 
   const [saving, setSaving] = useState(false);
@@ -64,7 +72,10 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
       jam_masuk_batas: settings.jam_masuk_batas || '07:00',
       jam_pulang_batas: settings.jam_pulang_batas || '15:00',
       kepala_nama: settings.kepala_nama || '',
-      iot_api_key: settings.iot_api_key || ''
+      iot_api_key: settings.iot_api_key || '',
+      tts_enabled: settings.tts_enabled !== undefined ? settings.tts_enabled : '1',
+      tts_server_url: settings.tts_server_url || 'https://tts.smartapps.my.id/tts',
+      tts_api_key: settings.tts_api_key || 'P8xK2mQ7Za'
     });
   }, [settings]);
 
@@ -224,6 +235,91 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
       if (onSettingsUpdated) onSettingsUpdated();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const [savingTTS, setSavingTTS] = useState(false);
+  const [testingTTS, setTestingTTS] = useState(false);
+  const [showTtsApiKey, setShowTtsApiKey] = useState(false);
+
+  const handleToggleTTSEnabled = async () => {
+    if (isDemoActive) {
+      showDemoAlert('Mengubah status Text-To-Speech');
+      return;
+    }
+    const newVal = formData.tts_enabled === '1' ? '0' : '1';
+    setFormData(prev => ({ ...prev, tts_enabled: newVal }));
+    try {
+      await apiFetch('/api/settings', {
+        method: 'POST',
+        body: JSON.stringify({ tts_enabled: newVal })
+      });
+      if (onSettingsUpdated) onSettingsUpdated();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveTTS = async (e) => {
+    if (e) e.preventDefault();
+    if (isDemoActive) {
+      showDemoAlert('Menyimpan pengaturan Text-To-Speech');
+      return;
+    }
+    setSavingTTS(true);
+    try {
+      const res = await apiFetch('/api/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          tts_enabled: formData.tts_enabled,
+          tts_server_url: formData.tts_server_url,
+          tts_api_key: formData.tts_api_key
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        Swal.fire({ icon: 'success', title: 'Tersimpan', text: 'Konfigurasi Server TTS berhasil disimpan!', timer: 1500, showConfirmButton: false });
+        if (onSettingsUpdated) onSettingsUpdated();
+      } else {
+        Swal.fire('Gagal', data.message || 'Gagal menyimpan pengaturan TTS', 'error');
+      }
+    } catch (err) {
+      Swal.fire('Error', 'Gagal menghubungi server.', 'error');
+    } finally {
+      setSavingTTS(false);
+    }
+  };
+
+  const handleTestTTSConnection = async () => {
+    setTestingTTS(true);
+    try {
+      const res = await apiFetch('/api/settings/test-tts', {
+        method: 'POST',
+        body: JSON.stringify({
+          tts_server_url: formData.tts_server_url,
+          tts_api_key: formData.tts_api_key,
+          text: 'Tes koneksi Text to Speech dari server berhasil.'
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        if (data.audio_base64) {
+          const audio = new Audio('data:audio/wav;base64,' + data.audio_base64);
+          audio.play().catch(() => {});
+        }
+        Swal.fire({
+          icon: 'success',
+          title: 'Koneksi TTS Berhasil! 🔊',
+          html: `<p class="text-xs text-slate-600 mb-2">${data.message}</p><p class="text-[11px] text-slate-400">Audio tes otomatis diputar di browser Anda.</p>`,
+          confirmButtonColor: '#0284c7'
+        });
+      } else {
+        Swal.fire('Tes TTS Gagal', data.message || 'Server TTS tidak merespon.', 'error');
+      }
+    } catch (e) {
+      Swal.fire('Error', 'Gagal menghubungi server: ' + e.message, 'error');
+    } finally {
+      setTestingTTS(false);
     }
   };
 
@@ -953,6 +1049,119 @@ export default function PengaturanView({ settings = {}, onSettingsUpdated }) {
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* 3. KONFIGURASI TEXT-TO-SPEECH (TTS PROXY SERVER) */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
+                  formData.tts_enabled === '1' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'
+                }`}>
+                  {formData.tts_enabled === '1' ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-800">Server Text-To-Speech (TTS Proxy)</h4>
+                  <p className="text-xs text-slate-400">Server utama bertindak sebagai proxy & cache audio WAV agar mesin ESP32 stabil</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleToggleTTSEnabled}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                    formData.tts_enabled === '1' ? 'bg-indigo-600' : 'bg-slate-300'
+                  }`}
+                  title={formData.tts_enabled === '1' ? 'Nonaktifkan TTS' : 'Aktifkan TTS'}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      formData.tts_enabled === '1' ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+                <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                  formData.tts_enabled === '1' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}>
+                  {formData.tts_enabled === '1' ? 'Status: AKTIF' : 'Status: NONAKTIF'}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl text-xs text-indigo-900 space-y-1">
+              <p className="font-bold flex items-center gap-1.5 text-indigo-700">
+                <Sparkles className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                <span>Mekanisme Single-Host Proxy & Local Cache:</span>
+              </p>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Mesin ESP32 hanya mengakses URL server utama ini (<code className="bg-white px-1 py-0.5 rounded border border-indigo-200 font-mono text-indigo-600 font-bold">/api/tts</code>). 
+                Server backend utama yang menangani request ke server TTS eksternal dan otomatis menyimpannya ke <b>cache disk lokal server</b>, sehingga mesin presensi tidak perlu mengakses domain pihak ketiga secara langsung.
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveTTS} className="space-y-4 pt-2 border-t border-slate-100 text-xs">
+              {/* Endpoint Server TTS */}
+              <div className="space-y-1.5">
+                <label className="block text-slate-700 font-bold">Endpoint Server TTS:</label>
+                <input 
+                  type="text" 
+                  value={formData.tts_server_url} 
+                  onChange={(e) => setFormData({ ...formData, tts_server_url: e.target.value })}
+                  placeholder="https://tts.smartapps.my.id/tts" 
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
+                />
+                <p className="text-[11px] text-slate-400">
+                  URL endpoint server penghasil audio WAV (default: <code className="text-slate-600">https://tts.smartapps.my.id/tts</code>)
+                </p>
+              </div>
+
+              {/* X-API-Key Server TTS */}
+              <div className="space-y-1.5">
+                <label className="block text-slate-700 font-bold">X-API-Key Server TTS:</label>
+                <div className="relative">
+                  <input 
+                    type={showTtsApiKey ? "text" : "password"} 
+                    value={formData.tts_api_key} 
+                    onChange={(e) => setFormData({ ...formData, tts_api_key: e.target.value })}
+                    placeholder="Masukkan API Key TTS..." 
+                    className="w-full px-3.5 py-2 pr-10 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTtsApiKey(!showTtsApiKey)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                    title={showTtsApiKey ? "Sembunyikan API Key" : "Tampilkan API Key"}
+                  >
+                    {showTtsApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Kunci otentikasi header X-API-Key untuk server TTS (default: <code className="text-slate-600 font-mono">P8xK2mQ7Za</code>)
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleTestTTSConnection}
+                  disabled={testingTTS}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition disabled:opacity-50"
+                >
+                  {testingTTS ? <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> : <Play className="w-4 h-4 text-indigo-600 fill-indigo-600" />}
+                  <span>{testingTTS ? 'Menguji Koneksi...' : 'Tes Koneksi & Putar Suara'}</span>
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={savingTTS}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow transition disabled:opacity-50 sm:ml-auto"
+                >
+                  {savingTTS ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  <span>Simpan Pengaturan TTS</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

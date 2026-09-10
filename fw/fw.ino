@@ -1897,16 +1897,21 @@ bool downloadTTSFile(const char* text, const char* filePath) {
     }
   }
 
+  String baseUrl = String(serverUrl);
+  int apiIdx = baseUrl.indexOf("/api/");
+  if (apiIdx != -1) {
+    baseUrl = baseUrl.substring(0, apiIdx);
+  }
   String encodedText = urlEncode(String(text));
-  String ttsUrl = "https://tts.smartapps.my.id/tts?text=" + encodedText;
-  Serial.printf("[TTS] Mengunduh: \"%s\" -> %s\n", text, filePath);
+  String ttsUrl = baseUrl + "/api/tts?text=" + encodedText;
+  Serial.printf("[TTS PROXY] Mengunduh via server utama: \"%s\" -> %s\n", text, filePath);
 
   WiFiClientSecure clientAudio;
   clientAudio.setInsecure();
   HTTPClient httpAudio;
   httpAudio.begin(clientAudio, ttsUrl);
-  httpAudio.setTimeout(10000);
-  httpAudio.addHeader("X-API-Key", "P8xK2mQ7Za");
+  httpAudio.setTimeout(15000);
+  httpAudio.addHeader("X-API-KEY", apiKey);
 
   int httpCode = httpAudio.GET();
   if (httpCode != 200) {
