@@ -2312,29 +2312,26 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   if (stream != nullptr) {
     uint8_t buf[512];
     unsigned long lastReadTime = millis();
+    int remaining = totalLen;
 
-    while (httpAudio.connected() && (totalLen > 0 ? (downloaded < totalLen) : true)) {
-      size_t avail = stream->available();
-      if (avail > 0) {
-        int toRead = (avail > sizeof(buf)) ? sizeof(buf) : avail;
-        if (totalLen > 0 && (downloaded + toRead) > totalLen) {
-          toRead = totalLen - downloaded;
-        }
-        int bytesRead = stream->readBytes(buf, toRead);
-        if (bytesRead > 0) {
-          int bytesWritten = f.write(buf, bytesRead);
-          downloaded += bytesWritten;
-          lastReadTime = millis();
-          if (bytesWritten != bytesRead) {
-            Serial.printf("[TTS] Gagal menulis ke Micro SD: wrote %d of %d\n", bytesWritten, bytesRead);
-            break;
-          }
-        }
-      } else {
-        if (totalLen > 0 && downloaded >= totalLen) {
+    while (httpAudio.connected() && (totalLen > 0 ? (remaining > 0) : true)) {
+      int toRead = sizeof(buf);
+      if (totalLen > 0 && remaining < toRead) {
+        toRead = remaining;
+      }
+      int bytesRead = stream->readBytes(buf, toRead);
+      if (bytesRead > 0) {
+        int bytesWritten = f.write(buf, bytesRead);
+        downloaded += bytesWritten;
+        if (totalLen > 0) remaining -= bytesWritten;
+        lastReadTime = millis();
+        if (bytesWritten != bytesRead) {
+          Serial.printf("[TTS] Gagal menulis ke Micro SD: wrote %d of %d\n", bytesWritten, bytesRead);
           break;
         }
-        if (millis() - lastReadTime > 6000) {
+      } else {
+        if (totalLen > 0 && remaining <= 0) break;
+        if (millis() - lastReadTime > 8000) {
           Serial.println("[TTS] Read timeout: stream data terhenti.");
           break;
         }
@@ -2358,6 +2355,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
 
   httpAudio.end();
   clientAudio.stop(); // Bersihkan socket & resource TLS mbedtls seketika
+  delay(50);          // Beri jeda lwIP TCP stack membebaskan TCP PCB
   isDownloadingTTS = false;
   return (isComplete && !stopAudioFlag);
 }
@@ -2827,40 +2825,51 @@ void syncMemberTTSFiles() {
 
     int totalMissing = missingMembers.size();
     if (totalMissing > 0) {
-      Serial.printf("[TTS MEMBER SYNC] Terdeteksi %d suara member baru yang perlu diunduh.\n", totalMissing);
-      int consecutiveFails = 0;
+      const int MAX_TTS_SYNC_PER_BOOT = 25; // Maks 25 file per boot (~20 detik) agar heap RAM selalu stabil
+      int toSync = (totalMissing > MAX_TTS_SYNC_PER_BOOT) ? MAX_TTS_SYNC_PER_BOOT : totalMissing;
 
-      for (int i = 0; i < totalMissing; i++) {
+      Serial.printf("[TTS MEMBER SYNC] Terdeteksi %d suara member belum ada. Mengunduh batch %d file saat boot ini...\n", totalMissing, toSync);
+      int consecutiveFails = 0;
+      int successCount = 0;
+
+      for (int i = 0; i < toSync; i++) {
         String mNama = missingMembers[i];
         String safe = sanitizeFilename(mNama);
         String targetPath = "/tts/members/" + safe + ".wav";
 
-        int mPercent = ((i + 1) * 100) / totalMissing;
+        int mPercent = ((i + 1) * 100) / toSync;
         lcd.clear();
         printCentered("Sync Audio", 0);
         printCentered(String(mPercent) + "%", 1);
 
-        Serial.printf("[TTS MEMBER SYNC] [%d/%d] Mengunduh: \"%s\" -> %s\n", i + 1, totalMissing, mNama.c_str(), targetPath.c_str());
+        Serial.printf("[TTS MEMBER SYNC] [%d/%d] Mengunduh: \"%s\" -> %s\n", i + 1, toSync, mNama.c_str(), targetPath.c_str());
         bool ok = downloadTTSFile((mNama + ".").c_str(), targetPath.c_str());
         if (!ok) {
           // Jika gagal, beri jeda dan coba unduh sekali lagi (Retry 1x, server disk cache sudah siap)
           Serial.printf("[TTS MEMBER SYNC] Percobaan 1 gagal. Mengulang unduhan untuk: \"%s\"...\n", mNama.c_str());
-          delay(300);
+          delay(400);
           ok = downloadTTSFile((mNama + ".").c_str(), targetPath.c_str());
         }
 
         if (ok) {
           consecutiveFails = 0;
+          successCount++;
         } else {
           consecutiveFails++;
           if (consecutiveFails >= 3) {
             Serial.println("\n[TTS MEMBER SYNC] [CIRCUIT BREAKER] Terdeteksi 3 kegagalan unduh berturut-turut.");
             Serial.printf("[TTS MEMBER SYNC] Sinkronisasi audio batch dihentikan sementara agar mesin segera aktif (Standby).\n");
-            Serial.printf("[TTS MEMBER SYNC] Sisa %d suara nama akan diunduh otomatis saat member melakukan presensi.\n\n", totalMissing - (i + 1));
             break;
           }
         }
-        delay(100); // Jeda aman antar unduhan agar koneksi TLS & socket lwIP bersih sempurna
+        delay(200); // Jeda aman 200ms antar unduhan agar koneksi TLS & socket lwIP bersih sempurna
+      }
+
+      int remainingAfterBatch = totalMissing - successCount;
+      if (remainingAfterBatch > 0) {
+        Serial.printf("[TTS MEMBER SYNC] Sisa %d suara member akan diunduh pada boot berikutnya / saat presensi tap kartu.\n", remainingAfterBatch);
+      } else {
+        Serial.println("[TTS MEMBER SYNC] Seluruh suara member baru berhasil diunduh ke Micro SD!");
       }
     } else if (totalMembers > 0) {
       Serial.printf("[TTS MEMBER SYNC] Seluruh suara %d anggota sudah siap di Micro SD!\n", totalMembers);
