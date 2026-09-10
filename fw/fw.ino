@@ -2315,7 +2315,7 @@ void triggerAttendanceVoice(const String& status, const String& action, const St
     if (action == "check_out") {
       queueAudio("/tts/keluar.wav", "Absensi keluar berhasil.", nameFile.c_str(), nameText.c_str());
     } else {
-      queueAudio("/tts/sukses.wav", "Absensi Berhasil.", nameFile.c_str(), nameText.c_str());
+      queueAudio("/tts/sukses.wav", "Absensi masuk berhasil.", nameFile.c_str(), nameText.c_str());
     }
   } else if (status == "already_attended") {
     queueAudio("/tts/sudah_absen.wav", "Anda sudah melakukan absensi.", nameFile.c_str(), nameText.c_str());
@@ -2360,7 +2360,7 @@ void handleInitialAudioCacheSync() {
   if (bootMsg.length() == 0) bootMsg = "Selamat Datang";
 
   const InitialAudioItem items[] = {
-    { "/tts/sukses.wav",                "Absensi Berhasil." },
+    { "/tts/sukses.wav",                "Absensi masuk berhasil." },
     { "/tts/keluar.wav",                "Absensi keluar berhasil." },
     { "/tts/sudah_absen.wav",           "Anda sudah melakukan absensi." },
     { "/tts/gagal.wav",                 "Absensi gagal, kartu atau jari belum terdaftar." },
@@ -2489,9 +2489,9 @@ void syncInitialTTSFiles() {
   if (bootMsg.length() == 0) bootMsg = "Selamat Datang";
 
   const InitialAudioItem items[] = {
-    { "/tts/sukses.wav",                "Absensi Berhasil.",                              "Presensi Masuk Berhasil" },
+    { "/tts/sukses.wav",                "Absensi masuk berhasil.",                              "Presensi Masuk Berhasil" },
     { "/tts/keluar.wav",                "Absensi keluar berhasil.",                      "Presensi Keluar Berhasil" },
-    { "/tts/sudah_absen.wav",           "Anda sudah melakukan absensi",                     "Sudah Melakukan  Presensi" },
+    { "/tts/sudah_absen.wav",           "Anda sudah melakukan absensi.",                     "Sudah Melakukan  Presensi" },
     { "/tts/gagal.wav",                 "Absensi gagal, kartu atau jari belum terdaftar.", "Presensi Ditolak/Belum Terdaftar" },
     { "/tts/server_online.wav",         "Server online.",                                 "Status Server Online" },
     { "/tts/instruksi_rfid_finger.wav", "Silahkan Tap Kartu atau Tempelkan jari anda.",   "Instruksi Kartu & Sidik Jari" },
