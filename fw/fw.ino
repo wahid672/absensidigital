@@ -2130,9 +2130,9 @@ void audioTask(void *pvParameters) {
         }
       }
 
-      // Jeda singkat sebelum ucapan nama
+      // Jeda singkat sebelum ucapan berikutnya (nama / instruksi tambahan)
       if (!stopAudioFlag && strlen(req.namePath) > 0) {
-        vTaskDelay(pdMS_TO_TICKS(60));
+        vTaskDelay(pdMS_TO_TICKS(120));
       }
 
       // 2. Putar bagian nama anggota jika sudah tersedia di cache Micro SD
@@ -2206,14 +2206,16 @@ void handleInitialAudioCacheSync() {
   if (bootMsg.length() == 0) bootMsg = "Selamat Datang";
 
   const InitialAudioItem items[] = {
-    { "/tts/sukses.wav",        "Absensi Berhasil." },
-    { "/tts/keluar.wav",        "Absensi keluar berhasil." },
-    { "/tts/sudah_absen.wav",   "Anda sudah absensi masuk." },
-    { "/tts/gagal.wav",         "Absensi gagal, kartu atau jari belum terdaftar." },
-    { "/tts/server_online.wav", "Server online." },
-    { "/tts/boot.wav",          bootMsg.c_str() }
+    { "/tts/sukses.wav",                "Absensi Berhasil." },
+    { "/tts/keluar.wav",                "Absensi keluar berhasil." },
+    { "/tts/sudah_absen.wav",           "Anda sudah absensi masuk." },
+    { "/tts/gagal.wav",                 "Absensi gagal, kartu atau jari belum terdaftar." },
+    { "/tts/server_online.wav",         "Server online." },
+    { "/tts/instruksi_rfid_finger.wav", "Silahkan Tap Kartu atau Tempelkan jari anda." },
+    { "/tts/instruksi_rfid.wav",        "Silahkan Tap Kartu." },
+    { "/tts/boot.wav",                  bootMsg.c_str() }
   };
-  const int totalItems = 6;
+  const int totalItems = 8;
 
   if (initialAudioSyncStep < totalItems) {
     const char* targetPath = items[initialAudioSyncStep].path;
@@ -2237,8 +2239,10 @@ void handleInitialAudioCacheSync() {
     hasInitialAudioSynced = true;
     Serial.println("\n[INIT TTS] >>> Seluruh audio dasar berhasil disiapkan di Micro SD! <<<");
 
-    // Putar ucapan selamat datang booting dari cache lokal SD Card
-    queueAudio("/tts/boot.wav", bootMsg.c_str(), "", "");
+    // Putar ucapan selamat datang booting diikuti instruksi scan
+    const char* instruksiPath = isFingerprintAvailable ? "/tts/instruksi_rfid_finger.wav" : "/tts/instruksi_rfid.wav";
+    const char* instruksiText = isFingerprintAvailable ? "Silahkan Tap Kartu atau Tempelkan jari anda." : "Silahkan Tap Kartu.";
+    queueAudio("/tts/boot.wav", bootMsg.c_str(), instruksiPath, instruksiText);
   }
 }
 
@@ -2325,14 +2329,16 @@ void syncInitialTTSFiles() {
   if (bootMsg.length() == 0) bootMsg = "Selamat Datang";
 
   const InitialAudioItem items[] = {
-    { "/tts/sukses.wav",        "Absensi Berhasil.",                              "Presensi Masuk Berhasil" },
-    { "/tts/keluar.wav",        "Absensi keluar berhasil.",                      "Presensi Keluar Berhasil" },
-    { "/tts/sudah_absen.wav",   "Anda sudah absensi masuk.",                     "Sudah Presensi Masuk" },
-    { "/tts/gagal.wav",         "Absensi gagal, kartu atau jari belum terdaftar.", "Presensi Ditolak/Belum Terdaftar" },
-    { "/tts/server_online.wav", "Server online.",                                 "Status Server Online" },
-    { "/tts/boot.wav",          bootMsg.c_str(),                                 "Ucapan Selamat Datang Booting" }
+    { "/tts/sukses.wav",                "Absensi Berhasil.",                              "Presensi Masuk Berhasil" },
+    { "/tts/keluar.wav",                "Absensi keluar berhasil.",                      "Presensi Keluar Berhasil" },
+    { "/tts/sudah_absen.wav",           "Anda sudah absensi masuk.",                     "Sudah Presensi Masuk" },
+    { "/tts/gagal.wav",                 "Absensi gagal, kartu atau jari belum terdaftar.", "Presensi Ditolak/Belum Terdaftar" },
+    { "/tts/server_online.wav",         "Server online.",                                 "Status Server Online" },
+    { "/tts/instruksi_rfid_finger.wav", "Silahkan Tap Kartu atau Tempelkan jari anda.",   "Instruksi Kartu & Sidik Jari" },
+    { "/tts/instruksi_rfid.wav",        "Silahkan Tap Kartu.",                            "Instruksi Khusus RFID" },
+    { "/tts/boot.wav",                  bootMsg.c_str(),                                 "Ucapan Selamat Datang Booting" }
   };
-  const int totalItems = 6;
+  const int totalItems = 8;
 
   for (int i = 0; i < totalItems; i++) {
     const char* targetPath = items[i].path;
@@ -2402,11 +2408,15 @@ void syncInitialTTSFiles() {
     xSemaphoreGive(spiMutex);
   }
 
+  const char* instruksiPath = isFingerprintAvailable ? "/tts/instruksi_rfid_finger.wav" : "/tts/instruksi_rfid.wav";
+  const char* instruksiText = isFingerprintAvailable ? "Silahkan Tap Kartu atau Tempelkan jari anda." : "Silahkan Tap Kartu.";
+
   if (bootFileReady) {
-    Serial.printf("[TTS BOOT] Memutar audio selamat datang: \"%s\"\n", bootMsg.c_str());
-    queueAudio("/tts/boot.wav", bootMsg.c_str(), "", "");
+    Serial.printf("[TTS BOOT] Memutar audio selamat datang: \"%s\" + instruksi: \"%s\"\n", bootMsg.c_str(), instruksiText);
+    queueAudio("/tts/boot.wav", bootMsg.c_str(), instruksiPath, instruksiText);
   } else {
-    Serial.println("[TTS BOOT] File /tts/boot.wav belum tersedia. Ucapan booting dilewati secara aman.");
+    Serial.println("[TTS BOOT] File /tts/boot.wav belum tersedia. Memutar instruksi scan langsung...");
+    queueAudio(instruksiPath, instruksiText, "", "");
   }
 }
 
