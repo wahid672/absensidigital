@@ -899,6 +899,19 @@ void handleFingerprintEnroll() {
       lcd.clear();
       printCentered("Rekam ID: " + String(currentEnrollID), 0);
       printCentered("Tempel Jari...", 1);
+
+      if (isAudioEnabled()) {
+        bool fileReady = false;
+        if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+          fileReady = SD.exists("/tts/mode_rekam.wav");
+          xSemaphoreGive(spiMutex);
+        }
+        if (!fileReady && isWifiConnected && WiFi.status() == WL_CONNECTED) {
+          downloadTTSFile("Mode rekam aktif, silahkan tempelkan jari anda.", "/tts/mode_rekam.wav");
+        }
+        queueAudio("/tts/mode_rekam.wav", "Mode rekam aktif, silahkan tempelkan jari anda.", "", "");
+      }
+
       enrollState = WAIT_FINGER_1;
       break;
 
@@ -2211,11 +2224,12 @@ void handleInitialAudioCacheSync() {
     { "/tts/sudah_absen.wav",           "Anda sudah absensi masuk." },
     { "/tts/gagal.wav",                 "Absensi gagal, kartu atau jari belum terdaftar." },
     { "/tts/server_online.wav",         "Server online." },
-    { "/tts/instruksi_rfid_finger.wav", "Silahkan Tap Kartu atau T'emmpelkan jari anda." },
+    { "/tts/instruksi_rfid_finger.wav", "Silahkan Tap Kartu atau Tempelkan jari anda." },
     { "/tts/instruksi_rfid.wav",        "Silahkan Tap Kartu." },
+    { "/tts/mode_rekam.wav",            "Mode rekam aktif, silahkan tempelkan jari anda." },
     { "/tts/boot.wav",                  bootMsg.c_str() }
   };
-  const int totalItems = 8;
+  const int totalItems = 9;
 
   if (initialAudioSyncStep < totalItems) {
     const char* targetPath = items[initialAudioSyncStep].path;
@@ -2336,9 +2350,10 @@ void syncInitialTTSFiles() {
     { "/tts/server_online.wav",         "Server online.",                                 "Status Server Online" },
     { "/tts/instruksi_rfid_finger.wav", "Silahkan Tap Kartu atau Tempelkan jari anda.",   "Instruksi Kartu & Sidik Jari" },
     { "/tts/instruksi_rfid.wav",        "Silahkan Tap Kartu.",                            "Instruksi Khusus RFID" },
+    { "/tts/mode_rekam.wav",            "Mode rekam aktif, silahkan tempelkan jari anda.","Mode Rekam Sidik Jari" },
     { "/tts/boot.wav",                  bootMsg.c_str(),                                 "Ucapan Selamat Datang Booting" }
   };
-  const int totalItems = 8;
+  const int totalItems = 9;
 
   for (int i = 0; i < totalItems; i++) {
     const char* targetPath = items[i].path;
