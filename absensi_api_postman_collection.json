@@ -2,7 +2,7 @@
     "info": {
         "_postman_id": "8f28b2a1-e408-4e89-a2bf-a720dc274941",
         "name": "Absensi Digital - Golang REST API & ESP32 (Lengkap 2026)",
-        "description": "Koleksi Postman REST API Resmi untuk Sistem Presensi Digital Pondok Pesantren & Sekolah (IoT ESP32 + Golang + SQLite).\n\n🌟 Fitur & Modul API Lengkap 2026:\n1. Autentikasi JWT Administrator (/api/login).\n2. Integrasi Mesin IoT ESP32 (RFID RC522 + Sensor Sidik Jari R503, Tap Presensi Realtime, Booting Sync, Upload Template .bin, Offline Batch Flush, Indikator Kartu Unmapped).\n3. Manajemen Sidik Jari (/api/fingerprints, /api/fingerprints/map, /api/fingerprints/unmap).\n4. Manajemen Kartu RFID (/api/cards, /api/cards/map, /api/cards/unmap, delete kartu).\n5. Data Master Anggota (Santri / Guru / Pegawai, Primary Unique Key NIS/NIP, Auto-Generate NIS [Tahun+3digit] & NIP [PG+3digit] jika kosong, Kartu RFID Opsional Bebas, Bulk Import Excel).\n6. Data Master Kelas & Jabatan (/api/classes, /api/positions).\n7. Laporan & Rekapitulasi Presensi (/api/attendance, /api/attendance/summary, edit/delete manual).\n8. Dashboard Realtime & Manajemen Perangkat Mesin IoT (/api/stats/dashboard, /api/devices).\n9. Pengaturan Sistem, Regenerate IoT API Key, Backup/Restore Database SQLite, dan Reset Data (/api/settings).\n10. Server-Sent Events (SSE) Stream (/api/realtime) & Health Check (/api/health).\n11. Notifikasi Otomatis Bot Telegram (/api/telegram/status, /api/telegram/settings, /api/telegram/send-test).",
+        "description": "Koleksi Postman REST API Resmi untuk Sistem Presensi Digital Pondok Pesantren & Sekolah (IoT ESP32 + Golang + SQLite).\n\n🌟 Fitur & Modul API Lengkap 2026:\n1. Autentikasi JWT Administrator (/api/login).\n2. Integrasi Mesin IoT ESP32 (RFID RC522 + Sensor Sidik Jari R503, Tap Presensi Realtime, Booting Sync, Upload/Download Template Sidik Jari, Enroll & Delete Fingerprint dari Sensor, Offline Batch Flush, Cek Jadwal & Status Online, Cache Anggota Offline).\n3. Manajemen Sidik Jari (/api/fingerprints, /api/fingerprints/map, /api/fingerprints/unmap, delete fingerprint).\n4. Manajemen Kartu RFID (/api/cards, /api/cards/map, /api/cards/unmap, delete kartu).\n5. Data Master Anggota (Santri / Guru / Pegawai, Primary Unique Key NIS/NIP, Auto-Generate NIS [Tahun+3digit] & NIP [PG+3digit] jika kosong, Kartu RFID Opsional Bebas, Bulk Import Excel, Update Chat ID).\n6. Data Master Kelas & Jabatan (/api/classes, /api/positions - GET, POST, PUT, DELETE).\n7. Laporan & Rekapitulasi Presensi (/api/attendance, /api/attendance/summary, tambah manual, edit jam/status, delete presensi).\n8. Dashboard Realtime & Manajemen Perangkat Mesin IoT (/api/stats/dashboard, /api/devices).\n9. Pengaturan Sistem, Regenerate IoT API Key, Backup/Restore Database SQLite, dan Reset Data (/api/settings).\n10. Server-Sent Events (SSE) Stream (/api/realtime) & Health Check (/api/health).\n11. Notifikasi Otomatis Bot Telegram (/api/telegram/status, /api/telegram/test-bot, /api/telegram/send-test, /api/telegram/settings, /api/members/chat-id).\n12. Audio Text-to-Speech (TTS) & Proxy Cache (/api/tts, /api/settings/test-tts).",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "item": [
@@ -69,7 +69,7 @@
                             },
                             {
                                 "key": "X-API-KEY",
-                                "value": "KUNCI_API_PRESENSI_V1_2026"
+                                "value": "{{iot_api_key}}"
                             }
                         ],
                         "body": {
@@ -102,7 +102,7 @@
                             },
                             {
                                 "key": "X-API-KEY",
-                                "value": "KUNCI_API_PRESENSI_V1_2026"
+                                "value": "{{iot_api_key}}"
                             }
                         ],
                         "body": {
@@ -135,7 +135,7 @@
                             },
                             {
                                 "key": "X-API-KEY",
-                                "value": "KUNCI_API_PRESENSI_V1_2026"
+                                "value": "{{iot_api_key}}"
                             }
                         ],
                         "body": {
@@ -168,7 +168,7 @@
                             },
                             {
                                 "key": "X-API-KEY",
-                                "value": "KUNCI_API_PRESENSI_V1_2026"
+                                "value": "{{iot_api_key}}"
                             }
                         ],
                         "body": {
@@ -201,7 +201,7 @@
                             },
                             {
                                 "key": "X-API-KEY",
-                                "value": "KUNCI_API_PRESENSI_V1_2026"
+                                "value": "{{iot_api_key}}"
                             }
                         ],
                         "body": {
@@ -220,6 +220,203 @@
                             ]
                         },
                         "description": "Mengirimkan seluruh data antrean presensi yang disimpan di flash SPIFFS ESP32 saat jaringan WiFi sempat terputus."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "6. Tes Koneksi & Sinkronisasi Jadwal ESP32",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "X-API-KEY",
+                                "value": "{{iot_api_key}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance/tap?device_id={{device_id}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance",
+                                "tap"
+                            ],
+                            "query": [
+                                {
+                                    "key": "device_id",
+                                    "value": "{{device_id}}",
+                                    "description": "ID unik perangkat mesin IoT"
+                                }
+                            ]
+                        },
+                        "description": "Dipanggil oleh mesin ESP32 saat pertama kali booting atau saat kartu master cek koneksi di-tap. Server merespon dengan status online, jam batas masuk/pulang, dan nama instansi."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "7. Download Template Sidik Jari dari Server (Action: get_templates)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "X-API-KEY",
+                                "value": "{{iot_api_key}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance/tap?action=get_templates&device_id={{device_id}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance",
+                                "tap"
+                            ],
+                            "query": [
+                                {
+                                    "key": "action",
+                                    "value": "get_templates"
+                                },
+                                {
+                                    "key": "device_id",
+                                    "value": "{{device_id}}"
+                                }
+                            ]
+                        },
+                        "description": "Digunakan oleh firmware ESP32 untuk mengambil seluruh template sidik jari dari server database guna di-restore ke memori sensor R503."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "8. Perekaman Jari Baru dari Sensor R503 (Action: enroll)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-API-KEY",
+                                "value": "{{iot_api_key}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"enroll\",\n    \"device_id\": \"{{device_id}}\",\n    \"fingerprint_id\": 1,\n    \"template_data\": \"0102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F20\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance/tap",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance",
+                                "tap"
+                            ]
+                        },
+                        "description": "Dikirim otomatis oleh mesin ESP32 setelah admin merekam sidik jari baru via menu Master Card (Tap 1x) agar slot dan template tersimpan di server."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "9. Hapus 1 Sidik Jari dari Sensor (Action: delete_fingerprint)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-API-KEY",
+                                "value": "{{iot_api_key}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"delete_fingerprint\",\n    \"device_id\": \"{{device_id}}\",\n    \"fingerprint_id\": 1\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance/tap",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance",
+                                "tap"
+                            ]
+                        },
+                        "description": "Dikirim otomatis oleh ESP32 setelah admin menghapus 1 sidik jari via Master Card (Tap 5x) dan menempelkan jari yang bersangkutan."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "10. Hapus Semua Sidik Jari Perangkat (Action: delete_all_fingerprints)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-API-KEY",
+                                "value": "{{iot_api_key}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"delete_all_fingerprints\",\n    \"device_id\": \"{{device_id}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/attendance/tap",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "attendance",
+                                "tap"
+                            ]
+                        },
+                        "description": "Mengosongkan seluruh memori sidik jari perangkat ini di server database."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "11. Download Cache Anggota untuk Mesin Offline (fetchMembersLocalCache)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "X-API-KEY",
+                                "value": "{{iot_api_key}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/members?tipe=all",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "members"
+                            ],
+                            "query": [
+                                {
+                                    "key": "tipe",
+                                    "value": "all",
+                                    "description": "Ambil santri dan guru sekaligus"
+                                }
+                            ]
+                        },
+                        "description": "Endpoint yang dipanggil oleh firmware ESP32 (fetchMembersLocalCache) untuk mengunduh daftar seluruh anggota ke Micro SD /members_cache.json agar absensi offline dapat memvalidasi nama seketika."
                     },
                     "response": []
                 }
@@ -826,6 +1023,44 @@
                     "response": []
                 },
                 {
+                    "name": "Edit Data Kelas",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"id\": 1,\n    \"nama\": \"10 IPA 1 (Unggulan)\",\n    \"tingkat\": 10,\n    \"keterangan\": \"Kelas 10 Jurusan IPA Kelas Unggulan\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/classes",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "classes"
+                            ]
+                        },
+                        "description": "Memperbarui nama, tingkat, atau keterangan kelas yang sudah ada."
+                    },
+                    "response": []
+                },
+                {
                     "name": "Hapus Kelas",
                     "request": {
                         "auth": {
@@ -956,6 +1191,44 @@
                             ]
                         },
                         "description": "Menghapus data master jabatan."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Edit Data Jabatan",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"id\": 1,\n    \"nama\": \"Guru Fiqih & Ushul Fiqih\",\n    \"keterangan\": \"Pengampu Pelajaran Fiqih & Ushul Fiqih\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/positions",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "positions"
+                            ]
+                        },
+                        "description": "Memperbarui nama dan deskripsi jabatan guru/staf."
                     },
                     "response": []
                 }
@@ -1735,18 +2008,135 @@
                     "response": []
                 }
             ]
+        },
+        {
+            "name": "12. Audio Text-to-Speech (TTS)",
+            "description": "Endpoint untuk Text-to-Speech proxy dan pengujian server audio TTS yang digunakan oleh mesin ESP32 untuk mendownload file suara WAV ke Micro SD.",
+            "item": [
+                {
+                    "name": "1. Proxy Audio WAV TTS (Public / IoT Endpoint)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "X-API-KEY",
+                                "value": "{{iot_api_key}}",
+                                "description": "Opsional (Bisa diakses publik atau dengan API key)"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/tts?text=Absensi%20masuk%20berhasil.",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "tts"
+                            ],
+                            "query": [
+                                {
+                                    "key": "text",
+                                    "value": "Absensi masuk berhasil.",
+                                    "description": "Kalimat yang ingin diubah menjadi suara audio WAV"
+                                }
+                            ]
+                        },
+                        "description": "Menghasilkan stream file audio WAV (PCM 16-bit 22050Hz). Digunakan oleh mesin ESP32 untuk mendownload suara sambutan, respon absensi masuk/keluar, dan suara nama santri/guru ke Micro SD. Server backend secara otomatis meng-cache file WAV di direktori server lokal 'tts_cache/' sehingga permintaan kalimat yang sama akan langsung dilayani seketika (HIT)."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "2. Suara Nama Member Santri/Guru (TTS Member)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/tts?text=Falikul%20Bin%20Muhdor%20Al%20Haddad.",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "tts"
+                            ],
+                            "query": [
+                                {
+                                    "key": "text",
+                                    "value": "Falikul Bin Muhdor Al Haddad.",
+                                    "description": "Nama santri atau guru yang akan disebut mesin setelah status presensi"
+                                }
+                            ]
+                        },
+                        "description": "Contoh pengunduhan suara nama santri/guru untuk disimpan di Micro SD: /tts/members/falikul_bin_muhdor_al_haddad.wav."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "3. Uji Koneksi Server TTS (Admin Test Connection)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"tts_server_url\": \"https://tts.smartapps.my.id/tts\",\n    \"tts_api_key\": \"P8xK2mQ7Za\",\n    \"text\": \"Tes koneksi Text to Speech berhasil.\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/settings/test-tts",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "settings",
+                                "test-tts"
+                            ]
+                        },
+                        "description": "Endpoint bagi administrator di web portal untuk menguji latensi dan koneksi ke penyedia layanan server Text-to-Speech."
+                    },
+                    "response": []
+                }
+            ]
         }
     ],
     "variable": [
         {
             "key": "baseUrl",
-            "value": "https://absensi.smartapps.my.id",
-            "type": "string"
+            "value": "https://siakadponpes.presensirfid.web.id",
+            "type": "string",
+            "description": "Domain server produksi atau ganti ke http://localhost:8080 untuk pengujian lokal"
         },
         {
             "key": "jwt_token",
             "value": "",
-            "type": "string"
+            "type": "string",
+            "description": "Token JWT admin yang otomatis terisi saat mengeksekusi request Login Administrator"
+        },
+        {
+            "key": "iot_api_key",
+            "value": "c1fbc172cefafd9c3becfd34f62ab6252fd80d4e7aa7d5cd",
+            "type": "string",
+            "description": "Kunci API Secret untuk autentikasi perangkat mesin IoT ESP32"
+        },
+        {
+            "key": "device_id",
+            "value": "PRESENSI-V1",
+            "type": "string",
+            "description": "ID unik perangkat mesin IoT yang terpasang"
         }
     ]
 }
