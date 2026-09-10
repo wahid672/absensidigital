@@ -2269,7 +2269,7 @@ bool startAudioPlaybackSubsystem() {
     BaseType_t taskRes = xTaskCreatePinnedToCore(
       audioTask,
       "audioTask",
-      2560, // Stack 2.5KB sangat cukup karena buffer audio sudah static (hemat 1.5KB RAM)
+      4096, // Stack 4KB aman untuk FatFS SD.open dan anti stack canary watchpoint
       NULL,
       1,
       &audioTaskHandle,
