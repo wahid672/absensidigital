@@ -33,6 +33,9 @@
 #include <ArduinoOTA.h>
 #include "mbedtls/base64.h"
 #include <driver/i2s.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
+
 
 // Instansiasi Web Server ESP32 (Port 80)
 WebServer webServer(80); 
@@ -1844,8 +1847,8 @@ bool playWavFile(const char* filePath) {
     currentI2SSampleRate = sampleRate;
   }
 
-  int16_t rawBuf[256];
-  int16_t stereoBuf[512];
+  static int16_t rawBuf[256];
+  static int16_t stereoBuf[512];
   uint32_t remaining = dataSize;
 
   while (remaining > 0 && !stopAudioFlag) {
@@ -2070,7 +2073,7 @@ void audioTask(void *pvParameters) {
     if (xQueueReceive(audioQueue, &req, portMAX_DELAY) == pdTRUE) {
       stopAudioFlag = false;
 
-      // 1. Putar bagian kalimat tetap (Fixed Phrase)
+      // 1. Putar bagian kalimat tetap (Fixed Phrase) dari cache Micro SD
       if (strlen(req.fixedPath) > 0) {
         bool fixedExists = false;
         if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -2078,28 +2081,17 @@ void audioTask(void *pvParameters) {
           xSemaphoreGive(spiMutex);
         }
 
-        if (!fixedExists && strlen(req.fixedText) > 0 && WiFi.status() == WL_CONNECTED) {
-          while (isServerHttpActive && !stopAudioFlag) {
-            vTaskDelay(pdMS_TO_TICKS(100));
-          }
-          if (!stopAudioFlag) downloadTTSFile(req.fixedText, req.fixedPath);
-          if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            fixedExists = SD.exists(req.fixedPath);
-            xSemaphoreGive(spiMutex);
-          }
-        }
-
         if (fixedExists && !stopAudioFlag) {
           playWavFile(req.fixedPath);
         }
       }
 
-      // Jeda singkat sebelum nama
+      // Jeda singkat sebelum ucapan nama
       if (!stopAudioFlag && strlen(req.namePath) > 0) {
         vTaskDelay(pdMS_TO_TICKS(60));
       }
 
-      // 2. Putar bagian nama (Member Name)
+      // 2. Putar bagian nama anggota jika sudah tersedia di cache Micro SD
       if (!stopAudioFlag && strlen(req.namePath) > 0) {
         bool nameExists = false;
         if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -2107,19 +2099,6 @@ void audioTask(void *pvParameters) {
           xSemaphoreGive(spiMutex);
         }
 
-        // Hit server HANYA jika belum ada di cache & internet aktif
-        if (!nameExists && strlen(req.nameText) > 0 && WiFi.status() == WL_CONNECTED) {
-          while (isServerHttpActive && !stopAudioFlag) {
-            vTaskDelay(pdMS_TO_TICKS(100));
-          }
-          if (!stopAudioFlag) downloadTTSFile(req.nameText, req.namePath);
-          if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            nameExists = SD.exists(req.namePath);
-            xSemaphoreGive(spiMutex);
-          }
-        }
-
-        // Putar jika ada di cache. Jika offline dan belum pernah di-cache, otomatis lewati nama!
         if (nameExists && !stopAudioFlag) {
           playWavFile(req.namePath);
         }
@@ -2247,7 +2226,7 @@ bool startAudioPlaybackSubsystem() {
     BaseType_t taskRes = xTaskCreatePinnedToCore(
       audioTask,
       "audioTask",
-      3072, // Stack 3KB hemat RAM
+      4096, // Stack 4KB aman & cukup (rawBuf & stereoBuf sudah dibuat static)
       NULL,
       1,
       &audioTaskHandle,
@@ -3769,6 +3748,7 @@ void printBootBanner() {
 // --- MAIN ROUTINES ---
 
 void setup() { 
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Nonaktifkan detektor brownout agar lonjakan arus instan SD Card & Amplifier tidak merestart ESP32
   Serial.begin(115200);
   delay(100);
 
@@ -3955,6 +3935,7 @@ void setup() {
   Serial.println("[BOOT] 15. Menyiapkan Micro SD & Sinkronisasi TTS Cache...");
   initAudioStorage();
   syncInitialTTSFiles();
+  startAudioPlaybackSubsystem();
   printMemoryDebug("Setelah Sync Audio TTS");
 
   setStandbyMode(); // Panggil fungsi setup UI dan LED standby
