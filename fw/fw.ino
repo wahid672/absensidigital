@@ -2431,8 +2431,11 @@ void checkServerConnection() {
   // 2. Cek koneksi ke Endpoint Server API
   WiFiClientSecure client;
   client.setInsecure();
+  client.setHandshakeTimeout(10);
+  client.setTimeout(10);
   HTTPClient http;
-  http.begin(client, serverUrl);
+  String testUrl = String(serverUrl) + "?action=get_schedule&device_id=" + String(deviceId);
+  http.begin(client, testUrl);
   http.setTimeout(8000); // 8 detik timeout
   http.addHeader("X-API-KEY", apiKey);
 
