@@ -2318,7 +2318,7 @@ void triggerAttendanceVoice(const String& status, const String& action, const St
       queueAudio("/tts/sukses.wav", "Absensi Berhasil.", nameFile.c_str(), nameText.c_str());
     }
   } else if (status == "already_attended") {
-    queueAudio("/tts/sudah_absen.wav", "Anda sudah absensi masuk.", nameFile.c_str(), nameText.c_str());
+    queueAudio("/tts/sudah_absen.wav", "Anda sudah melakukan absensi.", nameFile.c_str(), nameText.c_str());
   } else if (status == "unmapped" || action == "fingerprint_unmapped" || action == "card_unmapped" ||
              status == "not_found" || action == "card_not_registered") {
     queueAudio("/tts/gagal.wav", "Absensi gagal, kartu atau jari belum terdaftar.", "", "");
@@ -2491,7 +2491,7 @@ void syncInitialTTSFiles() {
   const InitialAudioItem items[] = {
     { "/tts/sukses.wav",                "Absensi Berhasil.",                              "Presensi Masuk Berhasil" },
     { "/tts/keluar.wav",                "Absensi keluar berhasil.",                      "Presensi Keluar Berhasil" },
-    { "/tts/sudah_absen.wav",           "Anda sudah absensi masuk.",                     "Sudah Presensi Masuk" },
+    { "/tts/sudah_absen.wav",           "Anda sudah melakukan absensi",                     "Sudah Melakukan  Presensi" },
     { "/tts/gagal.wav",                 "Absensi gagal, kartu atau jari belum terdaftar.", "Presensi Ditolak/Belum Terdaftar" },
     { "/tts/server_online.wav",         "Server online.",                                 "Status Server Online" },
     { "/tts/instruksi_rfid_finger.wav", "Silahkan Tap Kartu atau Tempelkan jari anda.",   "Instruksi Kartu & Sidik Jari" },
