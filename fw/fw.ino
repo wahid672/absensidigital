@@ -41,10 +41,10 @@
 WebServer webServer(80); 
 
 // Konfigurasi WiFi
-// const char* ssid       = "ridawahid.web.id";
-// const char* password   = "ridawahid123";
-const char* ssid       = "SIAKADPONPES";
-const char* password   = "123456789";
+const char* ssid       = "ridawahid.web.id";
+const char* password   = "ridawahid123";
+// const char* ssid       = "SIAKADPONPES";
+// const char* password   = "123456789";
 
 // Konfigurasi API Endpoint & Perangkat (IoT Server)
 const char* serverUrl            = "https://siakadponpes.presensirfid.web.id/api/attendance/tap"; // Sesuaikan domain/IP server PHP Anda
@@ -76,7 +76,7 @@ bool isAudioEnabled() {
 // KONFIGURASI VOLUME SUARA AUDIO (0% - 100%)
 // Contoh: "80%" atau "80", "100%", "50%", "0%" (mute)
 // =========================================================================
-String volumeAudio = "80%"; // Tingkat kekerasan suara speaker (Default: "80%")
+String volumeAudio = "100%"; // Tingkat kekerasan suara speaker (Default: "80%")
 
 int getAudioVolume() {
   String v = volumeAudio;
