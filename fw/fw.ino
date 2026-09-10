@@ -2206,13 +2206,14 @@ void handleInitialAudioCacheSync() {
   if (bootMsg.length() == 0) bootMsg = "Selamat Datang";
 
   const InitialAudioItem items[] = {
-    { "/tts/sukses.wav",      "Absensi Berhasil." },
-    { "/tts/keluar.wav",      "Absensi keluar berhasil." },
-    { "/tts/sudah_absen.wav", "Anda sudah absensi masuk." },
-    { "/tts/gagal.wav",       "Absensi gagal, kartu atau jari belum terdaftar." },
-    { "/tts/boot.wav",        bootMsg.c_str() }
+    { "/tts/sukses.wav",        "Absensi Berhasil." },
+    { "/tts/keluar.wav",        "Absensi keluar berhasil." },
+    { "/tts/sudah_absen.wav",   "Anda sudah absensi masuk." },
+    { "/tts/gagal.wav",         "Absensi gagal, kartu atau jari belum terdaftar." },
+    { "/tts/server_online.wav", "Server online." },
+    { "/tts/boot.wav",          bootMsg.c_str() }
   };
-  const int totalItems = 5;
+  const int totalItems = 6;
 
   if (initialAudioSyncStep < totalItems) {
     const char* targetPath = items[initialAudioSyncStep].path;
@@ -2324,13 +2325,14 @@ void syncInitialTTSFiles() {
   if (bootMsg.length() == 0) bootMsg = "Selamat Datang";
 
   const InitialAudioItem items[] = {
-    { "/tts/sukses.wav",      "Absensi Berhasil.",                              "Presensi Masuk Berhasil" },
-    { "/tts/keluar.wav",      "Absensi keluar berhasil.",                      "Presensi Keluar Berhasil" },
-    { "/tts/sudah_absen.wav", "Anda sudah absensi masuk.",                     "Sudah Presensi Masuk" },
-    { "/tts/gagal.wav",       "Absensi gagal, kartu atau jari belum terdaftar.", "Presensi Ditolak/Belum Terdaftar" },
-    { "/tts/boot.wav",        bootMsg.c_str(),                                 "Ucapan Selamat Datang Booting" }
+    { "/tts/sukses.wav",        "Absensi Berhasil.",                              "Presensi Masuk Berhasil" },
+    { "/tts/keluar.wav",        "Absensi keluar berhasil.",                      "Presensi Keluar Berhasil" },
+    { "/tts/sudah_absen.wav",   "Anda sudah absensi masuk.",                     "Sudah Presensi Masuk" },
+    { "/tts/gagal.wav",         "Absensi gagal, kartu atau jari belum terdaftar.", "Presensi Ditolak/Belum Terdaftar" },
+    { "/tts/server_online.wav", "Server online.",                                 "Status Server Online" },
+    { "/tts/boot.wav",          bootMsg.c_str(),                                 "Ucapan Selamat Datang Booting" }
   };
-  const int totalItems = 5;
+  const int totalItems = 6;
 
   for (int i = 0; i < totalItems; i++) {
     const char* targetPath = items[i].path;
@@ -2508,6 +2510,22 @@ void checkServerConnection() {
     
     // Tampilkan hanya baris pertama 'Server ONLINE!' agar bersih dan tidak error
     showScannedMessage("Server ONLINE!", "");
+    http.end();
+
+    // Putar audio konfirmasi "Server online" jika fitur audio aktif
+    if (isAudioEnabled()) {
+      bool fileReady = false;
+      if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        fileReady = SD.exists("/tts/server_online.wav");
+        xSemaphoreGive(spiMutex);
+      }
+      if (!fileReady) {
+        Serial.println("[TES KONEKSI] Mengunduh cache audio /tts/server_online.wav...");
+        downloadTTSFile("Server online.", "/tts/server_online.wav");
+      }
+      queueAudio("/tts/server_online.wav", "Server online.", "", "");
+    }
+    return;
   } else if (httpCode > 0) {
     Serial.printf("[TES KONEKSI] Respon Server Error (HTTP %d)\n", httpCode);
     setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 3);
