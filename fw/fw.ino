@@ -2209,6 +2209,41 @@ void handleInitialAudioCacheSync() {
   }
 }
 
+bool isAudioSubsystemReady = false;
+
+// Inisialisasi modul hardware audio (Micro SD HSPI + I2S DAC MAX98357A + FreeRTOS Audio Task)
+// Ditunda hingga seluruh sinkronisasi server utama selesai agar WiFi & HTTPS berjalan secepat mode normal
+bool initAudioSubsystem() {
+  if (!isAudioEnabled()) return false;
+  if (isAudioSubsystemReady) return true;
+
+  Serial.println("\n[AUDIO SYSTEM] Menyiapkan modul hardware audio (Micro SD & I2S)...");
+  isSdCardAvailable = initSDCard();
+  Serial.printf("               -> Micro SD Card (HSPI): %s\n", isSdCardAvailable ? "SIAP" : "TIDAK TERSEDIA");
+  
+  isI2sAvailable = initI2S();
+  Serial.printf("               -> Audio DAC I2S (MAX98357A): %s\n", isI2sAvailable ? "SIAP" : "GAGAL");
+
+  if (audioQueue == NULL) {
+    audioQueue = xQueueCreate(4, sizeof(AudioRequest));
+  }
+  if (audioTaskHandle == NULL && audioQueue != NULL) {
+    BaseType_t taskRes = xTaskCreatePinnedToCore(
+      audioTask,
+      "audioTask",
+      4096, // Optimasi stack 4KB hemat RAM
+      NULL,
+      1,
+      &audioTaskHandle,
+      1 // Dijalankan di Core 1 agar Core 0 100% didedikasikan untuk WiFi & TCP/IP stack
+    );
+    Serial.printf("               -> Audio Task FreeRTOS: %s (Core 1)\n", (taskRes == pdPASS) ? "BERJALAN" : "GAGAL DIBUAT");
+  }
+
+  isAudioSubsystemReady = (isSdCardAvailable && isI2sAvailable);
+  return isAudioSubsystemReady;
+}
+
 // =========================================================================
 // SINKRONISASI BATCH CACHE AUDIO TTS KE MICRO SD
 // Dieksekusi persis setelah [MEMBERS CACHE] selesai saat booting
