@@ -831,8 +831,42 @@ void fetchMembersLocalCache() {
     }
 
     if (f) {
-      // Unduh stream langsung dari socket HTTP ke storage (0 bytes String RAM yang terbuang)
-      int written = http.writeToStream(&f);
+      // Unduh stream langsung dari socket HTTP ke storage menggunakan buffer stack 512B
+      // (Bebas dari alokasi heap malloc(4096) internal HTTPClient yang rentan HTTPC_ERROR_TOO_LESS_RAM)
+      auto* stream = http.getStreamPtr();
+      int written = 0;
+      int totalSize = http.getSize();
+      unsigned long lastReadTime = millis();
+
+      if (stream != nullptr) {
+        uint8_t buf[512];
+        while (http.connected() && (totalSize > 0 ? (written < totalSize) : true)) {
+          size_t avail = stream->available();
+          if (avail > 0) {
+            int toRead = (avail > sizeof(buf)) ? sizeof(buf) : avail;
+            if (totalSize > 0 && (written + toRead) > totalSize) {
+              toRead = totalSize - written;
+            }
+            int bytesRead = stream->readBytes(buf, toRead);
+            if (bytesRead > 0) {
+              int w = f.write(buf, bytesRead);
+              written += w;
+              lastReadTime = millis();
+              if (w != bytesRead) {
+                Serial.printf("[MEMBERS CACHE] Gagal menulis ke storage: wrote %d of %d\n", w, bytesRead);
+                break;
+              }
+            }
+          } else {
+            if (totalSize > 0 && written >= totalSize) break;
+            if (millis() - lastReadTime > 6000) {
+              Serial.println("[MEMBERS CACHE] Timeout: data stream terhenti.");
+              break;
+            }
+            delay(2);
+          }
+        }
+      }
       f.close();
 
       if (written > 50) {
@@ -2255,17 +2289,16 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   Serial.printf("[TTS] Respon 200 OK diterima dalam %lu ms (Ukuran: %d bytes)\n", elapsed, totalLen);
 
   String tempPath = String(filePath) + ".tmp";
-  File f;
-  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-    if (SD.exists(tempPath)) SD.remove(tempPath);
-    f = SD.open(tempPath, FILE_WRITE);
-    xSemaphoreGive(spiMutex);
-  } else {
-    if (SD.exists(tempPath)) SD.remove(tempPath);
-    f = SD.open(tempPath, FILE_WRITE);
-  }
+  int downloaded = 0;
+  bool isComplete = false;
+
+  if (spiMutex != NULL) xSemaphoreTake(spiMutex, portMAX_DELAY);
+
+  if (SD.exists(tempPath)) SD.remove(tempPath);
+  File f = SD.open(tempPath, FILE_WRITE);
 
   if (!f) {
+    if (spiMutex != NULL) xSemaphoreGive(spiMutex);
     Serial.println("[TTS] Gagal membuat file temp di Micro SD.");
     httpAudio.end();
     clientAudio.stop();
@@ -2273,13 +2306,46 @@ bool downloadTTSFile(const char* text, const char* filePath) {
     return false;
   }
 
-  // Unduh stream HTTP langsung ke file Micro SD menggunakan writeToStream bawaan HTTPClient
-  // (Metode resmi ESP32 yang menangani block read, chunk, dan TLS socket tanpa stall/timeout)
-  if (spiMutex != NULL) xSemaphoreTake(spiMutex, portMAX_DELAY);
-  int downloaded = httpAudio.writeToStream(&f);
+  // Baca stream langsung ke file Micro SD menggunakan buffer stack 512B
+  // (Bebas dari alokasi heap malloc(4096) yang memicu HTTPC_ERROR_TOO_LESS_RAM / -8)
+  auto* stream = httpAudio.getStreamPtr();
+  if (stream != nullptr) {
+    uint8_t buf[512];
+    unsigned long lastReadTime = millis();
+
+    while (httpAudio.connected() && (totalLen > 0 ? (downloaded < totalLen) : true)) {
+      size_t avail = stream->available();
+      if (avail > 0) {
+        int toRead = (avail > sizeof(buf)) ? sizeof(buf) : avail;
+        if (totalLen > 0 && (downloaded + toRead) > totalLen) {
+          toRead = totalLen - downloaded;
+        }
+        int bytesRead = stream->readBytes(buf, toRead);
+        if (bytesRead > 0) {
+          int bytesWritten = f.write(buf, bytesRead);
+          downloaded += bytesWritten;
+          lastReadTime = millis();
+          if (bytesWritten != bytesRead) {
+            Serial.printf("[TTS] Gagal menulis ke Micro SD: wrote %d of %d\n", bytesWritten, bytesRead);
+            break;
+          }
+        }
+      } else {
+        if (totalLen > 0 && downloaded >= totalLen) {
+          break;
+        }
+        if (millis() - lastReadTime > 6000) {
+          Serial.println("[TTS] Read timeout: stream data terhenti.");
+          break;
+        }
+        delay(2);
+      }
+      if (stopAudioFlag) break;
+    }
+  }
   f.close();
 
-  bool isComplete = (totalLen > 0) ? (downloaded >= totalLen) : (downloaded >= 44);
+  isComplete = (totalLen > 0) ? (downloaded >= totalLen) : (downloaded >= 44);
   if (isComplete && !stopAudioFlag) {
     if (SD.exists(filePath)) SD.remove(filePath);
     SD.rename(tempPath, filePath);
@@ -2762,6 +2828,8 @@ void syncMemberTTSFiles() {
     int totalMissing = missingMembers.size();
     if (totalMissing > 0) {
       Serial.printf("[TTS MEMBER SYNC] Terdeteksi %d suara member baru yang perlu diunduh.\n", totalMissing);
+      int consecutiveFails = 0;
+
       for (int i = 0; i < totalMissing; i++) {
         String mNama = missingMembers[i];
         String safe = sanitizeFilename(mNama);
@@ -2777,10 +2845,22 @@ void syncMemberTTSFiles() {
         if (!ok) {
           // Jika gagal, beri jeda dan coba unduh sekali lagi (Retry 1x, server disk cache sudah siap)
           Serial.printf("[TTS MEMBER SYNC] Percobaan 1 gagal. Mengulang unduhan untuk: \"%s\"...\n", mNama.c_str());
-          delay(400);
-          downloadTTSFile((mNama + ".").c_str(), targetPath.c_str());
+          delay(300);
+          ok = downloadTTSFile((mNama + ".").c_str(), targetPath.c_str());
         }
-        delay(300); // Jeda aman antar unduhan agar koneksi TLS & socket lwIP bersih sempurna
+
+        if (ok) {
+          consecutiveFails = 0;
+        } else {
+          consecutiveFails++;
+          if (consecutiveFails >= 3) {
+            Serial.println("\n[TTS MEMBER SYNC] [CIRCUIT BREAKER] Terdeteksi 3 kegagalan unduh berturut-turut.");
+            Serial.printf("[TTS MEMBER SYNC] Sinkronisasi audio batch dihentikan sementara agar mesin segera aktif (Standby).\n");
+            Serial.printf("[TTS MEMBER SYNC] Sisa %d suara nama akan diunduh otomatis saat member melakukan presensi.\n\n", totalMissing - (i + 1));
+            break;
+          }
+        }
+        delay(100); // Jeda aman antar unduhan agar koneksi TLS & socket lwIP bersih sempurna
       }
     } else if (totalMembers > 0) {
       Serial.printf("[TTS MEMBER SYNC] Seluruh suara %d anggota sudah siap di Micro SD!\n", totalMembers);
