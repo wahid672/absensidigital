@@ -41,10 +41,10 @@
 WebServer webServer(80); 
 
 // Konfigurasi WiFi
-const char* ssid       = "ridawahid.web.id";
-const char* password   = "ridawahid123";
-// const char* ssid       = "SIAKADPONPES";
-// const char* password   = "123456789";
+// const char* ssid       = "ridawahid.web.id";
+// const char* password   = "ridawahid123";
+const char* ssid       = "SIAKADPONPES";
+const char* password   = "123456789";
 
 // Konfigurasi API Endpoint & Perangkat (IoT Server)
 const char* serverUrl            = "https://siakadponpes.presensirfid.web.id/api/attendance/tap"; // Sesuaikan domain/IP server PHP Anda
@@ -103,33 +103,7 @@ int getAutoRebootMinute() {
   return 0;
 }
 
-RTC_DATA_ATTR static int lastAutoRebootDay = -1;
 
-void checkAutoReboot(struct tm* t) {
-  if (!isAutoRebootEnabled()) return;
-  if (t == NULL || t->tm_year < 120) return; // Waktu belum sinkron via NTP / RTC
-  if (currentMode != STANDBY) return;        // Jangan reboot saat transaksi atau rekam sidik jari
-  if (millis() < 120000) return;             // Proteksi loop: aktif minimal 2 menit setelah boot
-
-  int targetH = getAutoRebootHour();
-  int targetM = getAutoRebootMinute();
-
-  if (t->tm_hour == targetH && t->tm_min == targetM) {
-    if (lastAutoRebootDay != t->tm_yday) {
-      lastAutoRebootDay = t->tm_yday;
-      Serial.printf("\n[AUTO REBOOT] Waktu jadwal restart harian (%02d:%02d WIB) tercapai. Merestart ESP32...\n", targetH, targetM);
-      
-      stopAudioPlayback();
-      lcd.clear();
-      printCentered("Auto Reboot...", 0);
-      printCentered("Restarting...", 1);
-      digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
-      delay(850);
-
-      ESP.restart();
-    }
-  }
-}
 
 // =========================================================================
 // KONFIGURASI FITUR JADWAL SHOLAT
@@ -261,6 +235,7 @@ bool initAudioSubsystem();
 void syncInitialTTSFiles();
 void printMemoryDebug(const char* stepName);
 void printBootBanner();
+void checkAutoReboot(struct tm* t);
 String urlEncode(const String& str);
 String sanitizeFilename(String raw);
 
@@ -4330,6 +4305,37 @@ void handleStandbyUI() {
     } else if (altState == 3 && ENABLE_JADWAL_SHOLAT) {
       if(timeValid) printCentered(getCountdownString(&timeinfo), 1);
       else printCentered("Tunggu Waktu", 1);
+    }
+  }
+}
+
+// =========================================================================
+// EKSEKUSI AUTO REBOOT HARIAN TERJADWAL
+// =========================================================================
+RTC_DATA_ATTR static int lastAutoRebootDay = -1;
+
+void checkAutoReboot(struct tm* t) {
+  if (!isAutoRebootEnabled()) return;
+  if (t == NULL || t->tm_year < 120) return; // Waktu belum sinkron via NTP / RTC
+  if (currentMode != STANDBY) return;        // Jangan reboot saat transaksi atau rekam sidik jari
+  if (millis() < 120000) return;             // Proteksi loop: aktif minimal 2 menit setelah boot
+
+  int targetH = getAutoRebootHour();
+  int targetM = getAutoRebootMinute();
+
+  if (t->tm_hour == targetH && t->tm_min == targetM) {
+    if (lastAutoRebootDay != t->tm_yday) {
+      lastAutoRebootDay = t->tm_yday;
+      Serial.printf("\n[AUTO REBOOT] Waktu jadwal restart harian (%02d:%02d WIB) tercapai. Merestart ESP32...\n", targetH, targetM);
+      
+      stopAudioPlayback();
+      lcd.clear();
+      printCentered("Auto Reboot...", 0);
+      printCentered("Restarting...", 1);
+      digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
+      delay(850);
+
+      ESP.restart();
     }
   }
 }
