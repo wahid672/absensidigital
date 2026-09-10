@@ -1804,7 +1804,7 @@ String sanitizeFilename(String raw) {
   for (int i = 0; i < raw.length(); i++) {
     char c = raw[i];
     if (isalnum(c)) {
-      out += c;
+      out += (char)tolower(c);
     } else if (c == ' ' || c == '_' || c == '-') {
       if (out.length() > 0 && out[out.length() - 1] != '_') {
         out += '_';
@@ -1912,8 +1912,8 @@ bool initSDCard() {
       if (!SD.exists("/tts")) {
         SD.mkdir("/tts");
       }
-      if (!SD.exists("/tts/names")) {
-        SD.mkdir("/tts/names");
+      if (!SD.exists("/tts/members")) {
+        SD.mkdir("/tts/members");
       }
     }
   } else {
@@ -2289,12 +2289,24 @@ void audioTask(void *pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(120));
       }
 
-      // 2. Putar bagian nama anggota jika sudah tersedia di cache Micro SD
+      // 2. Putar bagian nama anggota (Unduh otomatis ke Micro SD jika belum ada)
       if (!stopAudioFlag && strlen(req.namePath) > 0) {
         bool nameExists = false;
         if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
           nameExists = SD.exists(req.namePath);
           xSemaphoreGive(spiMutex);
+        }
+
+        // Jika file nama member belum ada di Micro SD, unduh langsung via server TTS
+        if (!nameExists && !stopAudioFlag && isWifiConnected && WiFi.status() == WL_CONNECTED && strlen(req.nameText) > 0) {
+          Serial.printf("[AUDIO MEMBER] Mengunduh suara nama member: \"%s\" -> %s ...\n", req.nameText, req.namePath);
+          bool dlOk = downloadTTSFile(req.nameText, req.namePath);
+          if (dlOk) {
+            if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+              nameExists = SD.exists(req.namePath);
+              xSemaphoreGive(spiMutex);
+            }
+          }
         }
 
         if (nameExists && !stopAudioFlag) {
@@ -2308,7 +2320,7 @@ void audioTask(void *pvParameters) {
 void triggerAttendanceVoice(const String& status, const String& action, const String& nama) {
   if (!isAudioEnabled()) return;
   String safeName = sanitizeFilename(nama);
-  String nameFile = (nama.length() > 0) ? ("/tts/names/" + safeName + ".wav") : "";
+  String nameFile = (nama.length() > 0) ? ("/tts/members/" + safeName + ".wav") : "";
   String nameText = (nama.length() > 0) ? (nama + ".") : "";
 
   if (status == "success") {
@@ -3996,7 +4008,21 @@ void checkSerialCommand() {
               if (sub && sub.isDirectory()) {
                 File sf = sub.openNextFile();
                 while (sf) {
-                  Serial.printf("        -> /%s/%-24s (%u bytes)\n", f.name(), sf.name(), (unsigned int)sf.size());
+                  if (sf.isDirectory()) {
+                    Serial.printf("        [DIR]  /%s/%s\n", f.name(), sf.name());
+                    File sub2 = SD.open(String("/") + f.name() + "/" + sf.name());
+                    if (sub2 && sub2.isDirectory()) {
+                      File sf2 = sub2.openNextFile();
+                      while (sf2) {
+                        Serial.printf("               -> /%s/%s/%-20s (%u bytes)\n", f.name(), sf.name(), sf2.name(), (unsigned int)sf2.size());
+                        sf2.close();
+                        sf2 = sub2.openNextFile();
+                      }
+                      sub2.close();
+                    }
+                  } else {
+                    Serial.printf("        -> /%s/%-24s (%u bytes)\n", f.name(), sf.name(), (unsigned int)sf.size());
+                  }
                   sf.close();
                   sf = sub.openNextFile();
                 }
