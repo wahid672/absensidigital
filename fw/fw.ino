@@ -249,6 +249,8 @@ bool initAudioStorage();
 bool startAudioPlaybackSubsystem();
 bool initAudioSubsystem();
 void syncInitialTTSFiles();
+void syncMemberTTSFiles();
+void queuePendingMemberAudio(const String& nama);
 void printMemoryDebug(const char* stepName);
 void printBootBanner();
 void checkAutoReboot(struct tm* t);
@@ -2289,24 +2291,12 @@ void audioTask(void *pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(120));
       }
 
-      // 2. Putar bagian nama anggota (Unduh otomatis ke Micro SD jika belum ada)
+      // 2. Putar bagian nama anggota jika sudah tersedia di cache Micro SD
       if (!stopAudioFlag && strlen(req.namePath) > 0) {
         bool nameExists = false;
         if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
           nameExists = SD.exists(req.namePath);
           xSemaphoreGive(spiMutex);
-        }
-
-        // Jika file nama member belum ada di Micro SD, unduh langsung via server TTS
-        if (!nameExists && !stopAudioFlag && isWifiConnected && WiFi.status() == WL_CONNECTED && strlen(req.nameText) > 0) {
-          Serial.printf("[AUDIO MEMBER] Mengunduh suara nama member: \"%s\" -> %s ...\n", req.nameText, req.namePath);
-          bool dlOk = downloadTTSFile(req.nameText, req.namePath);
-          if (dlOk) {
-            if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-              nameExists = SD.exists(req.namePath);
-              xSemaphoreGive(spiMutex);
-            }
-          }
         }
 
         if (nameExists && !stopAudioFlag) {
@@ -2317,11 +2307,54 @@ void audioTask(void *pvParameters) {
   }
 }
 
+void queuePendingMemberAudio(const String& nama) {
+  if (nama.length() == 0 || !isSdCardAvailable) return;
+  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (!SD.exists("/tts")) SD.mkdir("/tts");
+    bool alreadyQueued = false;
+    if (SD.exists("/tts/pending_members.txt")) {
+      File f = SD.open("/tts/pending_members.txt", FILE_READ);
+      if (f) {
+        while (f.available()) {
+          String line = f.readStringUntil('\n');
+          line.trim();
+          if (line.equalsIgnoreCase(nama)) {
+            alreadyQueued = true;
+            break;
+          }
+        }
+        f.close();
+      }
+    }
+    if (!alreadyQueued) {
+      File f = SD.open("/tts/pending_members.txt", FILE_APPEND);
+      if (f) {
+        f.println(nama);
+        f.close();
+        Serial.printf("[AUDIO QUEUE] Nama member '%s' dimasukkan ke antrean sync audio.\n", nama.c_str());
+      }
+    }
+    xSemaphoreGive(spiMutex);
+  }
+}
+
 void triggerAttendanceVoice(const String& status, const String& action, const String& nama) {
   if (!isAudioEnabled()) return;
   String safeName = sanitizeFilename(nama);
   String nameFile = (nama.length() > 0) ? ("/tts/members/" + safeName + ".wav") : "";
   String nameText = (nama.length() > 0) ? (nama + ".") : "";
+
+  // Jika nama member belum ada di Micro SD, masukkan ke antrean sync audio agar diunduh saat booting/idle
+  if (nama.length() > 0 && isSdCardAvailable) {
+    bool fileExists = false;
+    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+      fileExists = SD.exists(nameFile.c_str());
+      xSemaphoreGive(spiMutex);
+    }
+    if (!fileExists) {
+      queuePendingMemberAudio(nama);
+    }
+  }
 
   if (status == "success") {
     if (action == "check_out") {
@@ -2361,6 +2394,44 @@ void handleInitialAudioCacheSync() {
   // Jeda minimal 1 detik antar unduhan agar tidak membebani heap / jaringan
   if (millis() - lastInitialSyncAttempt < 1000) return;
   lastInitialSyncAttempt = millis();
+
+  // Proses unduhan antrean nama member di background saat standby jika ada
+  if (isSdCardAvailable && WiFi.status() == WL_CONNECTED && !isServerHttpActive && !isDownloadingTTS) {
+    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+      bool hasPending = SD.exists("/tts/pending_members.txt");
+      xSemaphoreGive(spiMutex);
+      if (hasPending) {
+        String nextName = "";
+        String remaining = "";
+        if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+          File pf = SD.open("/tts/pending_members.txt", FILE_READ);
+          if (pf) {
+            if (pf.available()) {
+              nextName = pf.readStringUntil('\n');
+              nextName.trim();
+            }
+            while (pf.available()) {
+              remaining += pf.readStringUntil('\n') + "\n";
+            }
+            pf.close();
+          }
+          SD.remove("/tts/pending_members.txt");
+          if (remaining.length() > 0) {
+            File wf = SD.open("/tts/pending_members.txt", FILE_WRITE);
+            if (wf) { wf.print(remaining); wf.close(); }
+          }
+          xSemaphoreGive(spiMutex);
+        }
+        if (nextName.length() > 0) {
+          String safe = sanitizeFilename(nextName);
+          String path = "/tts/members/" + safe + ".wav";
+          Serial.printf("[STANDBY AUDIO SYNC] Mengunduh antrean suara member: \"%s\" -> %s\n", nextName.c_str(), path.c_str());
+          downloadTTSFile((nextName + ".").c_str(), path.c_str());
+          return;
+        }
+      }
+    }
+  }
 
   struct InitialAudioItem {
     const char* path;
@@ -2464,6 +2535,112 @@ bool initAudioSubsystem() {
 // SINKRONISASI BATCH CACHE AUDIO TTS KE MICRO SD
 // Dieksekusi persis setelah [MEMBERS CACHE] selesai saat booting
 // =========================================================================
+void syncMemberTTSFiles() {
+  if (!isAudioEnabled() || !isI2sAvailable || !isSdCardAvailable) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  Serial.println("\n--------------------------------------------------------");
+  Serial.println("  [TTS MEMBER SYNC] MEMERIKSA CACHE SUARA NAMA MEMBER  ");
+  Serial.println("--------------------------------------------------------");
+
+  // 1. Proses antrean nama dari tap presensi (/tts/pending_members.txt)
+  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(300)) == pdTRUE) {
+    if (SD.exists("/tts/pending_members.txt")) {
+      File pf = SD.open("/tts/pending_members.txt", FILE_READ);
+      xSemaphoreGive(spiMutex);
+
+      if (pf) {
+        while (pf.available()) {
+          String pName = pf.readStringUntil('\n');
+          pName.trim();
+          if (pName.length() > 0) {
+            String pSafe = sanitizeFilename(pName);
+            String pPath = "/tts/members/" + pSafe + ".wav";
+            bool pExists = false;
+            if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+              pExists = SD.exists(pPath.c_str());
+              xSemaphoreGive(spiMutex);
+            }
+            if (!pExists) {
+              Serial.printf("[TTS MEMBER SYNC] Mengunduh antrean nama: \"%s\" -> %s\n", pName.c_str(), pPath.c_str());
+              lcd.clear();
+              printCentered("Sync Audio", 0);
+              printCentered(pName.substring(0, 16), 1);
+              downloadTTSFile((pName + ".").c_str(), pPath.c_str());
+              delay(100);
+            }
+          }
+        }
+        pf.close();
+        if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(300)) == pdTRUE) {
+          SD.remove("/tts/pending_members.txt");
+          xSemaphoreGive(spiMutex);
+        }
+      }
+    } else {
+      xSemaphoreGive(spiMutex);
+    }
+  }
+
+  // 2. Periksa cache seluruh anggota dari /members_cache.json
+  bool cacheExists = false;
+  File mf;
+  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(300)) == pdTRUE) {
+    if (SD.exists("/members_cache.json")) {
+      mf = SD.open("/members_cache.json", FILE_READ);
+      cacheExists = (mf && mf.size() > 0);
+    }
+    xSemaphoreGive(spiMutex);
+  }
+
+  if (cacheExists && mf) {
+    size_t fSize = mf.size();
+    size_t cap = fSize + 1024;
+    if (cap < 2048) cap = 2048;
+    if (cap > 8192) cap = 8192;
+
+    DynamicJsonDocument mDoc(cap);
+    DeserializationError err = deserializeJson(mDoc, mf);
+    mf.close();
+
+    if (!err && mDoc.containsKey("data")) {
+      JsonArray arr = mDoc["data"].as<JsonArray>();
+      int totalMembers = arr.size();
+      Serial.printf("[TTS MEMBER SYNC] Memeriksa %d anggota dari database...\n", totalMembers);
+
+      for (int i = 0; i < totalMembers; i++) {
+        String mNama = arr[i]["nama"].as<String>();
+        mNama.trim();
+        if (mNama.length() == 0) continue;
+
+        String safe = sanitizeFilename(mNama);
+        String targetPath = "/tts/members/" + safe + ".wav";
+
+        bool exists = false;
+        if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+          exists = SD.exists(targetPath.c_str());
+          xSemaphoreGive(spiMutex);
+        }
+
+        if (!exists) {
+          int mPercent = ((i + 1) * 100) / totalMembers;
+          lcd.clear();
+          printCentered("Sync Audio", 0);
+          printCentered(String(mPercent) + "%", 1);
+
+          Serial.printf("[TTS MEMBER SYNC] [%d/%d] Mengunduh: \"%s\" -> %s\n", i + 1, totalMembers, mNama.c_str(), targetPath.c_str());
+          downloadTTSFile((mNama + ".").c_str(), targetPath.c_str());
+          delay(120);
+        } else {
+          Serial.printf("[TTS MEMBER SYNC] [%d/%d] Sudah siap: %s\n", i + 1, totalMembers, targetPath.c_str());
+        }
+      }
+    }
+  }
+
+  Serial.println("--------------------------------------------------------\n");
+}
+
 void syncInitialTTSFiles() {
   if (!isAudioEnabled() || !isI2sAvailable) {
     Serial.println("\n[TTS BOOT SYNC] Modul Audio MAX98357A tidak aktif / tidak terdeteksi. Pengecekan TTS & Layar dilewati.");
@@ -2573,11 +2750,17 @@ void syncInitialTTSFiles() {
   }
 
   hasInitialAudioSynced = true;
+
+  // =========================================================================
+  // SINKRONISASI SUARA NAMA SELURUH MEMBER DARI CACHE ANGGOTA & ANTREAN
+  // =========================================================================
+  syncMemberTTSFiles();
+
   printCentered("Sync Audio", 0);
   printCentered("100%", 1);
   delay(300);
 
-  Serial.println("[TTS BOOT SYNC] >>> Selesai sinkronisasi audio dasar ke Micro SD! <<<");
+  Serial.println("[TTS BOOT SYNC] >>> Selesai sinkronisasi audio dasar & member ke Micro SD! <<<");
   Serial.println("========================================================\n");
 
   // Putar ucapan selamat datang jika file boot.wav sudah siap di SD Card
