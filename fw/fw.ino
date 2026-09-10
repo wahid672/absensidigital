@@ -1243,6 +1243,8 @@ void flushOfflineLogs() {
 
 void kirimPresensiFingerprint(uint8_t idFinger) {
   stopAudioPlayback();
+  CachedMember localM;
+  String namaPreview = "Slot #" + String(idFinger);
 
   // 1. TAMPILKAN FEEDBACK INSTAN: Beep singkat + LED Ungu + Layar "Sedang Proses..."
   digitalWrite(BUZZ, HIGH); delay(60); digitalWrite(BUZZ, LOW);
@@ -1252,9 +1254,9 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
   // 2. JIKA OFFLINE: Cari di cache lokal & simpan ke SPIFFS
   if (WiFi.status() != WL_CONNECTED) {
     Serial.printf("[OFFLINE] WiFi offline. Data Fingerprint ID %d disimpan ke SPIFFS.\n", idFinger);
+    localM = findMemberOffline((int)idFinger, "");
+    if (localM.found) namaPreview = localM.nama;
     OfflineAttendanceResult eval = evaluateAttendanceOffline();
-    CachedMember localM = findMemberOffline((int)idFinger, "");
-    String namaPreview = localM.found ? localM.nama : ("Slot #" + String(idFinger));
     saveOfflineLog((int)idFinger, "", eval.statusMasuk, eval.statusKeluar);
     if (eval.isLate) {
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
@@ -1379,6 +1381,8 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
                   ESP.getFreeHeap(),
                   ESP.getMaxAllocHeap());
     Serial.println("       Menyimpan ke offline buffer...");
+    localM = findMemberOffline((int)idFinger, "");
+    if (localM.found) namaPreview = localM.nama;
     OfflineAttendanceResult eval = evaluateAttendanceOffline();
     saveOfflineLog((int)idFinger, "", eval.statusMasuk, eval.statusKeluar);
     if (eval.isLate) {
@@ -1407,6 +1411,8 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
 
 void kirimPresensiRFID(String tagId) {
   stopAudioPlayback();
+  CachedMember localM;
+  String namaPreview = "RFID: " + tagId;
 
   // 1. TAMPILKAN FEEDBACK INSTAN: Beep singkat + LED Ungu + Layar "Sedang Proses..."
   digitalWrite(BUZZ, HIGH); delay(60); digitalWrite(BUZZ, LOW);
@@ -1416,9 +1422,9 @@ void kirimPresensiRFID(String tagId) {
   // 2. JIKA OFFLINE: Cari di cache lokal & simpan ke SPIFFS
   if (WiFi.status() != WL_CONNECTED) {
     Serial.printf("[OFFLINE] WiFi offline. Data RFID %s disimpan ke SPIFFS.\n", tagId.c_str());
+    localM = findMemberOffline(0, tagId);
+    if (localM.found) namaPreview = localM.nama;
     OfflineAttendanceResult eval = evaluateAttendanceOffline();
-    CachedMember localM = findMemberOffline(0, tagId);
-    String namaPreview = localM.found ? localM.nama : ("RFID: " + tagId);
     saveOfflineLog(0, tagId, eval.statusMasuk, eval.statusKeluar);
     if (eval.isLate) {
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
@@ -1548,6 +1554,8 @@ void kirimPresensiRFID(String tagId) {
                   ESP.getFreeHeap(),
                   ESP.getMaxAllocHeap());
     Serial.println("       Menyimpan ke offline buffer...");
+    localM = findMemberOffline(0, tagId);
+    if (localM.found) namaPreview = localM.nama;
     OfflineAttendanceResult eval = evaluateAttendanceOffline();
     saveOfflineLog(0, tagId, eval.statusMasuk, eval.statusKeluar);
     if (eval.isLate) {
