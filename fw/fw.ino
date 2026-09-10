@@ -2057,13 +2057,14 @@ bool downloadTTSFile(const char* text, const char* filePath) {
 
   if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
     f.close();
-    if (downloaded >= 44 && !stopAudioFlag) {
+    bool isComplete = (totalLen > 0) ? (downloaded >= totalLen) : (downloaded >= 44);
+    if (isComplete && !stopAudioFlag) {
       if (SD.exists(filePath)) SD.remove(filePath);
       SD.rename(tempPath, filePath);
       Serial.printf("[TTS] Berhasil di-cache: %s (%d bytes)\n", filePath, downloaded);
     } else {
       if (SD.exists(tempPath)) SD.remove(tempPath);
-      Serial.println("[TTS] Download tidak lengkap atau dibatalkan.");
+      Serial.printf("[TTS] Download tidak lengkap (%d dari %d bytes) atau dibatalkan.\n", downloaded, totalLen);
     }
     xSemaphoreGive(spiMutex);
   }
@@ -2343,10 +2344,20 @@ void syncInitialTTSFiles() {
         File f = SD.open(targetPath, FILE_READ);
         if (f) {
           fileSize = f.size();
-          f.close();
           if (fileSize >= 44) {
-            fileValid = true;
+            uint8_t hdr[12];
+            if (f.read(hdr, 12) == 12 && memcmp(hdr, "RIFF", 4) == 0 && memcmp(hdr + 8, "WAVE", 4) == 0) {
+              uint32_t riffSize = hdr[4] | (hdr[5] << 8) | (hdr[6] << 16) | (hdr[7] << 24);
+              uint32_t expectedSize = riffSize + 8;
+              if (fileSize >= expectedSize) {
+                fileValid = true;
+              } else {
+                Serial.printf("[TTS BOOT SYNC] File %s terpotong/korup (%u B / seharusnya %u B). Mengunduh ulang...\n", 
+                              targetPath, (unsigned int)fileSize, (unsigned int)expectedSize);
+              }
+            }
           }
+          f.close();
         }
       }
       xSemaphoreGive(spiMutex);
@@ -2356,6 +2367,10 @@ void syncInitialTTSFiles() {
       Serial.printf("[TTS BOOT SYNC] [%d/%d] [SUDAH ADA] %-20s (%5u B) | Ket: %s\n", 
         i + 1, totalItems, targetPath, (unsigned int)fileSize, targetDesc);
     } else {
+      if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        if (SD.exists(targetPath)) SD.remove(targetPath);
+        xSemaphoreGive(spiMutex);
+      }
       Serial.printf("[TTS BOOT SYNC] [%d/%d] [MENGUNDUH] %-20s | Teks: \"%s\"...\n", 
         i + 1, totalItems, targetPath, targetText);
       
