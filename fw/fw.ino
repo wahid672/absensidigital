@@ -397,7 +397,8 @@ void syncRTCFromNTP() {
   if (detectedRTC == RTC_TYPE_NONE) return;
 
   struct tm timeinfo;
-  if (getLocalTime(&timeinfo) && timeinfo.tm_year > 120) {
+  // Batasi timeout 500ms agar proses booting tidak terhenti 5 detik jika server NTP lambat
+  if (getLocalTime(&timeinfo, 500) && timeinfo.tm_year > 120) {
     int y = timeinfo.tm_year + 1900;
     int m = timeinfo.tm_mon + 1;
     int d = timeinfo.tm_mday;
@@ -408,6 +409,8 @@ void syncRTCFromNTP() {
       Serial.printf("[NTP -> RTC] Jam modul %s berhasil disinkronkan ke waktu NTP: %04d-%02d-%02d %02d:%02d:%02d\n",
                     rtcName.c_str(), y, m, d, h, mi, s);
     }
+  } else {
+    Serial.println("[NTP] Menunggu NTP di latar belakang (jam akan diselaraskan langsung via server HTTP).");
   }
 }
 
@@ -455,15 +458,22 @@ void fetchScheduleFromServer() {
 
   Serial.println("\n[SCHEDULE] Mengunduh konfigurasi jadwal & waktu dari server...");
   String url = String(serverUrl) + "?action=get_schedule&device_id=" + String(deviceId);
+  Serial.printf("           Target: %s\n", url.c_str());
 
+  unsigned long tStart = millis();
   WiFiClientSecure client;
   client.setInsecure();
+  client.setTimeout(5); // 5 detik socket connect & TLS handshake timeout (anti-hang)
+
   HTTPClient http;
   http.begin(client, url);
-  http.setTimeout(8000);
+  http.setTimeout(5000); // 5 detik data read timeout
   http.addHeader("X-API-KEY", apiKey);
 
   int httpCode = http.GET();
+  unsigned long elapsed = millis() - tStart;
+  Serial.printf("[SCHEDULE] Respon server diterima dalam %lu ms (HTTP %d)\n", elapsed, httpCode);
+
   if (httpCode == 200) {
     String payload = http.getString();
     DynamicJsonDocument doc(2048);
@@ -505,10 +515,13 @@ void fetchScheduleFromServer() {
         sscanf(jamPulang.c_str(), "%d:%d", &outH, &outM);
 
         saveScheduleConfigToNVS(inH, inM, outH, outM, instansi);
+        Serial.printf("[SCHEDULE] Jadwal tersimpan ke NVS: Masuk %02d:%02d | Pulang %02d:%02d\n", inH, inM, outH, outM);
       }
+    } else {
+      Serial.println("[SCHEDULE] Gagal parsing JSON respons jadwal server.");
     }
   } else {
-    Serial.printf("[SCHEDULE] Gagal mengunduh jadwal (HTTP %d)\n", httpCode);
+    Serial.printf("[SCHEDULE] Gagal mengunduh jadwal (HTTP %d). Menggunakan jadwal NVS lokal jika ada.\n", httpCode);
   }
   http.end();
 }
@@ -670,6 +683,7 @@ void handleScannedUI() {
 void fetchMembersLocalCache() {
   if (WiFi.status() != WL_CONNECTED) return;
   Serial.println("\n[MEMBERS CACHE] Mengunduh data anggota (Santri & Guru) untuk validasi offline...");
+  unsigned long tStart = millis();
 
   String baseUrl = String(serverUrl);
   int apiIdx = baseUrl.indexOf("/api/");
@@ -680,19 +694,23 @@ void fetchMembersLocalCache() {
 
   WiFiClientSecure client;
   client.setInsecure();
+  client.setTimeout(6); // 6 detik socket connect timeout
   HTTPClient http;
   http.begin(client, membersUrl);
-  http.setTimeout(10000);
+  http.setTimeout(6000); // 6 detik read timeout
   http.addHeader("X-API-KEY", apiKey);
 
   int httpCode = http.GET();
+  unsigned long elapsed = millis() - tStart;
+  Serial.printf("[MEMBERS CACHE] Respon diterima dalam %lu ms (HTTP %d)\n", elapsed, httpCode);
+
   if (httpCode == 200) {
     String payload = http.getString();
     File f = SPIFFS.open("/members_cache.json", FILE_WRITE);
     if (f) {
       f.print(payload);
       f.close();
-      Serial.println("[MEMBERS CACHE] Cache anggota offline berhasil diperbarui di SPIFFS.");
+      Serial.printf("[MEMBERS CACHE] Cache anggota offline berhasil diperbarui di SPIFFS (%u bytes).\n", payload.length());
     }
   } else {
     Serial.printf("[MEMBERS CACHE] Gagal mengunduh cache anggota (HTTP %d)\n", httpCode);
@@ -1911,9 +1929,10 @@ bool downloadTTSFile(const char* text, const char* filePath) {
 
   WiFiClientSecure clientAudio;
   clientAudio.setInsecure();
+  clientAudio.setTimeout(8); // 8 detik socket connect timeout
   HTTPClient httpAudio;
   httpAudio.begin(clientAudio, ttsUrl);
-  httpAudio.setTimeout(15000);
+  httpAudio.setTimeout(8000); // 8 detik HTTP read timeout
   httpAudio.addHeader("X-API-KEY", apiKey);
 
   int httpCode = httpAudio.GET();
