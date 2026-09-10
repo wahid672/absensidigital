@@ -762,11 +762,29 @@ void fetchMembersLocalCache() {
 
   if (httpCode == 200) {
     String payload = http.getString();
-    File f = SPIFFS.open("/members_cache.json", FILE_WRITE);
-    if (f) {
-      f.print(payload);
-      f.close();
-      Serial.printf("[MEMBERS CACHE] Cache anggota offline berhasil diperbarui di SPIFFS (%u bytes).\n", payload.length());
+    bool savedToSD = false;
+
+    if (isSdCardAvailable) {
+      if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        if (SD.exists("/members_cache.json")) SD.remove("/members_cache.json");
+        File f = SD.open("/members_cache.json", FILE_WRITE);
+        if (f) {
+          f.print(payload);
+          f.close();
+          savedToSD = true;
+          Serial.printf("[MEMBERS CACHE] Cache anggota offline berhasil diperbarui di Micro SD (%u bytes).\n", payload.length());
+        }
+        xSemaphoreGive(spiMutex);
+      }
+    }
+
+    if (!savedToSD) {
+      File f = SPIFFS.open("/members_cache.json", FILE_WRITE);
+      if (f) {
+        f.print(payload);
+        f.close();
+        Serial.printf("[MEMBERS CACHE] Cache anggota offline berhasil diperbarui di SPIFFS (%u bytes).\n", payload.length());
+      }
     }
   } else {
     Serial.printf("[MEMBERS CACHE] Gagal mengunduh cache anggota (HTTP %d)\n", httpCode);
@@ -779,12 +797,32 @@ CachedMember findMemberOffline(int fingerId, String rfidTag) {
   CachedMember res;
   res.found = false;
 
-  if (!SPIFFS.exists("/members_cache.json")) return res;
+  File file;
+  bool isFromSD = false;
 
-  File file = SPIFFS.open("/members_cache.json", FILE_READ);
-  if (!file || file.size() == 0) {
-    if (file) file.close();
-    return res;
+  if (isSdCardAvailable) {
+    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(300)) == pdTRUE) {
+      if (SD.exists("/members_cache.json")) {
+        file = SD.open("/members_cache.json", FILE_READ);
+        if (file && file.size() > 0) {
+          isFromSD = true;
+        } else if (file) {
+          file.close();
+        }
+      }
+      if (!isFromSD) {
+        xSemaphoreGive(spiMutex);
+      }
+    }
+  }
+
+  if (!isFromSD) {
+    if (!SPIFFS.exists("/members_cache.json")) return res;
+    file = SPIFFS.open("/members_cache.json", FILE_READ);
+    if (!file || file.size() == 0) {
+      if (file) file.close();
+      return res;
+    }
   }
 
   size_t fSize = file.size();
@@ -795,6 +833,9 @@ CachedMember findMemberOffline(int fingerId, String rfidTag) {
   DynamicJsonDocument doc(docCap);
   DeserializationError err = deserializeJson(doc, file);
   file.close();
+  if (isFromSD && spiMutex != NULL) {
+    xSemaphoreGive(spiMutex);
+  }
   if (err) return res;
 
   auto stripZeros = [](String s) -> String {
@@ -1211,12 +1252,6 @@ String getCurrentTimestamp() {
 }
 
 void saveOfflineLog(int fingerId, String rfidTag, String statusMasuk = "-", String statusKeluar = "-") {
-  File file = SPIFFS.open("/offline_logs.txt", FILE_APPEND);
-  if (!file) {
-    Serial.println("[OFFLINE] Gagal membuka file /offline_logs.txt di SPIFFS!");
-    return;
-  }
-
   StaticJsonDocument<256> doc;
   doc["device_id"] = deviceId;
   if (fingerId > 0) doc["fingerprint_id"] = fingerId;
@@ -1231,24 +1266,52 @@ void saveOfflineLog(int fingerId, String rfidTag, String statusMasuk = "-", Stri
 
   String jsonLine;
   serializeJson(doc, jsonLine);
-  file.println(jsonLine);
-  file.close();
 
-  Serial.println("[OFFLINE BUFFER] Presensi tersimpan di memori ESP32: " + jsonLine);
+  bool savedToSD = false;
+  if (isSdCardAvailable) {
+    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+      File file = SD.open("/offline_logs.txt", FILE_APPEND);
+      if (file) {
+        file.println(jsonLine);
+        file.close();
+        savedToSD = true;
+        Serial.println("[OFFLINE BUFFER] Presensi tersimpan di Micro SD: " + jsonLine);
+      }
+      xSemaphoreGive(spiMutex);
+    }
+  }
+
+  if (!savedToSD) {
+    File file = SPIFFS.open("/offline_logs.txt", FILE_APPEND);
+    if (file) {
+      file.println(jsonLine);
+      file.close();
+      Serial.println("[OFFLINE BUFFER] Presensi tersimpan di SPIFFS: " + jsonLine);
+    } else {
+      Serial.println("[OFFLINE] Gagal menyimpan presensi offline ke memori!");
+    }
+  }
 }
 
-void flushOfflineLogs() {
-  if (WiFi.status() != WL_CONNECTED) return;
-  if (!SPIFFS.exists("/offline_logs.txt")) return;
+void flushOfflineLogsFromFS(fs::FS &fs, const char* path, const char* storageName, bool useMutex) {
+  if (useMutex && spiMutex != NULL) {
+    if (xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) != pdTRUE) return;
+  }
 
-  File file = SPIFFS.open("/offline_logs.txt", FILE_READ);
-  if (!file || file.size() == 0) {
-    if (file) file.close();
-    SPIFFS.remove("/offline_logs.txt");
+  if (!fs.exists(path)) {
+    if (useMutex && spiMutex != NULL) xSemaphoreGive(spiMutex);
     return;
   }
 
-  Serial.println("\n[OFFLINE SYNC] Memproses antrean data offline yang tertunda...");
+  File file = fs.open(path, FILE_READ);
+  if (!file || file.size() == 0) {
+    if (file) file.close();
+    fs.remove(path);
+    if (useMutex && spiMutex != NULL) xSemaphoreGive(spiMutex);
+    return;
+  }
+
+  Serial.printf("\n[OFFLINE SYNC] Memproses antrean data offline di %s...\n", storageName);
 
   DynamicJsonDocument batchDoc(4096);
   batchDoc["action"] = "offline_sync";
@@ -1270,15 +1333,22 @@ void flushOfflineLogs() {
   }
   file.close();
 
+  if (useMutex && spiMutex != NULL) {
+    xSemaphoreGive(spiMutex);
+  }
+
   if (totalPending == 0) {
-    SPIFFS.remove("/offline_logs.txt");
+    if (useMutex && spiMutex != NULL) xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500));
+    fs.remove(path);
+    if (useMutex && spiMutex != NULL) xSemaphoreGive(spiMutex);
     return;
   }
 
-  Serial.printf("[OFFLINE SYNC] Mengirim %d data offline ke server...\n", totalPending);
+  Serial.printf("[OFFLINE SYNC] Mengirim %d data offline (%s) ke server...\n", totalPending, storageName);
 
   WiFiClientSecure client;
   client.setInsecure();
+  client.setTimeout(8000);
   HTTPClient http;
   http.begin(client, serverUrl);
   http.setTimeout(10000);
@@ -1290,16 +1360,29 @@ void flushOfflineLogs() {
 
   int httpCode = http.POST(payload);
   if (httpCode == 200 || httpCode == 201) {
-    Serial.printf("[OFFLINE SYNC] SUKSES! %d data offline terkirim ke server.\n", totalPending);
-    SPIFFS.remove("/offline_logs.txt"); // Hapus antrean karena berhasil terkirim
+    Serial.printf("[OFFLINE SYNC] SUKSES! %d data offline (%s) terkirim ke server.\n", totalPending, storageName);
+    if (useMutex && spiMutex != NULL) xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500));
+    fs.remove(path);
+    if (useMutex && spiMutex != NULL) xSemaphoreGive(spiMutex);
     
-    // Feedback visual/suara singkat
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW); delay(50);
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
   } else {
-    Serial.printf("[OFFLINE SYNC] Gagal sinkron ke server (HTTP %d). Data tetap disimpan di memori ESP32.\n", httpCode);
+    Serial.printf("[OFFLINE SYNC] Gagal sinkron ke server (HTTP %d). Data tetap disimpan di %s.\n", httpCode, storageName);
   }
   http.end();
+}
+
+void flushOfflineLogs() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  // 1. Flush dari Micro SD jika terpasang
+  if (isSdCardAvailable) {
+    flushOfflineLogsFromFS(SD, "/offline_logs.txt", "Micro SD", true);
+  }
+
+  // 2. Flush dari SPIFFS jika ada sisa data terdahulu
+  flushOfflineLogsFromFS(SPIFFS, "/offline_logs.txt", "SPIFFS", false);
 }
 
 // --- FUNGSI PENGIRIMAN DATA PRESENSI (HYBRID ONLINE/OFFLINE) ---
@@ -1316,7 +1399,7 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
 
   // 2. JIKA OFFLINE: Cari di cache lokal & simpan ke SPIFFS
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("[OFFLINE] WiFi offline. Data Fingerprint ID %d disimpan ke SPIFFS.\n", idFinger);
+    Serial.printf("[OFFLINE] WiFi offline. Data Fingerprint ID %d disimpan ke %s.\n", idFinger, isSdCardAvailable ? "Micro SD" : "SPIFFS");
     localM = findMemberOffline((int)idFinger, "");
     if (localM.found) namaPreview = localM.nama;
     OfflineAttendanceResult eval = evaluateAttendanceOffline();
@@ -1484,7 +1567,7 @@ void kirimPresensiRFID(String tagId) {
 
   // 2. JIKA OFFLINE: Cari di cache lokal & simpan ke SPIFFS
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("[OFFLINE] WiFi offline. Data RFID %s disimpan ke SPIFFS.\n", tagId.c_str());
+    Serial.printf("[OFFLINE] WiFi offline. Data RFID %s disimpan ke %s.\n", tagId.c_str(), isSdCardAvailable ? "Micro SD" : "SPIFFS");
     localM = findMemberOffline(0, tagId);
     if (localM.found) namaPreview = localM.nama;
     OfflineAttendanceResult eval = evaluateAttendanceOffline();
@@ -4236,18 +4319,20 @@ void setup() {
     Serial.printf("[BOOT] 13. [RC522] Register Sehat: 0x%02X\n", rfidVerCheck);
   }
 
+  // === PROSES INISIALISASI PENYIMPANAN MICRO SD (HSPI) ===
+  Serial.println("[BOOT] 14. Menyiapkan Penyimpanan Micro SD...");
+  initAudioStorage();
+
   // === PROSES SINKRONISASI DATA FINGERPRINT & ANGGOTA SAAT PERTAMA HIDUP ===
-  Serial.println("[BOOT] 14. Sinkronisasi Data Fingerprint & Members...");
+  Serial.println("[BOOT] 15. Sinkronisasi Data Fingerprint & Members...");
   printMemoryDebug("Sebelum Sync Fingerprint");
   syncDataFingerprint();
   printMemoryDebug("Sebelum Sync Members Cache");
   fetchMembersLocalCache();
   printMemoryDebug("Setelah Sync Members Cache");
 
-  // === PROSES INISIALISASI AUDIO & SINKRONISASI CACHE TTS KE MICRO SD ===
-  // Dieksekusi persis setelah [MEMBERS CACHE] selesai saat seluruh socket server sudah bebas
-  Serial.println("[BOOT] 15. Menyiapkan Micro SD & Sinkronisasi TTS Cache...");
-  initAudioStorage();
+  // === PROSES SINKRONISASI CACHE TTS KE MICRO SD & AKTIVASI AUDIO ===
+  Serial.println("[BOOT] 16. Sinkronisasi TTS Cache ke Micro SD & Audio...");
   syncInitialTTSFiles();
   startAudioPlaybackSubsystem();
   printMemoryDebug("Setelah Sync Audio TTS");
