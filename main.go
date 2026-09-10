@@ -436,7 +436,7 @@ func seedInitialData() {
 
 	var count int
 	db.QueryRow("SELECT COUNT(*) FROM members").Scan(&count)
-	if count == 0 {
+	if count < 100 {
 		seedDummyData()
 	}
 }
@@ -477,9 +477,9 @@ func seedDummyData() {
 		db.Exec("INSERT OR IGNORE INTO positions (nama, keterangan) VALUES (?, ?)", p.Nama, p.Keterangan)
 	}
 
-	// 3. Members (RFID 10 ANGKA & beberapa tanpa kartu untuk uji coba mapping)
+	// 3. Members (120 Data: 20 Guru/Pegawai & 100 Santri, RFID 10 ANGKA & Fingerprint)
 	members := []Member{
-		// === PEGAWAI / ASATIDZ / GURU (tipe: guru) ===
+		// === 20 PEGAWAI / ASATIDZ / GURU (tipe: guru) ===
 		{UID: "0014829101", FingerprintID: 1, NISNIP: "198507122010011001", Nama: "Ustadz Ahmad Fauzi, S.Pd.I", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Fiqih & Hadits", NoHP: "081234567801", TelegramChatID: "123456781"},
 		{UID: "0014829102", FingerprintID: 2, NISNIP: "198803152012012002", Nama: "Ustadzah Fatimah Zahra, M.Pd", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Bahasa Arab", NoHP: "081234567802", TelegramChatID: "123456782"},
 		{UID: "0014829103", FingerprintID: 3, NISNIP: "198211052008011003", Nama: "Ustadz Abdullah Yusuf, Lc", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Tahfidz & Quran", NoHP: "081234567803", TelegramChatID: "123456783"},
@@ -488,24 +488,121 @@ func seedDummyData() {
 		{UID: "0014829106", FingerprintID: 6, NISNIP: "199208152016012006", Nama: "Siti Nurhaliza, S.E.", NamaOrtu: "", Tipe: "guru", Kelas: "Staf Keuangan & Bendahara", NoHP: "081234567806", TelegramChatID: "123456786"},
 		{UID: "0014829107", FingerprintID: 7, NISNIP: "198409222009011007", Nama: "Bambang Suryono, S.H.", NamaOrtu: "", Tipe: "guru", Kelas: "HRD & Personalia", NoHP: "081234567807", TelegramChatID: "123456787"},
 		{UID: "0014829108", FingerprintID: 8, NISNIP: "199411032018012008", Nama: "Dewi Anggraini, S.Kom", NamaOrtu: "", Tipe: "guru", Kelas: "Staf Administrasi & Publikasi", NoHP: "081234567808", TelegramChatID: "123456788"},
-		// Anggota belum punya kartu (UID kosong "")
-		{UID: "", FingerprintID: 0, NISNIP: "199105172017011009", Nama: "Rahmat Hidayat, M.Kom", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Matematika & Sains", NoHP: "081234567809", TelegramChatID: ""},
-		{UID: "", FingerprintID: 0, NISNIP: "199312012019012010", Nama: "Anisa Rahmawati, S.Pd", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Bahasa Inggris", NoHP: "081234567810", TelegramChatID: ""},
+		{UID: "0014829109", FingerprintID: 9, NISNIP: "199105172017011009", Nama: "Rahmat Hidayat, M.Kom", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Matematika & Sains", NoHP: "081234567809", TelegramChatID: "123456789"},
+		{UID: "0014829110", FingerprintID: 10, NISNIP: "199312012019012010", Nama: "Anisa Rahmawati, S.Pd", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Bahasa Inggris", NoHP: "081234567810", TelegramChatID: "123456790"},
+		{UID: "0014829111", FingerprintID: 11, NISNIP: "198004152006011011", Nama: "Ustadz M. Syahrul Munir, M.Pd.I", NamaOrtu: "", Tipe: "guru", Kelas: "Kepala Madrasah / Kurikulum", NoHP: "081234567811", TelegramChatID: "123456791"},
+		{UID: "0014829112", FingerprintID: 12, NISNIP: "197508202000011012", Nama: "KH. Mustofa Bisri Al-Hafidz", NamaOrtu: "", Tipe: "guru", Kelas: "Direktur Utama / Pimpinan", NoHP: "081234567812", TelegramChatID: "123456792"},
+		{UID: "0014829113", FingerprintID: 13, NISNIP: "198706182013012013", Nama: "Ustadzah Siti Khadijah, S.Sos", NamaOrtu: "", Tipe: "guru", Kelas: "Wali Asrama & Pengasuhan", NoHP: "081234567813", TelegramChatID: "123456793"},
+		{UID: "0014829114", FingerprintID: 14, NISNIP: "198909252014011014", Nama: "Ustadz Ridwan Kamil, S.Pd", NamaOrtu: "", Tipe: "guru", Kelas: "Wali Asrama & Pengasuhan", NoHP: "081234567814", TelegramChatID: "123456794"},
+		{UID: "0014829115", FingerprintID: 15, NISNIP: "199502102020011015", Nama: "Tri Wahyudi, A.Md", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Matematika & Sains", NoHP: "081234567815", TelegramChatID: "123456795"},
+		{UID: "0014829116", FingerprintID: 16, NISNIP: "199110082016012016", Nama: "Nurul Hidayati, S.E", NamaOrtu: "", Tipe: "guru", Kelas: "Staf Keuangan & Bendahara", NoHP: "081234567816", TelegramChatID: "123456796"},
+		{UID: "0014829117", FingerprintID: 17, NISNIP: "198811142012011017", Nama: "Agus Prasetyo, S.Pd", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Bahasa Inggris", NoHP: "081234567817", TelegramChatID: "123456797"},
+		{UID: "0014829118", FingerprintID: 18, NISNIP: "199203302017012018", Nama: "Ustadzah Laila Ramadhani, Lc", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Bahasa Arab", NoHP: "081234567818", TelegramChatID: "123456798"},
+		{UID: "0014829119", FingerprintID: 19, NISNIP: "199607222021011019", Nama: "Eko Susanto, S.Kom", NamaOrtu: "", Tipe: "guru", Kelas: "Customer Service & Resepsionis", NoHP: "081234567819", TelegramChatID: "123456799"},
+		{UID: "0014829120", FingerprintID: 20, NISNIP: "198312052009011020", Nama: "Ustadz Zulkifli Rahman, M.Ag", NamaOrtu: "", Tipe: "guru", Kelas: "Guru Fiqih & Hadits", NoHP: "081234567820", TelegramChatID: "123456800"},
 
-		// === SANTRI / SISWA (tipe: siswa) ===
-		{UID: "0014829111", FingerprintID: 9, NISNIP: "20261001", Nama: "Muhammad Rizky Pratama", NamaOrtu: "Bpk. Bambang Pratama", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234567811", TelegramChatID: "123456791"},
-		{UID: "0014829112", FingerprintID: 10, NISNIP: "20261002", Nama: "Aisyah Nurul Hidayah", NamaOrtu: "Bpk. H. Syarifudin", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234567812", TelegramChatID: "123456792"},
-		{UID: "0014829113", FingerprintID: 11, NISNIP: "20261003", Nama: "Fajar Dwi Santoso", NamaOrtu: "Ibu Sri Wahyuni", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234567813", TelegramChatID: "123456793"},
-		{UID: "0014829114", FingerprintID: 12, NISNIP: "20261004", Nama: "Zaid Bin Haritsah", NamaOrtu: "Bpk. Haritsah", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234567814", TelegramChatID: "123456794"},
-		{UID: "0014829115", FingerprintID: 13, NISNIP: "20261005", Nama: "Khadijah Al-Kubra", NamaOrtu: "Bpk. Khuwaylid", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234567815", TelegramChatID: "123456795"},
-		{UID: "0014829116", FingerprintID: 14, NISNIP: "20261006", Nama: "Bilal Bin Rabah", NamaOrtu: "Bpk. Rabah", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234567816", TelegramChatID: "123456796"},
-		{UID: "0014829117", FingerprintID: 15, NISNIP: "20261007", Nama: "Ali Bin Abi Thalib", NamaOrtu: "Bpk. Abu Thalib", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234567817", TelegramChatID: "123456797"},
-		{UID: "0014829118", FingerprintID: 16, NISNIP: "20261008", Nama: "Fatimah Az-Zahra", NamaOrtu: "Bpk. Muhammad", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234567818", TelegramChatID: "123456798"},
-		// Siswa belum punya kartu (UID kosong "")
-		{UID: "", FingerprintID: 0, NISNIP: "20261009", Nama: "Umar Al-Faruq", NamaOrtu: "Bpk. Khattab", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234567819", TelegramChatID: ""},
-		{UID: "", FingerprintID: 0, NISNIP: "20261010", Nama: "Utsman Dzun-Nurain", NamaOrtu: "Bpk. Affan", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234567820", TelegramChatID: ""},
+		// === 100 SANTRI / SISWA (tipe: siswa) ===
+		{UID: "0026100001", FingerprintID: 21, NISNIP: "20260001", Nama: "Muhammad Rizky Pratama", NamaOrtu: "Bpk. Bambang Pratama", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234500101", TelegramChatID: "1234500101"},
+		{UID: "0026100002", FingerprintID: 22, NISNIP: "20260002", Nama: "Aisyah Nurul Hidayah", NamaOrtu: "Bpk. H. Syarifudin", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234500102", TelegramChatID: "1234500102"},
+		{UID: "0026100003", FingerprintID: 23, NISNIP: "20260003", Nama: "Fajar Dwi Santoso", NamaOrtu: "Ibu Sri Wahyuni", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234500103", TelegramChatID: "1234500103"},
+		{UID: "0026100004", FingerprintID: 24, NISNIP: "20260004", Nama: "Zaid Bin Haritsah", NamaOrtu: "Bpk. Haritsah", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234500104", TelegramChatID: "1234500104"},
+		{UID: "0026100005", FingerprintID: 25, NISNIP: "20260005", Nama: "Khadijah Al-Kubra", NamaOrtu: "Bpk. Khuwaylid", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234500105", TelegramChatID: "1234500105"},
+		{UID: "0026100006", FingerprintID: 26, NISNIP: "20260006", Nama: "Bilal Bin Rabah", NamaOrtu: "Bpk. Rabah", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234500106", TelegramChatID: "1234500106"},
+		{UID: "0026100007", FingerprintID: 27, NISNIP: "20260007", Nama: "Ali Bin Abi Thalib", NamaOrtu: "Bpk. Abu Thalib", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234500107", TelegramChatID: "1234500107"},
+		{UID: "0026100008", FingerprintID: 28, NISNIP: "20260008", Nama: "Fatimah Az-Zahra", NamaOrtu: "Bpk. Muhammad", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234500108", TelegramChatID: "1234500108"},
+		{UID: "0026100009", FingerprintID: 29, NISNIP: "20260009", Nama: "Umar Al-Faruq", NamaOrtu: "Bpk. Khattab", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234500109", TelegramChatID: "1234500109"},
+		{UID: "0026100010", FingerprintID: 30, NISNIP: "20260010", Nama: "Utsman Dzun-Nurain", NamaOrtu: "Bpk. Affan", Tipe: "siswa", Kelas: "10 IPA 1", NoHP: "081234500110", TelegramChatID: "1234500110"},
+		{UID: "0026100011", FingerprintID: 31, NISNIP: "20260011", Nama: "Hamzah Bin Abdul Muthalib", NamaOrtu: "Bpk. Abdul Muthalib", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234500111", TelegramChatID: "1234500111"},
+		{UID: "0026100012", FingerprintID: 32, NISNIP: "20260012", Nama: "Salman Al-Farisi", NamaOrtu: "Bpk. Faris", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234500112", TelegramChatID: "1234500112"},
+		{UID: "0026100013", FingerprintID: 33, NISNIP: "20260013", Nama: "Abu Bakar Ash-Shiddiq", NamaOrtu: "Bpk. Abu Quhafah", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234500113", TelegramChatID: "1234500113"},
+		{UID: "0026100014", FingerprintID: 34, NISNIP: "20260014", Nama: "Thalhah Bin Ubaidillah", NamaOrtu: "Bpk. Ubaidillah", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234500114", TelegramChatID: "1234500114"},
+		{UID: "0026100015", FingerprintID: 35, NISNIP: "20260015", Nama: "Zubair Bin Awwam", NamaOrtu: "Bpk. Awwam", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234500115", TelegramChatID: "1234500115"},
+		{UID: "0026100016", FingerprintID: 36, NISNIP: "20260016", Nama: "Sa'ad Bin Abi Waqqash", NamaOrtu: "Bpk. Abu Waqqash", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234500116", TelegramChatID: "1234500116"},
+		{UID: "0026100017", FingerprintID: 37, NISNIP: "20260017", Nama: "Said Bin Zaid", NamaOrtu: "Bpk. Zaid", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234500117", TelegramChatID: "1234500117"},
+		{UID: "0026100018", FingerprintID: 38, NISNIP: "20260018", Nama: "Abu Ubaidah Bin Jarrah", NamaOrtu: "Bpk. Jarrah", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234500118", TelegramChatID: "1234500118"},
+		{UID: "0026100019", FingerprintID: 39, NISNIP: "20260019", Nama: "Abdurrahman Bin Auf", NamaOrtu: "Bpk. Auf", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234500119", TelegramChatID: "1234500119"},
+		{UID: "0026100020", FingerprintID: 40, NISNIP: "20260020", Nama: "Khalid Bin Walid", NamaOrtu: "Bpk. Walid", Tipe: "siswa", Kelas: "10 IPA 2", NoHP: "081234500120", TelegramChatID: "1234500120"},
+		{UID: "0026100021", FingerprintID: 41, NISNIP: "20260021", Nama: "Amr Bin Ash", NamaOrtu: "Bpk. Ash", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234500121", TelegramChatID: "1234500121"},
+		{UID: "0026100022", FingerprintID: 42, NISNIP: "20260022", Nama: "Muawiyah Bin Abu Sufyan", NamaOrtu: "Bpk. Abu Sufyan", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234500122", TelegramChatID: "1234500122"},
+		{UID: "0026100023", FingerprintID: 43, NISNIP: "20260023", Nama: "Usamah Bin Zaid", NamaOrtu: "Bpk. Zaid", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234500123", TelegramChatID: "1234500123"},
+		{UID: "0026100024", FingerprintID: 44, NISNIP: "20260024", Nama: "Ja'far Bin Abi Thalib", NamaOrtu: "Bpk. Abu Thalib", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234500124", TelegramChatID: "1234500124"},
+		{UID: "0026100025", FingerprintID: 45, NISNIP: "20260025", Nama: "Abdullah Bin Mas'ud", NamaOrtu: "Bpk. Mas'ud", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234500125", TelegramChatID: "1234500125"},
+		{UID: "0026100026", FingerprintID: 46, NISNIP: "20260026", Nama: "Abdullah Bin Abbas", NamaOrtu: "Bpk. Abbas", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234500126", TelegramChatID: "1234500126"},
+		{UID: "0026100027", FingerprintID: 47, NISNIP: "20260027", Nama: "Abdullah Bin Umar", NamaOrtu: "Bpk. Umar", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234500127", TelegramChatID: "1234500127"},
+		{UID: "0026100028", FingerprintID: 48, NISNIP: "20260028", Nama: "Abdullah Bin Zubair", NamaOrtu: "Bpk. Zubair", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234500128", TelegramChatID: "1234500128"},
+		{UID: "0026100029", FingerprintID: 49, NISNIP: "20260029", Nama: "Anas Bin Malik", NamaOrtu: "Bpk. Malik", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234500129", TelegramChatID: "1234500129"},
+		{UID: "0026100030", FingerprintID: 50, NISNIP: "20260030", Nama: "Jabir Bin Abdullah", NamaOrtu: "Bpk. Abdullah", Tipe: "siswa", Kelas: "10 IPS 1", NoHP: "081234500130", TelegramChatID: "1234500130"},
+		{UID: "0026100031", FingerprintID: 0, NISNIP: "20260031", Nama: "Hasan Bin Ali", NamaOrtu: "Bpk. Ali", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234500131", TelegramChatID: "1234500131"},
+		{UID: "0026100032", FingerprintID: 0, NISNIP: "20260032", Nama: "Husain Bin Ali", NamaOrtu: "Bpk. Ali", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234500132", TelegramChatID: "1234500132"},
+		{UID: "0026100033", FingerprintID: 0, NISNIP: "20260033", Nama: "Mus'ab Bin Umair", NamaOrtu: "Bpk. Umair", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234500133", TelegramChatID: "1234500133"},
+		{UID: "0026100034", FingerprintID: 0, NISNIP: "20260034", Nama: "Hudzaifah Bin Yaman", NamaOrtu: "Bpk. Yaman", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234500134", TelegramChatID: "1234500134"},
+		{UID: "0026100035", FingerprintID: 0, NISNIP: "20260035", Nama: "Abu Dzar Al-Ghifari", NamaOrtu: "Bpk. Ghifar", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234500135", TelegramChatID: "1234500135"},
+		{UID: "0026100036", FingerprintID: 0, NISNIP: "20260036", Nama: "Miqdad Bin Amr", NamaOrtu: "Bpk. Amr", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234500136", TelegramChatID: "1234500136"},
+		{UID: "0026100037", FingerprintID: 0, NISNIP: "20260037", Nama: "Ammar Bin Yasir", NamaOrtu: "Bpk. Yasir", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234500137", TelegramChatID: "1234500137"},
+		{UID: "0026100038", FingerprintID: 0, NISNIP: "20260038", Nama: "Suhaib Ar-Rumi", NamaOrtu: "Bpk. Sinan", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234500138", TelegramChatID: "1234500138"},
+		{UID: "0026100039", FingerprintID: 0, NISNIP: "20260039", Nama: "Habib Bin Zaid", NamaOrtu: "Bpk. Zaid", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234500139", TelegramChatID: "1234500139"},
+		{UID: "0026100040", FingerprintID: 0, NISNIP: "20260040", Nama: "Mu'adz Bin Jabal", NamaOrtu: "Bpk. Jabal", Tipe: "siswa", Kelas: "11 IPA 1", NoHP: "081234500140", TelegramChatID: "1234500140"},
+		{UID: "0026100041", FingerprintID: 0, NISNIP: "20260041", Nama: "Ubada Bin Shamit", NamaOrtu: "Bpk. Shamit", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234500141", TelegramChatID: "1234500141"},
+		{UID: "0026100042", FingerprintID: 0, NISNIP: "20260042", Nama: "Ubay Bin Ka'ab", NamaOrtu: "Bpk. Ka'ab", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234500142", TelegramChatID: "1234500142"},
+		{UID: "0026100043", FingerprintID: 0, NISNIP: "20260043", Nama: "Zaid Bin Tsabit", NamaOrtu: "Bpk. Tsabit", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234500143", TelegramChatID: "1234500143"},
+		{UID: "0026100044", FingerprintID: 0, NISNIP: "20260044", Nama: "Abu Darda Al-Anshari", NamaOrtu: "Bpk. Amir", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234500144", TelegramChatID: "1234500144"},
+		{UID: "0026100045", FingerprintID: 0, NISNIP: "20260045", Nama: "Abu Ayyub Al-Anshari", NamaOrtu: "Bpk. Khalid", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234500145", TelegramChatID: "1234500145"},
+		{UID: "0026100046", FingerprintID: 0, NISNIP: "20260046", Nama: "Barra Bin Malik", NamaOrtu: "Bpk. Malik", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234500146", TelegramChatID: "1234500146"},
+		{UID: "0026100047", FingerprintID: 0, NISNIP: "20260047", Nama: "Salamah Bin Akwa", NamaOrtu: "Bpk. Amr", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234500147", TelegramChatID: "1234500147"},
+		{UID: "0026100048", FingerprintID: 0, NISNIP: "20260048", Nama: "Qatadah Bin Nu'man", NamaOrtu: "Bpk. Nu'man", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234500148", TelegramChatID: "1234500148"},
+		{UID: "0026100049", FingerprintID: 0, NISNIP: "20260049", Nama: "Rafi' Bin Khadij", NamaOrtu: "Bpk. Khadij", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234500149", TelegramChatID: "1234500149"},
+		{UID: "0026100050", FingerprintID: 0, NISNIP: "20260050", Nama: "Sahl Bin Sa'ad", NamaOrtu: "Bpk. Sa'ad", Tipe: "siswa", Kelas: "11 IPS 1", NoHP: "081234500150", TelegramChatID: "1234500150"},
+		{UID: "0026100051", FingerprintID: 0, NISNIP: "20260051", Nama: "Maryam Binti Imran", NamaOrtu: "Bpk. Imran", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234500151", TelegramChatID: "1234500151"},
+		{UID: "0026100052", FingerprintID: 0, NISNIP: "20260052", Nama: "Asiyah Binti Muzahim", NamaOrtu: "Bpk. Muzahim", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234500152", TelegramChatID: "1234500152"},
+		{UID: "0026100053", FingerprintID: 0, NISNIP: "20260053", Nama: "Hajar Ummu Ismail", NamaOrtu: "Bpk. Azhar", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234500153", TelegramChatID: "1234500153"},
+		{UID: "0026100054", FingerprintID: 0, NISNIP: "20260054", Nama: "Sarah Ummu Ishaq", NamaOrtu: "Bpk. Haran", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234500154", TelegramChatID: "1234500154"},
+		{UID: "0026100055", FingerprintID: 0, NISNIP: "20260055", Nama: "Shafiyyah Binti Huyay", NamaOrtu: "Bpk. Huyay", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234500155", TelegramChatID: "1234500155"},
+		{UID: "0026100056", FingerprintID: 0, NISNIP: "20260056", Nama: "Maimunah Binti Harits", NamaOrtu: "Bpk. Harits", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234500156", TelegramChatID: "1234500156"},
+		{UID: "0026100057", FingerprintID: 0, NISNIP: "20260057", Nama: "Juwairiyah Binti Harits", NamaOrtu: "Bpk. Harits", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234500157", TelegramChatID: "1234500157"},
+		{UID: "0026100058", FingerprintID: 0, NISNIP: "20260058", Nama: "Zainab Binti Jahsy", NamaOrtu: "Bpk. Jahsy", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234500158", TelegramChatID: "1234500158"},
+		{UID: "0026100059", FingerprintID: 0, NISNIP: "20260059", Nama: "Ummu Salamah Hindun", NamaOrtu: "Bpk. Suhail", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234500159", TelegramChatID: "1234500159"},
+		{UID: "0026100060", FingerprintID: 0, NISNIP: "20260060", Nama: "Hafshah Binti Umar", NamaOrtu: "Bpk. Umar", Tipe: "siswa", Kelas: "11 IPS 2", NoHP: "081234500160", TelegramChatID: "1234500160"},
+		{UID: "0026100061", FingerprintID: 0, NISNIP: "20260061", Nama: "Ahmad Dani Pratama", NamaOrtu: "Bpk. Joko Susilo", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234500161", TelegramChatID: "1234500161"},
+		{UID: "0026100062", FingerprintID: 0, NISNIP: "20260062", Nama: "Bagas Kurniawan", NamaOrtu: "Bpk. Hendro", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234500162", TelegramChatID: "1234500162"},
+		{UID: "0026100063", FingerprintID: 0, NISNIP: "20260063", Nama: "Candra Wijaya", NamaOrtu: "Bpk. Gunawan", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234500163", TelegramChatID: "1234500163"},
+		{UID: "0026100064", FingerprintID: 0, NISNIP: "20260064", Nama: "Dimas Aditya", NamaOrtu: "Bpk. Sutrisno", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234500164", TelegramChatID: "1234500164"},
+		{UID: "0026100065", FingerprintID: 0, NISNIP: "20260065", Nama: "Erlangga Putra", NamaOrtu: "Bpk. Wahyu", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234500165", TelegramChatID: "1234500165"},
+		{UID: "0026100066", FingerprintID: 0, NISNIP: "20260066", Nama: "Fachri Al-Ghifari", NamaOrtu: "Bpk. Mansur", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234500166", TelegramChatID: "1234500166"},
+		{UID: "0026100067", FingerprintID: 0, NISNIP: "20260067", Nama: "Gilang Ramadhan", NamaOrtu: "Bpk. Mulyono", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234500167", TelegramChatID: "1234500167"},
+		{UID: "0026100068", FingerprintID: 0, NISNIP: "20260068", Nama: "Hafidz Ar-Rasyid", NamaOrtu: "Bpk. Rasyid", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234500168", TelegramChatID: "1234500168"},
+		{UID: "0026100069", FingerprintID: 0, NISNIP: "20260069", Nama: "Irfan Maulana", NamaOrtu: "Bpk. Rusdi", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234500169", TelegramChatID: "1234500169"},
+		{UID: "0026100070", FingerprintID: 0, NISNIP: "20260070", Nama: "Julian Saputra", NamaOrtu: "Bpk. Budi Santoso", Tipe: "siswa", Kelas: "12 IPA 1", NoHP: "081234500170", TelegramChatID: "1234500170"},
+		{UID: "0026100071", FingerprintID: 0, NISNIP: "20260071", Nama: "Kevin Ardiansyah", NamaOrtu: "Bpk. Edi", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234500171", TelegramChatID: "1234500171"},
+		{UID: "0026100072", FingerprintID: 0, NISNIP: "20260072", Nama: "Luthfi Hakim", NamaOrtu: "Bpk. Lukman", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234500172", TelegramChatID: "1234500172"},
+		{UID: "0026100073", FingerprintID: 0, NISNIP: "20260073", Nama: "M. Fathur Rahman", NamaOrtu: "Bpk. Syamsul", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234500173", TelegramChatID: "1234500173"},
+		{UID: "0026100074", FingerprintID: 0, NISNIP: "20260074", Nama: "Nabil Makarim", NamaOrtu: "Bpk. Natsir", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234500174", TelegramChatID: "1234500174"},
+		{UID: "0026100075", FingerprintID: 0, NISNIP: "20260075", Nama: "Oki Setiawan", NamaOrtu: "Bpk. Herman", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234500175", TelegramChatID: "1234500175"},
+		{UID: "0026100076", FingerprintID: 0, NISNIP: "20260076", Nama: "Pandu Wicaksono", NamaOrtu: "Bpk. Bambang", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234500176", TelegramChatID: "1234500176"},
+		{UID: "0026100077", FingerprintID: 0, NISNIP: "20260077", Nama: "Qori Nur Fauzan", NamaOrtu: "Bpk. Fauzan", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234500177", TelegramChatID: "1234500177"},
+		{UID: "0026100078", FingerprintID: 0, NISNIP: "20260078", Nama: "Rian Hidayatullah", NamaOrtu: "Bpk. Taufik", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234500178", TelegramChatID: "1234500178"},
+		{UID: "0026100079", FingerprintID: 0, NISNIP: "20260079", Nama: "Surya Darmawan", NamaOrtu: "Bpk. Darma", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234500179", TelegramChatID: "1234500179"},
+		{UID: "0026100080", FingerprintID: 0, NISNIP: "20260080", Nama: "Taufiq Ismail", NamaOrtu: "Bpk. Subagio", Tipe: "siswa", Kelas: "12 IPS 1", NoHP: "081234500180", TelegramChatID: "1234500180"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260081", Nama: "Umar Mukhtar Al-Hafidz", NamaOrtu: "Bpk. Mukhtar", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234500181", TelegramChatID: "1234500181"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260082", Nama: "Vian Pratama", NamaOrtu: "Bpk. Haryanto", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234500182", TelegramChatID: "1234500182"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260083", Nama: "Wildan Sholihin", NamaOrtu: "Bpk. Sholih", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234500183", TelegramChatID: "1234500183"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260084", Nama: "Yusuf Mansyur", NamaOrtu: "Bpk. Mansyur", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234500184", TelegramChatID: "1234500184"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260085", Nama: "Zulham Efendi", NamaOrtu: "Bpk. Efendi", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234500185", TelegramChatID: "1234500185"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260086", Nama: "Aditya Wardhana", NamaOrtu: "Bpk. Wardhana", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234500186", TelegramChatID: "1234500186"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260087", Nama: "Bayu Samudra", NamaOrtu: "Bpk. Samudra", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234500187", TelegramChatID: "1234500187"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260088", Nama: "Cahyo Nugroho", NamaOrtu: "Bpk. Nugroho", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234500188", TelegramChatID: "1234500188"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260089", Nama: "Dedi Hermawan", NamaOrtu: "Bpk. Hermawan", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234500189", TelegramChatID: "1234500189"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260090", Nama: "Eka Prasetya", NamaOrtu: "Bpk. Prasetya", Tipe: "siswa", Kelas: "Tahfidz A", NoHP: "081234500190", TelegramChatID: "1234500190"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260091", Nama: "Fikri Zulkarnain", NamaOrtu: "Bpk. Dahlan", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234500191", TelegramChatID: "1234500191"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260092", Nama: "Ghani Al-Habsyi", NamaOrtu: "Bpk. Alwi", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234500192", TelegramChatID: "1234500192"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260093", Nama: "Hanif Syahputra", NamaOrtu: "Bpk. Yusuf", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234500193", TelegramChatID: "1234500193"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260094", Nama: "Ilham Akbar", NamaOrtu: "Bpk. Badawi", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234500194", TelegramChatID: "1234500194"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260095", Nama: "Joko Wahyudi", NamaOrtu: "Bpk. Suwarno", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234500195", TelegramChatID: "1234500195"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260096", Nama: "Kurnia Mega", NamaOrtu: "Bpk. Sumarto", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234500196", TelegramChatID: "1234500196"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260097", Nama: "Lukmanul Hakim", NamaOrtu: "Bpk. Zainuddin", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234500197", TelegramChatID: "1234500197"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260098", Nama: "Maulana Malik", NamaOrtu: "Bpk. Hasan", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234500198", TelegramChatID: "1234500198"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260099", Nama: "Naufal Azmi", NamaOrtu: "Bpk. Ridwan", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234500199", TelegramChatID: "1234500199"},
+		{UID: "", FingerprintID: 0, NISNIP: "20260100", Nama: "Osman Ghazi", NamaOrtu: "Bpk. Ertugrul", Tipe: "siswa", Kelas: "Tahfidz B", NoHP: "081234500200", TelegramChatID: "1234500200"},
 	}
-
 	for _, m := range members {
 		res, err := db.Exec(`INSERT INTO members (nis_nip, uid, fingerprint_id, nama, nama_ortu, tipe, kelas, no_hp, telegram_chat_id)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -563,7 +660,7 @@ func seedDummyData() {
 	}
 
 	// 7. Slot Sidik Jari Baru yang Belum Terhubung (Unmapped) untuk pengujian menu Sidik Jari
-	unmappedFingerprints := []int{17, 18, 19, 20}
+	unmappedFingerprints := []int{51, 52, 53, 54, 55}
 	for _, fpID := range unmappedFingerprints {
 		db.Exec(`INSERT INTO fingerprints (fingerprint_id, device_id, member_id, status, updated_at)
 			VALUES (?, 'PRESENSI-V1', 0, 'unmapped', CURRENT_TIMESTAMP)
