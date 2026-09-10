@@ -2152,8 +2152,8 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   unsigned long t0 = millis();
   WiFiClientSecure clientAudio;
   clientAudio.setInsecure();
-  clientAudio.setHandshakeTimeout(12);
-  clientAudio.setTimeout(12000); // 15 detik socket connect timeout
+  clientAudio.setHandshakeTimeout(15);
+  clientAudio.setTimeout(15000); // 15 detik socket connect timeout
   HTTPClient httpAudio;
   httpAudio.begin(clientAudio, ttsUrl);
   httpAudio.setTimeout(15000); // 15 detik HTTP read timeout
@@ -2164,6 +2164,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   if (httpCode != 200) {
     Serial.printf("[TTS] Respon server error HTTP %d (Waktu: %lu ms)\n", httpCode, elapsed);
     httpAudio.end();
+    clientAudio.stop();
     isDownloadingTTS = false;
     return false;
   }
@@ -2174,6 +2175,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   if (!stream) {
     Serial.println("[TTS] Stream HTTP tidak valid.");
     httpAudio.end();
+    clientAudio.stop();
     isDownloadingTTS = false;
     return false;
   }
@@ -2184,17 +2186,19 @@ bool downloadTTSFile(const char* text, const char* filePath) {
     if (SD.exists(tempPath)) SD.remove(tempPath);
     f = SD.open(tempPath, FILE_WRITE);
     xSemaphoreGive(spiMutex);
+  } else {
+    f = SD.open(tempPath, FILE_WRITE);
   }
 
   if (!f) {
     Serial.println("[TTS] Gagal membuat file temp di Micro SD.");
     httpAudio.end();
+    clientAudio.stop();
     isDownloadingTTS = false;
     return false;
   }
 
-  uint8_t dlBuf[512];
-  unsigned long startDl = millis();
+  uint8_t dlBuf[1024]; // 1KB buffer lebih cepat dan efisien
   unsigned long lastActivity = millis();
   int downloaded = 0;
 
@@ -2207,23 +2211,30 @@ bool downloadTTSFile(const char* text, const char* filePath) {
     size_t avail = stream->available();
     if (avail > 0) {
       size_t readSize = (avail > sizeof(dlBuf)) ? sizeof(dlBuf) : avail;
-      int r = stream->readBytes(dlBuf, readSize);
+      int r = stream->read(dlBuf, readSize);
       if (r > 0) {
-        if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (spiMutex != NULL) {
+          if (xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+            f.write(dlBuf, r);
+            xSemaphoreGive(spiMutex);
+          } else {
+            f.write(dlBuf, r);
+          }
+        } else {
           f.write(dlBuf, r);
-          xSemaphoreGive(spiMutex);
         }
         downloaded += r;
         lastActivity = millis();
+      } else if (r < 0) {
+        Serial.println("[TTS] Error saat membaca stream data dari socket.");
+        break;
       }
     } else {
-      vTaskDelay(pdMS_TO_TICKS(10));
-    }
-
-    // Timeout jika 10 detik berturut-turut tidak ada byte baru masuk
-    if (millis() - lastActivity > 10000) {
-      Serial.println("[TTS] Timeout: Tidak ada data stream baru selama 10 detik.");
-      break;
+      vTaskDelay(pdMS_TO_TICKS(5));
+      if (millis() - lastActivity > 10000) {
+        Serial.println("[TTS] Timeout: Tidak ada data stream baru selama 10 detik.");
+        break;
+      }
     }
   }
 
@@ -2239,11 +2250,14 @@ bool downloadTTSFile(const char* text, const char* filePath) {
       Serial.printf("[TTS] Download tidak lengkap (%d dari %d bytes) atau dibatalkan.\n", downloaded, totalLen);
     }
     xSemaphoreGive(spiMutex);
+  } else {
+    f.close();
   }
 
   httpAudio.end();
+  clientAudio.stop(); // Bersihkan socket & resource TLS mbedtls seketika
   isDownloadingTTS = false;
-  return (downloaded >= 44 && !stopAudioFlag);
+  return ((totalLen > 0 ? downloaded >= totalLen : downloaded >= 44) && !stopAudioFlag);
 }
 
 void stopAudioPlayback() {
@@ -2609,8 +2623,13 @@ void syncMemberTTSFiles() {
               lcd.clear();
               printCentered("Sync Audio", 0);
               printCentered(pName.substring(0, 16), 1);
-              downloadTTSFile((pName + ".").c_str(), pPath.c_str());
-              delay(100);
+              bool ok = downloadTTSFile((pName + ".").c_str(), pPath.c_str());
+              if (!ok) {
+                delay(400);
+                Serial.printf("[TTS MEMBER SYNC] Percobaan 1 gagal. Mengulang unduhan untuk: \"%s\"...\n", pName.c_str());
+                downloadTTSFile((pName + ".").c_str(), pPath.c_str());
+              }
+              delay(300);
             }
           }
         }
@@ -2672,8 +2691,14 @@ void syncMemberTTSFiles() {
           printCentered(String(mPercent) + "%", 1);
 
           Serial.printf("[TTS MEMBER SYNC] [%d/%d] Mengunduh: \"%s\" -> %s\n", i + 1, totalMembers, mNama.c_str(), targetPath.c_str());
-          downloadTTSFile((mNama + ".").c_str(), targetPath.c_str());
-          delay(120);
+          bool ok = downloadTTSFile((mNama + ".").c_str(), targetPath.c_str());
+          if (!ok) {
+            // Jika gagal, beri jeda dan coba unduh sekali lagi (Retry 1x, biasanya server disk cache sudah siap)
+            Serial.printf("[TTS MEMBER SYNC] Percobaan 1 gagal. Mengulang unduhan untuk: \"%s\"...\n", mNama.c_str());
+            delay(400);
+            downloadTTSFile((mNama + ".").c_str(), targetPath.c_str());
+          }
+          delay(300); // Jeda aman antar unduhan agar koneksi TLS & socket lwIP bersih sempurna
         } else {
           Serial.printf("[TTS MEMBER SYNC] [%d/%d] Sudah siap: %s\n", i + 1, totalMembers, targetPath.c_str());
         }
@@ -2781,6 +2806,11 @@ void syncInitialTTSFiles() {
         i + 1, totalItems, targetPath, targetText);
       
       bool ok = downloadTTSFile(targetText, targetPath);
+      if (!ok) {
+        delay(400);
+        Serial.printf("[TTS BOOT SYNC] [%d/%d] Percobaan 1 gagal. Mengulang unduhan...\n", i + 1, totalItems);
+        ok = downloadTTSFile(targetText, targetPath);
+      }
       if (ok) {
         Serial.printf("[TTS BOOT SYNC] [%d/%d] -> BERHASIL disimpan ke Micro SD (%s)\n", 
           i + 1, totalItems, targetPath);
@@ -2788,7 +2818,7 @@ void syncInitialTTSFiles() {
         Serial.printf("[TTS BOOT SYNC] [%d/%d] -> GAGAL/DILEWATI. Sistem tetap lanjut tanpa mengganggu presensi.\n", 
           i + 1, totalItems);
       }
-      delay(150); // Jeda singkat antar koneksi agar socket & heap RAM tertata kembali
+      delay(300); // Jeda aman antar koneksi agar socket & heap RAM tertata kembali
     }
   }
 
