@@ -193,6 +193,8 @@ void queueAudio(const char* fixedPath, const char* fixedText, const char* namePa
 void stopAudioPlayback();
 void triggerAttendanceVoice(const String& status, const String& action, const String& nama);
 void handleInitialAudioCacheSync();
+bool initAudioStorage();
+bool startAudioPlaybackSubsystem();
 bool initAudioSubsystem();
 void syncInitialTTSFiles();
 void printMemoryDebug(const char* stepName);
@@ -1638,8 +1640,8 @@ bool initI2S() {
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-    .dma_buf_count = 8,
-    .dma_buf_len = 256,
+    .dma_buf_count = 4,
+    .dma_buf_len = 128,
     .use_apll = false,
     .tx_desc_auto_clear = true
   };
@@ -2218,16 +2220,23 @@ void handleInitialAudioCacheSync() {
 
 bool isAudioSubsystemReady = false;
 
-// Inisialisasi modul hardware audio (Micro SD HSPI + I2S DAC MAX98357A + FreeRTOS Audio Task)
-// Ditunda hingga seluruh sinkronisasi server utama selesai agar WiFi & HTTPS berjalan secepat mode normal
-bool initAudioSubsystem() {
+// 1. Siapkan media penyimpanan Micro SD HSPI terlebih dahulu agar file TTS dapat diunduh
+bool initAudioStorage() {
+  if (!isAudioEnabled()) return false;
+  if (isSdCardAvailable) return true;
+
+  Serial.println("\n[AUDIO SYSTEM] Menyiapkan Micro SD Card (HSPI)...");
+  isSdCardAvailable = initSDCard();
+  Serial.printf("               -> Micro SD Card (HSPI): %s\n", isSdCardAvailable ? "SIAP" : "TIDAK TERSEDIA");
+  return isSdCardAvailable;
+}
+
+// 2. Aktifkan Driver I2S DAC MAX98357A & Audio Task setelah download cache selesai
+bool startAudioPlaybackSubsystem() {
   if (!isAudioEnabled()) return false;
   if (isAudioSubsystemReady) return true;
 
-  Serial.println("\n[AUDIO SYSTEM] Menyiapkan modul hardware audio (Micro SD & I2S)...");
-  isSdCardAvailable = initSDCard();
-  Serial.printf("               -> Micro SD Card (HSPI): %s\n", isSdCardAvailable ? "SIAP" : "TIDAK TERSEDIA");
-  
+  Serial.println("\n[AUDIO SYSTEM] Mengaktifkan Driver I2S DAC MAX98357A & Audio Task...");
   isI2sAvailable = initI2S();
   Serial.printf("               -> Audio DAC I2S (MAX98357A): %s\n", isI2sAvailable ? "SIAP" : "GAGAL");
 
@@ -2238,7 +2247,7 @@ bool initAudioSubsystem() {
     BaseType_t taskRes = xTaskCreatePinnedToCore(
       audioTask,
       "audioTask",
-      4096, // Optimasi stack 4KB hemat RAM
+      3072, // Stack 3KB hemat RAM
       NULL,
       1,
       &audioTaskHandle,
@@ -2251,6 +2260,11 @@ bool initAudioSubsystem() {
   return isAudioSubsystemReady;
 }
 
+bool initAudioSubsystem() {
+  initAudioStorage();
+  return startAudioPlaybackSubsystem();
+}
+
 // =========================================================================
 // SINKRONISASI BATCH CACHE AUDIO TTS KE MICRO SD
 // Dieksekusi persis setelah [MEMBERS CACHE] selesai saat booting
@@ -2261,8 +2275,8 @@ void syncInitialTTSFiles() {
     return;
   }
 
-  // Pastikan modul audio telah aktif
-  initAudioSubsystem();
+  // Pastikan Micro SD storage aktif untuk download (I2S DAC belum dihidupkan agar RAM lega untuk SSL)
+  initAudioStorage();
   if (!isSdCardAvailable) {
     Serial.println("\n[TTS BOOT SYNC] Micro SD Card tidak terdeteksi. Pengecekan TTS dilewati.");
     return;
@@ -2338,6 +2352,9 @@ void syncInitialTTSFiles() {
   hasInitialAudioSynced = true;
   Serial.println("[TTS BOOT SYNC] >>> Selesai sinkronisasi audio dasar ke Micro SD! <<<");
   Serial.println("========================================================\n");
+
+  // Download selesai: Sekarang aktifkan driver speaker I2S & Task Audio
+  startAudioPlaybackSubsystem();
 
   // Putar ucapan selamat datang jika file boot.wav sudah siap di SD Card
   bool bootFileReady = false;
@@ -3935,8 +3952,8 @@ void setup() {
 
   // === PROSES INISIALISASI AUDIO & SINKRONISASI CACHE TTS KE MICRO SD ===
   // Dieksekusi persis setelah [MEMBERS CACHE] selesai saat seluruh socket server sudah bebas
-  Serial.println("[BOOT] 15. Mengaktifkan Subsystem Audio (SD & I2S) & Menyiapkan TTS Cache...");
-  initAudioSubsystem();
+  Serial.println("[BOOT] 15. Menyiapkan Micro SD & Sinkronisasi TTS Cache...");
+  initAudioStorage();
   syncInitialTTSFiles();
   printMemoryDebug("Setelah Sync Audio TTS");
 
