@@ -2158,6 +2158,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   httpAudio.begin(clientAudio, ttsUrl);
   httpAudio.setTimeout(15000); // 15 detik HTTP read timeout
   httpAudio.addHeader("X-API-KEY", apiKey);
+  httpAudio.addHeader("Connection", "close");
 
   int httpCode = httpAudio.GET();
   unsigned long elapsed = millis() - t0;
@@ -2171,14 +2172,6 @@ bool downloadTTSFile(const char* text, const char* filePath) {
 
   int totalLen = httpAudio.getSize();
   Serial.printf("[TTS] Respon 200 OK diterima dalam %lu ms (Ukuran: %d bytes)\n", elapsed, totalLen);
-  WiFiClient* stream = httpAudio.getStreamPtr();
-  if (!stream) {
-    Serial.println("[TTS] Stream HTTP tidak valid.");
-    httpAudio.end();
-    clientAudio.stop();
-    isDownloadingTTS = false;
-    return false;
-  }
 
   String tempPath = String(filePath) + ".tmp";
   File f;
@@ -2187,6 +2180,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
     f = SD.open(tempPath, FILE_WRITE);
     xSemaphoreGive(spiMutex);
   } else {
+    if (SD.exists(tempPath)) SD.remove(tempPath);
     f = SD.open(tempPath, FILE_WRITE);
   }
 
@@ -2198,66 +2192,27 @@ bool downloadTTSFile(const char* text, const char* filePath) {
     return false;
   }
 
-  uint8_t dlBuf[1024]; // 1KB buffer lebih cepat dan efisien
-  unsigned long lastActivity = millis();
-  int downloaded = 0;
+  // Unduh stream HTTP langsung ke file Micro SD menggunakan writeToStream bawaan HTTPClient
+  // (Metode resmi ESP32 yang menangani block read, chunk, dan TLS socket tanpa stall/timeout)
+  if (spiMutex != NULL) xSemaphoreTake(spiMutex, portMAX_DELAY);
+  int downloaded = httpAudio.writeToStream(&f);
+  f.close();
 
-  while (httpAudio.connected() && (downloaded < totalLen || totalLen < 0)) {
-    if (stopAudioFlag) {
-      Serial.println("[TTS] Download dibatalkan karena kartu/jari baru di-tap.");
-      break;
-    }
-
-    size_t avail = stream->available();
-    if (avail > 0) {
-      size_t readSize = (avail > sizeof(dlBuf)) ? sizeof(dlBuf) : avail;
-      int r = stream->read(dlBuf, readSize);
-      if (r > 0) {
-        if (spiMutex != NULL) {
-          if (xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-            f.write(dlBuf, r);
-            xSemaphoreGive(spiMutex);
-          } else {
-            f.write(dlBuf, r);
-          }
-        } else {
-          f.write(dlBuf, r);
-        }
-        downloaded += r;
-        lastActivity = millis();
-      } else if (r < 0) {
-        Serial.println("[TTS] Error saat membaca stream data dari socket.");
-        break;
-      }
-    } else {
-      vTaskDelay(pdMS_TO_TICKS(5));
-      if (millis() - lastActivity > 10000) {
-        Serial.println("[TTS] Timeout: Tidak ada data stream baru selama 10 detik.");
-        break;
-      }
-    }
-  }
-
-  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-    f.close();
-    bool isComplete = (totalLen > 0) ? (downloaded >= totalLen) : (downloaded >= 44);
-    if (isComplete && !stopAudioFlag) {
-      if (SD.exists(filePath)) SD.remove(filePath);
-      SD.rename(tempPath, filePath);
-      Serial.printf("[TTS] Berhasil di-cache: %s (%d bytes)\n", filePath, downloaded);
-    } else {
-      if (SD.exists(tempPath)) SD.remove(tempPath);
-      Serial.printf("[TTS] Download tidak lengkap (%d dari %d bytes) atau dibatalkan.\n", downloaded, totalLen);
-    }
-    xSemaphoreGive(spiMutex);
+  bool isComplete = (totalLen > 0) ? (downloaded >= totalLen) : (downloaded >= 44);
+  if (isComplete && !stopAudioFlag) {
+    if (SD.exists(filePath)) SD.remove(filePath);
+    SD.rename(tempPath, filePath);
+    Serial.printf("[TTS] Berhasil di-cache: %s (%d bytes)\n", filePath, downloaded);
   } else {
-    f.close();
+    if (SD.exists(tempPath)) SD.remove(tempPath);
+    Serial.printf("[TTS] Download tidak lengkap (%d dari %d bytes) atau dibatalkan.\n", downloaded, totalLen);
   }
+  if (spiMutex != NULL) xSemaphoreGive(spiMutex);
 
   httpAudio.end();
   clientAudio.stop(); // Bersihkan socket & resource TLS mbedtls seketika
   isDownloadingTTS = false;
-  return ((totalLen > 0 ? downloaded >= totalLen : downloaded >= 44) && !stopAudioFlag);
+  return (isComplete && !stopAudioFlag);
 }
 
 void stopAudioPlayback() {
