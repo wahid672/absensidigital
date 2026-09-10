@@ -73,6 +73,65 @@ bool isAudioEnabled() {
 }
 
 // =========================================================================
+// KONFIGURASI AUTO REBOOT OTOMATIS (JADWAL RESTART HARIAN)
+// Format: "HH:MM" (24 Jam), contoh:
+// "01:00" = Restart otomatis setiap jam 1 malam
+// "02:30" = Restart otomatis setiap jam 2:30 malam
+// "00:00" = Restart otomatis tengah malam
+// ""      = Kosongkan jika ingin menonaktifkan auto reboot
+// =========================================================================
+String autoRebootTime = "01:00"; // Jadwal restart harian (Contoh: "01:00" = Jam 1 malam)
+
+bool isAutoRebootEnabled() {
+  String t = autoRebootTime;
+  t.trim();
+  if (t.length() == 0 || t.equalsIgnoreCase("false") || t.equalsIgnoreCase("disable") || t.equalsIgnoreCase("off")) {
+    return false;
+  }
+  return true;
+}
+
+int getAutoRebootHour() {
+  int colon = autoRebootTime.indexOf(':');
+  if (colon != -1) return autoRebootTime.substring(0, colon).toInt();
+  return autoRebootTime.toInt();
+}
+
+int getAutoRebootMinute() {
+  int colon = autoRebootTime.indexOf(':');
+  if (colon != -1) return autoRebootTime.substring(colon + 1).toInt();
+  return 0;
+}
+
+RTC_DATA_ATTR static int lastAutoRebootDay = -1;
+
+void checkAutoReboot(struct tm* t) {
+  if (!isAutoRebootEnabled()) return;
+  if (t == NULL || t->tm_year < 120) return; // Waktu belum sinkron via NTP / RTC
+  if (currentMode != STANDBY) return;        // Jangan reboot saat transaksi atau rekam sidik jari
+  if (millis() < 120000) return;             // Proteksi loop: aktif minimal 2 menit setelah boot
+
+  int targetH = getAutoRebootHour();
+  int targetM = getAutoRebootMinute();
+
+  if (t->tm_hour == targetH && t->tm_min == targetM) {
+    if (lastAutoRebootDay != t->tm_yday) {
+      lastAutoRebootDay = t->tm_yday;
+      Serial.printf("\n[AUTO REBOOT] Waktu jadwal restart harian (%02d:%02d WIB) tercapai. Merestart ESP32...\n", targetH, targetM);
+      
+      stopAudioPlayback();
+      lcd.clear();
+      printCentered("Auto Reboot...", 0);
+      printCentered("Restarting...", 1);
+      digitalWrite(BUZZ, HIGH); delay(150); digitalWrite(BUZZ, LOW);
+      delay(850);
+
+      ESP.restart();
+    }
+  }
+}
+
+// =========================================================================
 // KONFIGURASI FITUR JADWAL SHOLAT
 // true  = Aktif (Tampil jadwal berjalan di LCD, countdown sholat, dan sync ke server)
 // false = Nonaktif Total (Tidak tampil di LCD dan tidak request ke server jadwal sholat)
@@ -3222,6 +3281,7 @@ void printNetworkInfo() {
   Serial.printf ("  * Signal (RSSI)    : %d dBm\n", WiFi.RSSI());
   Serial.printf ("  * MAC Address      : %s\n", WiFi.macAddress().c_str());
   Serial.printf ("  * Fitur Audio      : %s\n", isAudioEnabled() ? "AKTIF (True)" : "NONAKTIF (False)");
+  Serial.printf ("  * Auto Reboot      : %s\n", isAutoRebootEnabled() ? (autoRebootTime + " WIB").c_str() : "NONAKTIF");
   Serial.println("=======================================================\n");
 }
 
@@ -3604,6 +3664,7 @@ void handleWebRoot() {
   } else {
     html += "<div class='box' style='border-left-color:#8b5cf6;'><strong>STATUS SENSOR</strong><span style='font-size:13px;'>Hanya RFID (Finger Nonaktif)</span></div>";
   }
+  html += "<div class='box'><strong>AUTO REBOOT</strong><span>" + (isAutoRebootEnabled() ? (autoRebootTime + " WIB") : "Nonaktif") + "</span></div>";
   html += "<div class='box'><strong>FREE HEAP RAM</strong><span>" + String(ESP.getFreeHeap() / 1024) + " KB</span></div>";
   html += "</div>";
   html += "<div class='box' style='margin-bottom:16px;border-left-color:#16a34a;'><strong>WAKTU SISTEM</strong><span>" + String(timeBuff) + "</span></div>";
@@ -3789,6 +3850,24 @@ void checkSerialCommand() {
     if (upperInput == "IP" || upperInput == "STATUS") {
       printNetworkInfo();
     }
+    // Perintah RESTART / REBOOT Manual via Serial
+    else if (upperInput == "REBOOT" || upperInput == "RESTART") {
+      Serial.println("[SYSTEM] Perintah restart diterima dari Serial. Merestart ESP32...");
+      lcd.clear();
+      printCentered("Restarting...", 0);
+      printCentered("ESP32...", 1);
+      digitalWrite(BUZZ, HIGH); delay(200); digitalWrite(BUZZ, LOW);
+      delay(800);
+      ESP.restart();
+    }
+    // Perintah Ubah Jadwal Auto Reboot via Serial (Contoh: AUTOREBOOT 02:00)
+    else if (upperInput.startsWith("AUTOREBOOT ") || upperInput.startsWith("SET REBOOT ")) {
+      int spaceIdx = rawInput.lastIndexOf(' ');
+      String newTime = rawInput.substring(spaceIdx + 1);
+      newTime.trim();
+      autoRebootTime = newTime;
+      Serial.printf("[SYSTEM] Jadwal Auto Reboot berhasil diubah menjadi: %s\n", isAutoRebootEnabled() ? (autoRebootTime + " WIB").c_str() : "NONAKTIF");
+    }
     // 2. Perintah UPLOAD Template ke Server
     else if (upperInput == "UPLOAD") {
       handleTemplateUpload();
@@ -3967,6 +4046,7 @@ void printBootBanner() {
   Serial.printf("[SYSTEM] Flash Size    : %u KB (Speed: %u MHz)\n", ESP.getFlashChipSize() / 1024, ESP.getFlashChipSpeed() / 1000000);
   Serial.printf("[SYSTEM] SDK Version   : %s\n", ESP.getSdkVersion());
   Serial.printf("[SYSTEM] Fitur Audio   : %s\n", isAudioEnabled() ? "AKTIF (true)" : "NONAKTIF (false)");
+  Serial.printf("[SYSTEM] Auto Reboot   : %s\n", isAutoRebootEnabled() ? (autoRebootTime + " WIB").c_str() : "NONAKTIF");
   printMemoryDebug("Boot Awal (Serial Dimulai)");
   Serial.println("--------------------------------------------------------\n");
 }
@@ -4262,6 +4342,7 @@ void loop() {
     fetchJadwal();
   }
   if (timeValid) checkAdhan(&timeinfo);
+  if (timeValid) checkAutoReboot(&timeinfo);
 
   // --- DETEKSI STATUS WIFI & OFFLINE AUTO-SYNC (NON-BLOCKING DENGAN DEBOUNCE) ---
   unsigned long currentMillis = millis();
