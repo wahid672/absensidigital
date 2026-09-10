@@ -73,6 +73,22 @@ bool isAudioEnabled() {
 }
 
 // =========================================================================
+// KONFIGURASI VOLUME SUARA AUDIO (0% - 100%)
+// Contoh: "80%" atau "80", "100%", "50%", "0%" (mute)
+// =========================================================================
+String volumeAudio = "80%"; // Tingkat kekerasan suara speaker (Default: "80%")
+
+int getAudioVolume() {
+  String v = volumeAudio;
+  v.trim();
+  v.replace("%", "");
+  int vol = v.toInt();
+  if (vol < 0) vol = 0;
+  if (vol > 100) vol = 100;
+  return vol;
+}
+
+// =========================================================================
 // KONFIGURASI AUTO REBOOT OTOMATIS (JADWAL RESTART HARIAN)
 // Format: "HH:MM" (24 Jam), contoh:
 // "01:00" = Restart otomatis setiap jam 1 malam
@@ -1955,15 +1971,23 @@ bool playWavFile(const char* filePath) {
     if (bytesRead == 0) break;
     remaining -= bytesRead;
 
+    int vol = getAudioVolume();
     if (numChannels == 1) {
       int samples = bytesRead / 2;
       for (int i = 0; i < samples; i++) {
-        stereoBuf[i * 2] = rawBuf[i];
-        stereoBuf[i * 2 + 1] = rawBuf[i];
+        int16_t s = (vol < 100) ? (int16_t)(((int32_t)rawBuf[i] * vol) / 100) : rawBuf[i];
+        stereoBuf[i * 2] = s;
+        stereoBuf[i * 2 + 1] = s;
       }
       size_t bytesWritten = 0;
       i2s_write(I2S_NUM, (const char*)stereoBuf, samples * 4, &bytesWritten, portMAX_DELAY);
     } else {
+      if (vol < 100) {
+        int samples = bytesRead / 2;
+        for (int i = 0; i < samples; i++) {
+          rawBuf[i] = (int16_t)(((int32_t)rawBuf[i] * vol) / 100);
+        }
+      }
       size_t bytesWritten = 0;
       i2s_write(I2S_NUM, (const char*)rawBuf, bytesRead, &bytesWritten, portMAX_DELAY);
     }
@@ -3255,7 +3279,7 @@ void printNetworkInfo() {
   Serial.printf ("  * Web Dashboard    : http://%s/\n", WiFi.localIP().toString().c_str());
   Serial.printf ("  * Signal (RSSI)    : %d dBm\n", WiFi.RSSI());
   Serial.printf ("  * MAC Address      : %s\n", WiFi.macAddress().c_str());
-  Serial.printf ("  * Fitur Audio      : %s\n", isAudioEnabled() ? "AKTIF (True)" : "NONAKTIF (False)");
+  Serial.printf ("  * Fitur Audio      : %s (Volume: %d%%)\n", isAudioEnabled() ? "AKTIF (True)" : "NONAKTIF (False)", getAudioVolume());
   Serial.printf ("  * Auto Reboot      : %s\n", isAutoRebootEnabled() ? (autoRebootTime + " WIB").c_str() : "NONAKTIF");
   Serial.println("=======================================================\n");
 }
@@ -3639,6 +3663,7 @@ void handleWebRoot() {
   } else {
     html += "<div class='box' style='border-left-color:#8b5cf6;'><strong>STATUS SENSOR</strong><span style='font-size:13px;'>Hanya RFID (Finger Nonaktif)</span></div>";
   }
+  html += "<div class='box'><strong>VOLUME AUDIO</strong><span>" + String(getAudioVolume()) + "%</span></div>";
   html += "<div class='box'><strong>AUTO REBOOT</strong><span>" + (isAutoRebootEnabled() ? (autoRebootTime + " WIB") : "Nonaktif") + "</span></div>";
   html += "<div class='box'><strong>FREE HEAP RAM</strong><span>" + String(ESP.getFreeHeap() / 1024) + " KB</span></div>";
   html += "</div>";
@@ -3843,6 +3868,14 @@ void checkSerialCommand() {
       autoRebootTime = newTime;
       Serial.printf("[SYSTEM] Jadwal Auto Reboot berhasil diubah menjadi: %s\n", isAutoRebootEnabled() ? (autoRebootTime + " WIB").c_str() : "NONAKTIF");
     }
+    // Perintah Ubah Volume Audio via Serial (Contoh: VOLUME 80% atau SET VOLUME 50)
+    else if (upperInput.startsWith("VOLUME ") || upperInput.startsWith("SET VOLUME ")) {
+      int spaceIdx = rawInput.lastIndexOf(' ');
+      String newVol = rawInput.substring(spaceIdx + 1);
+      newVol.trim();
+      volumeAudio = newVol;
+      Serial.printf("[AUDIO] Volume berhasil diatur ke: %s (%d%%)\n", volumeAudio.c_str(), getAudioVolume());
+    }
     // 2. Perintah UPLOAD Template ke Server
     else if (upperInput == "UPLOAD") {
       handleTemplateUpload();
@@ -4020,7 +4053,7 @@ void printBootBanner() {
   Serial.printf("[SYSTEM] CPU Cores     : %d @ %d MHz\n", ESP.getChipCores(), ESP.getCpuFreqMHz());
   Serial.printf("[SYSTEM] Flash Size    : %u KB (Speed: %u MHz)\n", ESP.getFlashChipSize() / 1024, ESP.getFlashChipSpeed() / 1000000);
   Serial.printf("[SYSTEM] SDK Version   : %s\n", ESP.getSdkVersion());
-  Serial.printf("[SYSTEM] Fitur Audio   : %s\n", isAudioEnabled() ? "AKTIF (true)" : "NONAKTIF (false)");
+  Serial.printf("[SYSTEM] Fitur Audio   : %s (Volume: %d%%)\n", isAudioEnabled() ? "AKTIF (true)" : "NONAKTIF (false)", getAudioVolume());
   Serial.printf("[SYSTEM] Auto Reboot   : %s\n", isAutoRebootEnabled() ? (autoRebootTime + " WIB").c_str() : "NONAKTIF");
   printMemoryDebug("Boot Awal (Serial Dimulai)");
   Serial.println("--------------------------------------------------------\n");
