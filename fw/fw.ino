@@ -193,6 +193,7 @@ void queueAudio(const char* fixedPath, const char* fixedText, const char* namePa
 void stopAudioPlayback();
 void triggerAttendanceVoice(const String& status, const String& action, const String& nama);
 void handleInitialAudioCacheSync();
+bool initAudioSubsystem();
 void syncInitialTTSFiles();
 void printMemoryDebug(const char* stepName);
 void printBootBanner();
@@ -993,9 +994,10 @@ void syncDataFingerprint() {
 
       WiFiClientSecure client;
       client.setInsecure();
+      client.setTimeout(6);
       HTTPClient http;
       http.begin(client, serverUrl);
-      http.setTimeout(8000);
+      http.setTimeout(6000);
       http.addHeader("Content-Type", "application/json");
       http.addHeader("X-API-KEY", apiKey);
 
@@ -1051,9 +1053,10 @@ void syncDataFingerprint() {
 
     WiFiClientSecure client;
     client.setInsecure();
+    client.setTimeout(6);
     HTTPClient http;
     http.begin(client, serverUrl);
-    http.setTimeout(8000);
+    http.setTimeout(6000);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-API-KEY", apiKey);
 
@@ -2215,6 +2218,9 @@ void syncInitialTTSFiles() {
     Serial.println("\n[TTS BOOT SYNC] Fitur audio dinonaktifkan (fiturAudio = \"false\"). Pengecekan TTS dilewati.");
     return;
   }
+
+  // Pastikan modul audio telah aktif
+  initAudioSubsystem();
   if (!isSdCardAvailable) {
     Serial.println("\n[TTS BOOT SYNC] Micro SD Card tidak terdeteksi. Pengecekan TTS dilewati.");
     return;
@@ -3759,32 +3765,13 @@ void setup() {
   Serial.printf("[BOOT] 7. Modul RFID RC522: %s\n", rfidOk ? "SIAP (Register OK)" : "GAGAL/TIDAK TERDETEKSI");
   printMemoryDebug("Setelah Inisialisasi RC522");
 
-  // 2. Inisialisasi Audio I2S & Micro SD Card (Hanya jika fiturAudio = "true")
+  // 2. Status Fitur Audio (Inisialisasi hardware ditunda hingga sync server selesai)
   if (isAudioEnabled()) {
-    Serial.println("[BOOT] 8. Fitur audio AKTIF (fiturAudio = \"true\"). Menginisialisasi modul SD & I2S...");
-    isSdCardAvailable = initSDCard();
-    Serial.printf("          -> Micro SD Card (HSPI): %s\n", isSdCardAvailable ? "SIAP" : "TIDAK TERSEDIA");
-    
-    isI2sAvailable = initI2S();
-    Serial.printf("          -> Audio DAC I2S (MAX98357A): %s\n", isI2sAvailable ? "SIAP" : "GAGAL");
-
-    audioQueue = xQueueCreate(4, sizeof(AudioRequest));
-    if (audioQueue != NULL) {
-      BaseType_t taskRes = xTaskCreatePinnedToCore(
-        audioTask,
-        "audioTask",
-        4096, // Optimasi stack 4KB hemat RAM
-        NULL,
-        1,
-        &audioTaskHandle,
-        1 // Dijalankan di Core 1 agar Core 0 100% didedikasikan untuk WiFi & TCP/IP stack
-      );
-      Serial.printf("          -> Audio Task FreeRTOS: %s (Core 1)\n", (taskRes == pdPASS) ? "BERJALAN" : "GAGAL DIBUAT");
-    }
+    Serial.println("[BOOT] 8. Fitur audio AKTIF. Hardware audio (SD & I2S) akan diinisialisasi setelah sinkronisasi server selesai agar koneksi jaringan maksimal.");
   } else {
-    Serial.println("[BOOT] 8. Fitur audio NONAKTIF (fiturAudio = \"false\"). Berjalan dalam mode standar.");
+    Serial.println("[BOOT] 8. Fitur audio NONAKTIF (fiturAudio = \"false\"). Berjalan dalam mode standar tanpa audio.");
   }
-  printMemoryDebug("Setelah Audio & SD Init");
+  printMemoryDebug("Setelah Cek Fitur Audio");
 
   // 4. Inisialisasi SPIFFS untuk penyimpanan offline
   if (!SPIFFS.begin(true)) {
@@ -3904,8 +3891,10 @@ void setup() {
   fetchMembersLocalCache();
   printMemoryDebug("Setelah Sync Members Cache");
 
-  // === PROSES SINKRONISASI CACHE AUDIO TTS KE MICRO SD ===
-  // Dieksekusi persis setelah [MEMBERS CACHE] selesai
+  // === PROSES INISIALISASI AUDIO & SINKRONISASI CACHE TTS KE MICRO SD ===
+  // Dieksekusi persis setelah [MEMBERS CACHE] selesai saat seluruh socket server sudah bebas
+  Serial.println("[BOOT] 15. Mengaktifkan Subsystem Audio (SD & I2S) & Menyiapkan TTS Cache...");
+  initAudioSubsystem();
   syncInitialTTSFiles();
   printMemoryDebug("Setelah Sync Audio TTS");
 
