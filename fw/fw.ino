@@ -251,6 +251,7 @@ bool startAudioPlaybackSubsystem();
 bool initAudioSubsystem();
 void syncInitialTTSFiles();
 void syncMemberTTSFiles();
+void playBootGreetingAudio();
 void queuePendingMemberAudio(const String& nama);
 void printMemoryDebug(const char* stepName);
 void printBootBanner();
@@ -2812,10 +2813,15 @@ void syncInitialTTSFiles() {
   printCentered("100%", 1);
   delay(300);
 
-  Serial.println("[TTS BOOT SYNC] >>> Selesai sinkronisasi audio dasar & member ke Micro SD! <<<");
-  Serial.println("========================================================\n");
+}
 
-  // Putar ucapan selamat datang jika file boot.wav sudah siap di SD Card
+void playBootGreetingAudio() {
+  if (!isAudioEnabled() || !isAudioSubsystemReady) return;
+
+  String bootMsg = topMessage;
+  bootMsg.trim();
+  if (bootMsg.length() == 0) bootMsg = "Selamat Datang";
+
   bool bootFileReady = false;
   if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
     bootFileReady = SD.exists("/tts/boot.wav");
@@ -4609,6 +4615,9 @@ void setup() {
   syncInitialTTSFiles();
   startAudioPlaybackSubsystem();
   printMemoryDebug("Setelah Sync Audio TTS & Driver Aktif");
+
+  // Putar ucapan selamat datang booting setelah driver I2S & audioQueue siap 100%!
+  playBootGreetingAudio();
 
   setStandbyMode(); // Panggil fungsi setup UI dan LED standby
   isSystemInStandby = true;
