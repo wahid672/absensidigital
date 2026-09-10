@@ -2250,22 +2250,18 @@ void syncInitialTTSFiles() {
     }
 
     if (fileValid) {
-      Serial.printf("[TTS BOOT SYNC] [%d/%d] [SUDAH ADA] %-20s (%5u B) | Ket: %s
-", 
+      Serial.printf("[TTS BOOT SYNC] [%d/%d] [SUDAH ADA] %-20s (%5u B) | Ket: %s\n", 
         i + 1, totalItems, targetPath, (unsigned int)fileSize, targetDesc);
     } else {
-      Serial.printf("[TTS BOOT SYNC] [%d/%d] [MENGUNDUH] %-20s | Teks: "%s"...
-", 
+      Serial.printf("[TTS BOOT SYNC] [%d/%d] [MENGUNDUH] %-20s | Teks: \"%s\"...\n", 
         i + 1, totalItems, targetPath, targetText);
       
       bool ok = downloadTTSFile(targetText, targetPath);
       if (ok) {
-        Serial.printf("[TTS BOOT SYNC] [%d/%d] -> BERHASIL disimpan ke Micro SD (%s)
-", 
+        Serial.printf("[TTS BOOT SYNC] [%d/%d] -> BERHASIL disimpan ke Micro SD (%s)\n", 
           i + 1, totalItems, targetPath);
       } else {
-        Serial.printf("[TTS BOOT SYNC] [%d/%d] -> GAGAL/DILEWATI. Sistem tetap lanjut tanpa mengganggu presensi.
-", 
+        Serial.printf("[TTS BOOT SYNC] [%d/%d] -> GAGAL/DILEWATI. Sistem tetap lanjut tanpa mengganggu presensi.\n", 
           i + 1, totalItems);
       }
       delay(150); // Jeda singkat antar koneksi agar socket & heap RAM tertata kembali
