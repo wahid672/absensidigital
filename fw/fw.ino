@@ -193,6 +193,9 @@ void queueAudio(const char* fixedPath, const char* fixedText, const char* namePa
 void stopAudioPlayback();
 void triggerAttendanceVoice(const String& status, const String& action, const String& nama);
 void handleInitialAudioCacheSync();
+void syncInitialTTSFiles();
+void printMemoryDebug(const char* stepName);
+void printBootBanner();
 String urlEncode(const String& str);
 String sanitizeFilename(String raw);
 
@@ -2184,6 +2187,110 @@ void handleInitialAudioCacheSync() {
   }
 }
 
+// =========================================================================
+// SINKRONISASI BATCH CACHE AUDIO TTS KE MICRO SD
+// Dieksekusi persis setelah [MEMBERS CACHE] selesai saat booting
+// =========================================================================
+void syncInitialTTSFiles() {
+  if (!isAudioEnabled()) {
+    Serial.println("\n[TTS BOOT SYNC] Fitur audio dinonaktifkan (fiturAudio = \"false\"). Pengecekan TTS dilewati.");
+    return;
+  }
+  if (!isSdCardAvailable) {
+    Serial.println("\n[TTS BOOT SYNC] Micro SD Card tidak terdeteksi. Pengecekan TTS dilewati.");
+    return;
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\n[TTS BOOT SYNC] WiFi tidak terhubung. Menggunakan cache audio offline di Micro SD jika ada.");
+    return;
+  }
+
+  Serial.println("\n========================================================");
+  Serial.println("  [TTS BOOT SYNC] MEMERIKSA & MENGUNDUH CACHE AUDIO DASAR  ");
+  Serial.println("========================================================");
+
+  struct InitialAudioItem {
+    const char* path;
+    const char* text;
+    const char* desc;
+  };
+
+  String bootMsg = topMessage;
+  bootMsg.trim();
+  if (bootMsg.length() == 0) bootMsg = "Selamat Datang";
+
+  const InitialAudioItem items[] = {
+    { "/tts/sukses.wav",      "Absensi Berhasil.",                              "Presensi Masuk Berhasil" },
+    { "/tts/keluar.wav",      "Absensi keluar berhasil.",                      "Presensi Keluar Berhasil" },
+    { "/tts/sudah_absen.wav", "Anda sudah absensi masuk.",                     "Sudah Presensi Masuk" },
+    { "/tts/gagal.wav",       "Absensi gagal, kartu atau jari belum terdaftar.", "Presensi Ditolak/Belum Terdaftar" },
+    { "/tts/boot.wav",        bootMsg.c_str(),                                 "Ucapan Selamat Datang Booting" }
+  };
+  const int totalItems = 5;
+
+  for (int i = 0; i < totalItems; i++) {
+    const char* targetPath = items[i].path;
+    const char* targetText = items[i].text;
+    const char* targetDesc = items[i].desc;
+
+    bool fileValid = false;
+    size_t fileSize = 0;
+    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(300)) == pdTRUE) {
+      if (SD.exists(targetPath)) {
+        File f = SD.open(targetPath, FILE_READ);
+        if (f) {
+          fileSize = f.size();
+          f.close();
+          if (fileSize >= 44) {
+            fileValid = true;
+          }
+        }
+      }
+      xSemaphoreGive(spiMutex);
+    }
+
+    if (fileValid) {
+      Serial.printf("[TTS BOOT SYNC] [%d/%d] [SUDAH ADA] %-20s (%5u B) | Ket: %s
+", 
+        i + 1, totalItems, targetPath, (unsigned int)fileSize, targetDesc);
+    } else {
+      Serial.printf("[TTS BOOT SYNC] [%d/%d] [MENGUNDUH] %-20s | Teks: "%s"...
+", 
+        i + 1, totalItems, targetPath, targetText);
+      
+      bool ok = downloadTTSFile(targetText, targetPath);
+      if (ok) {
+        Serial.printf("[TTS BOOT SYNC] [%d/%d] -> BERHASIL disimpan ke Micro SD (%s)
+", 
+          i + 1, totalItems, targetPath);
+      } else {
+        Serial.printf("[TTS BOOT SYNC] [%d/%d] -> GAGAL/DILEWATI. Sistem tetap lanjut tanpa mengganggu presensi.
+", 
+          i + 1, totalItems);
+      }
+      delay(150); // Jeda singkat antar koneksi agar socket & heap RAM tertata kembali
+    }
+  }
+
+  hasInitialAudioSynced = true;
+  Serial.println("[TTS BOOT SYNC] >>> Selesai sinkronisasi audio dasar ke Micro SD! <<<");
+  Serial.println("========================================================\n");
+
+  // Putar ucapan selamat datang jika file boot.wav sudah siap di SD Card
+  bool bootFileReady = false;
+  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    bootFileReady = SD.exists("/tts/boot.wav");
+    xSemaphoreGive(spiMutex);
+  }
+
+  if (bootFileReady) {
+    Serial.printf("[TTS BOOT] Memutar audio selamat datang: \"%s\"\n", bootMsg.c_str());
+    queueAudio("/tts/boot.wav", bootMsg.c_str(), "", "");
+  } else {
+    Serial.println("[TTS BOOT] File /tts/boot.wav belum tersedia. Ucapan booting dilewati secara aman.");
+  }
+}
+
 // Inisialisasi & Reset Kuat Hardware RC522 (Anti-Hang / Anti-Freeze)
 bool initRC522() {
   if (spiMutex != NULL) xSemaphoreTake(spiMutex, portMAX_DELAY);
@@ -3559,17 +3666,48 @@ void checkSerialCommand() {
   }
 }
 
+// --- DEBUG HEAP & MONITORING BOOTING ---
+
+void printMemoryDebug(const char* stepName) {
+  Serial.printf("[DEBUG HEAP] %-30s | Free: %6u B | MinFree: %6u B | MaxAlloc: %6u B\n",
+    stepName, ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+}
+
+void printBootBanner() {
+  Serial.println("\n========================================================");
+  Serial.println("     SIAKAD PONPES - IOT PRESENSI SMART ENGINE ESP32    ");
+  Serial.println("========================================================");
+  Serial.printf("[SYSTEM] Chip Model    : %s (Rev %d)\n", ESP.getChipModel(), ESP.getChipRevision());
+  Serial.printf("[SYSTEM] CPU Cores     : %d @ %d MHz\n", ESP.getChipCores(), ESP.getCpuFreqMHz());
+  Serial.printf("[SYSTEM] Flash Size    : %u KB (Speed: %u MHz)\n", ESP.getFlashChipSize() / 1024, ESP.getFlashChipSpeed() / 1000000);
+  Serial.printf("[SYSTEM] SDK Version   : %s\n", ESP.getSdkVersion());
+  Serial.printf("[SYSTEM] Fitur Audio   : %s\n", isAudioEnabled() ? "AKTIF (true)" : "NONAKTIF (false)");
+  printMemoryDebug("Boot Awal (Serial Dimulai)");
+  Serial.println("--------------------------------------------------------\n");
+}
+
 // --- MAIN ROUTINES ---
 
 void setup() { 
   Serial.begin(115200);
+  delay(100);
+
+  printBootBanner();
+  printMemoryDebug("Awal Setup()");
+
   pinMode(BUZZ, OUTPUT); digitalWrite(BUZZ, LOW);
   
   lcd.begin(16, 2); lcd.init(); lcd.backlight();
   printCentered("Inisialisasi...", 0);
+  Serial.println("[BOOT] 1. Inisialisasi LCD 16x2 selesai.");
 
   // Inisialisasi Mutex SPI untuk pembagian bus antara RC522 & Micro SD Card
   spiMutex = xSemaphoreCreateMutex();
+  if (spiMutex != NULL) {
+    Serial.println("[BOOT] 2. Mutex SPI berhasil dibuat.");
+  } else {
+    Serial.println("[BOOT] 2. [PERINGATAN] Gagal membuat Mutex SPI!");
+  }
 
   // Inisialisasi Pin Chip Select & Reset SPI dalam kondisi HIGH (non-aktif)
   pinMode(RST_PIN, OUTPUT);
@@ -3578,6 +3716,7 @@ void setup() {
   digitalWrite(SS_PIN, HIGH);
   pinMode(SD_CS_PIN, OUTPUT);
   digitalWrite(SD_CS_PIN, HIGH);
+  Serial.println("[BOOT] 3. Pin CS/RST (RC522 & Micro SD) diatur ke kondisi IDLE (HIGH).");
 
   // Inisialisasi I2C & Auto-Detect RTC (DS3231 vs DS1307 vs NTP)
   Wire.begin();
@@ -3585,27 +3724,38 @@ void setup() {
   if (detectedRTC != RTC_TYPE_NONE) {
     if (syncSystemTimeFromRTC()) {
       printCentered(rtcName, 1);
+      Serial.printf("[BOOT] 4. RTC terdeteksi: %s (Waktu RTC berhasil disinkronkan).\n", rtcName);
       delay(700);
     }
+  } else {
+    Serial.println("[BOOT] 4. RTC Eksternal tidak terdeteksi. Menggunakan NTP/Sistem internal.");
   }
   // Muat jadwal batas jam presensi dari NVS lokal
   loadScheduleConfigFromNVS();
+  Serial.println("[BOOT] 5. Jadwal presensi dari NVS lokal dimuat.");
+  printMemoryDebug("Setelah RTC & NVS");
   
   // Inisialisasi SPI Bus Utama (SCK 18, MISO 19, MOSI 23)
   SPI.begin();
+  Serial.println("[BOOT] 6. SPI Bus Utama (SCK 18, MISO 19, MOSI 23) aktif.");
 
   // 1. Inisialisasi Modul RFID RC522 Lebih Awal (Hard-Reset & Verifikasi Register)
-  initRC522();
+  bool rfidOk = initRC522();
+  Serial.printf("[BOOT] 7. Modul RFID RC522: %s\n", rfidOk ? "SIAP (Register OK)" : "GAGAL/TIDAK TERDETEKSI");
+  printMemoryDebug("Setelah Inisialisasi RC522");
 
   // 2. Inisialisasi Audio I2S & Micro SD Card (Hanya jika fiturAudio = "true")
   if (isAudioEnabled()) {
-    Serial.println("[AUDIO] Fitur audio AKTIF (fiturAudio = \"true\"). Menginisialisasi modul...");
+    Serial.println("[BOOT] 8. Fitur audio AKTIF (fiturAudio = \"true\"). Menginisialisasi modul SD & I2S...");
     isSdCardAvailable = initSDCard();
+    Serial.printf("          -> Micro SD Card (HSPI): %s\n", isSdCardAvailable ? "SIAP" : "TIDAK TERSEDIA");
+    
     isI2sAvailable = initI2S();
+    Serial.printf("          -> Audio DAC I2S (MAX98357A): %s\n", isI2sAvailable ? "SIAP" : "GAGAL");
 
     audioQueue = xQueueCreate(4, sizeof(AudioRequest));
     if (audioQueue != NULL) {
-      xTaskCreatePinnedToCore(
+      BaseType_t taskRes = xTaskCreatePinnedToCore(
         audioTask,
         "audioTask",
         4096, // Optimasi stack 4KB hemat RAM
@@ -3614,18 +3764,23 @@ void setup() {
         &audioTaskHandle,
         1 // Dijalankan di Core 1 agar Core 0 100% didedikasikan untuk WiFi & TCP/IP stack
       );
+      Serial.printf("          -> Audio Task FreeRTOS: %s (Core 1)\n", (taskRes == pdPASS) ? "BERJALAN" : "GAGAL DIBUAT");
     }
   } else {
-    Serial.println("[AUDIO] Fitur audio NONAKTIF (fiturAudio = \"false\"). Berjalan dalam mode standar.");
+    Serial.println("[BOOT] 8. Fitur audio NONAKTIF (fiturAudio = \"false\"). Berjalan dalam mode standar.");
   }
+  printMemoryDebug("Setelah Audio & SD Init");
 
   // 4. Inisialisasi SPIFFS untuk penyimpanan offline
   if (!SPIFFS.begin(true)) {
-    Serial.println("[SPIFFS] Gagal menginisialisasi partisi SPIFFS!");
+    Serial.println("[BOOT] 9. [SPIFFS] Gagal menginisialisasi partisi SPIFFS!");
   } else {
-    Serial.println("[SPIFFS] Sistem File SPIFFS siap.");
+    Serial.printf("[BOOT] 9. [SPIFFS] Sistem File SPIFFS siap. Total: %u KB, Terpakai: %u KB\n",
+      SPIFFS.totalBytes() / 1024, SPIFFS.usedBytes() / 1024);
   }
+  printMemoryDebug("Setelah SPIFFS");
   
+  // Inisialisasi Fingerprint
   mySerial.begin(57600, SERIAL_8N1, 16, 17);
   finger.begin(57600);
   if (finger.verifyPassword()) {
@@ -3633,13 +3788,14 @@ void setup() {
     finger.setPacketSize(FINGERPRINT_PACKET_SIZE_128); // Standardisasi 128 bytes paket
     // LED Awal
     setFingerLED(FINGERPRINT_LED_BREATHING, 100, FINGERPRINT_LED_BLUE, 0); 
-    Serial.println("[FINGERPRINT] Modul sensor terdeteksi dan siap digunakan.");
+    Serial.println("[BOOT] 10. [FINGERPRINT] Modul sensor terdeteksi dan siap digunakan.");
   } else {
     isFingerprintAvailable = false;
-    Serial.println("[FINGERPRINT] Modul tidak terdeteksi. Berjalan otomatis dalam Mode Khusus RFID.");
+    Serial.println("[BOOT] 10. [FINGERPRINT] Modul tidak terdeteksi. Berjalan otomatis dalam Mode Khusus RFID.");
     printCentered("Mode Khusus RFID", 1);
     delay(700);
   }
+  printMemoryDebug("Setelah Fingerprint");
   
   lcd.clear();
   printCentered("Menghubungkan", 0);
@@ -3649,9 +3805,9 @@ void setup() {
   String savedJadwal = preferences.getString("jadwal_json", "");
   if (savedJadwal != "") parseJadwal(savedJadwal);
   
-  // Inisialisasi Hostname DHCP unik dari eFuse Hardware MAC (misal: siakadponpes.com-5F2AE4)
+  // Inisialisasi Hostname DHCP unik dari eFuse Hardware MAC
   WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false); // Matikan modem power-saving agar sinyal WiFi stabil & tidak flapping
+  WiFi.setSleep(false);
   uint64_t chipMac = ESP.getEfuseMac();
   uint8_t b3 = (uint8_t)(chipMac >> 24);
   uint8_t b4 = (uint8_t)(chipMac >> 32);
@@ -3661,9 +3817,9 @@ void setup() {
   deviceHostName = String(deviceHostNamePrefix) + "-" + String(macSuffix);
   WiFi.setHostname(deviceHostName.c_str());
 
+  Serial.printf("[BOOT] 11. Menghubungkan ke WiFi: %s ...\n", ssid);
   WiFi.begin(ssid, password);
   int wifiAttempts = 0;
-  // Timeout hingga 12.5 detik saat boot agar router memiliki cukup waktu memberikan IP DHCP
   while (WiFi.status() != WL_CONNECTED && wifiAttempts < 25) {
     delay(500);
     wifiAttempts++;
@@ -3678,8 +3834,9 @@ void setup() {
     printCentered("WiFi Terhubung!", 0);
     printCentered("Sinkronisasi...", 1);
     digitalWrite(BUZZ, HIGH); delay(100); digitalWrite(BUZZ, LOW);
+    Serial.printf("[BOOT] 11. [WiFi] Terhubung! IP: %s (RSSI: %d dBm)\n", 
+      WiFi.localIP().toString().c_str(), WiFi.RSSI());
 
-    // Pastikan Hostname ter-update dengan format MAC resmi setelah terhubung
     String macClean = WiFi.macAddress();
     macClean.replace(":", "");
     macClean.toUpperCase();
@@ -3688,19 +3845,20 @@ void setup() {
       WiFi.setHostname(deviceHostName.c_str());
     }
 
-    // Tampilkan informasi IP lengkap di Serial Monitor
     printNetworkInfo();
+    printMemoryDebug("Setelah WiFi Konek");
 
-    // Inisialisasi Web Server & Arduino OTA
     setupWebServer();
     setupOTA();
 
+    Serial.println("[BOOT] 12. Sinkronisasi NTP & Jadwal...");
     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
     syncRTCFromNTP();
     fetchScheduleFromServer();
     fetchJadwal(); 
-    flushOfflineLogs(); // Kirim data offline jika ada antrean tersimpan
-    delay(1000);
+    flushOfflineLogs();
+    delay(500);
+    printMemoryDebug("Setelah Sync Server Utama");
   } else {
     isWifiConnected = false;
     printCentered("WiFi Terputus!", 0);
@@ -3708,7 +3866,7 @@ void setup() {
     digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(80);
     digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW);
     setFingerLED(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 2);
-    Serial.println("[WiFi] Gagal terhubung saat boot. Sistem berjalan offline.");
+    Serial.println("[BOOT] 11. [WiFi] Gagal terhubung saat boot. Sistem berjalan offline.");
     delay(1500);
   }
   
@@ -3717,16 +3875,30 @@ void setup() {
   byte rfidVerCheck = mfrc522.PCD_ReadRegister(mfrc522.VersionReg);
   if (spiMutex != NULL) xSemaphoreGive(spiMutex);
   if (rfidVerCheck == 0x00 || rfidVerCheck == 0xFF) {
+    Serial.println("[BOOT] 13. [RC522] Register tidak merespon (0x00/0xFF), melakukan hard-reset ulang...");
     initRC522();
+  } else {
+    Serial.printf("[BOOT] 13. [RC522] Register Sehat: 0x%02X\n", rfidVerCheck);
   }
 
   // === PROSES SINKRONISASI DATA FINGERPRINT & ANGGOTA SAAT PERTAMA HIDUP ===
+  Serial.println("[BOOT] 14. Sinkronisasi Data Fingerprint & Members...");
+  printMemoryDebug("Sebelum Sync Fingerprint");
   syncDataFingerprint();
+  printMemoryDebug("Sebelum Sync Members Cache");
   fetchMembersLocalCache();
-  
+  printMemoryDebug("Setelah Sync Members Cache");
+
+  // === PROSES SINKRONISASI CACHE AUDIO TTS KE MICRO SD ===
+  // Dieksekusi persis setelah [MEMBERS CACHE] selesai
+  syncInitialTTSFiles();
+  printMemoryDebug("Setelah Sync Audio TTS");
+
   setStandbyMode(); // Panggil fungsi setup UI dan LED standby
   isSystemInStandby = true;
   standbyEnteredTime = millis();
+  Serial.println("[BOOT] >>> PROSES BOOTING SELESAI. SISTEM SIAP DIGUNAKAN (STANDBY). <<<\n");
+  printMemoryDebug("Sistem Standby");
 }
 
 void handleAdhanUI() {
