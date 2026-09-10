@@ -3664,8 +3664,8 @@ void handleWebLogin() {
   html += "<div class='subtitle'>Mesin Presensi IoT (" + String(deviceId) + ")</div>";
   html += errorMsg;
   html += "<form method='POST' action='/login'>";
-  html += "<div class='form-group'><label>Username</label><input type='text' name='username' required autofocus placeholder='admin'></div>";
-  html += "<div class='form-group'><label>Password</label><input type='password' name='password' required placeholder='admin123'></div>";
+  html += "<div class='form-group'><label>Username</label><input type='text' name='username' required autofocus placeholder='username'></div>";
+  html += "<div class='form-group'><label>Password</label><input type='password' name='password' required placeholder='password'></div>";
   html += "<button type='submit' class='btn'>Masuk ke Portal</button>";
   html += "</form>";
   html += "<div class='footer'>Siakad Ponpes IoT Firmware &copy; 2026</div>";
