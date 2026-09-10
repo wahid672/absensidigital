@@ -2362,7 +2362,7 @@ void handleInitialAudioCacheSync() {
   const InitialAudioItem items[] = {
     { "/tts/sukses.wav",                "Absensi Berhasil." },
     { "/tts/keluar.wav",                "Absensi keluar berhasil." },
-    { "/tts/sudah_absen.wav",           "Anda sudah absensi masuk." },
+    { "/tts/sudah_absen.wav",           "Anda sudah melakukan absensi." },
     { "/tts/gagal.wav",                 "Absensi gagal, kartu atau jari belum terdaftar." },
     { "/tts/server_online.wav",         "Server online." },
     { "/tts/instruksi_rfid_finger.wav", "Silahkan Tap Kartu atau Tempelkan jari anda." },
@@ -2453,12 +2453,12 @@ bool initAudioSubsystem() {
 // Dieksekusi persis setelah [MEMBERS CACHE] selesai saat booting
 // =========================================================================
 void syncInitialTTSFiles() {
-  if (!isAudioEnabled()) {
-    Serial.println("\n[TTS BOOT SYNC] Fitur audio dinonaktifkan (fiturAudio = \"false\"). Pengecekan TTS dilewati.");
+  if (!isAudioEnabled() || !isI2sAvailable) {
+    Serial.println("\n[TTS BOOT SYNC] Modul Audio MAX98357A tidak aktif / tidak terdeteksi. Pengecekan TTS & Layar dilewati.");
     return;
   }
 
-  // Pastikan Micro SD storage aktif untuk download (I2S DAC belum dihidupkan agar RAM lega untuk SSL)
+  // Pastikan Micro SD storage aktif untuk download
   initAudioStorage();
   if (!isSdCardAvailable) {
     Serial.println("\n[TTS BOOT SYNC] Micro SD Card tidak terdeteksi. Pengecekan TTS dilewati.");
@@ -2468,6 +2468,11 @@ void syncInitialTTSFiles() {
     Serial.println("\n[TTS BOOT SYNC] WiFi tidak terhubung. Menggunakan cache audio offline di Micro SD jika ada.");
     return;
   }
+
+  // Tampilkan proses sinkronisasi audio di LCD hanya jika modul MAX98357A terdeteksi
+  lcd.clear();
+  printCentered("Sync Audio", 0);
+  printCentered("10%", 1);
 
   Serial.println("\n========================================================");
   Serial.println("  [TTS BOOT SYNC] MEMERIKSA & MENGUNDUH CACHE AUDIO DASAR  ");
@@ -2497,6 +2502,11 @@ void syncInitialTTSFiles() {
   const int totalItems = 9;
 
   for (int i = 0; i < totalItems; i++) {
+    int percent = ((i + 1) * 100) / totalItems;
+    if (i == 0 && percent > 10) percent = 10; // Tampilkan 10% di item pertama persis sesuai permintaan
+    printCentered("Sync Audio", 0);
+    printCentered(String(percent) + "%", 1);
+
     const char* targetPath = items[i].path;
     const char* targetText = items[i].text;
     const char* targetDesc = items[i].desc;
@@ -2551,11 +2561,12 @@ void syncInitialTTSFiles() {
   }
 
   hasInitialAudioSynced = true;
+  printCentered("Sync Audio", 0);
+  printCentered("100%", 1);
+  delay(300);
+
   Serial.println("[TTS BOOT SYNC] >>> Selesai sinkronisasi audio dasar ke Micro SD! <<<");
   Serial.println("========================================================\n");
-
-  // Download selesai: Sekarang aktifkan driver speaker I2S & Task Audio
-  startAudioPlaybackSubsystem();
 
   // Putar ucapan selamat datang jika file boot.wav sudah siap di SD Card
   bool bootFileReady = false;
@@ -4332,9 +4343,9 @@ void setup() {
   printMemoryDebug("Setelah Sync Members Cache");
 
   // === PROSES SINKRONISASI CACHE TTS KE MICRO SD & AKTIVASI AUDIO ===
-  Serial.println("[BOOT] 16. Sinkronisasi TTS Cache ke Micro SD & Audio...");
-  syncInitialTTSFiles();
+  Serial.println("[BOOT] 16. Mengaktifkan Audio Subsystem & Sinkronisasi TTS Cache...");
   startAudioPlaybackSubsystem();
+  syncInitialTTSFiles();
   printMemoryDebug("Setelah Sync Audio TTS");
 
   setStandbyMode(); // Panggil fungsi setup UI dan LED standby
