@@ -737,11 +737,14 @@ CachedMember findMemberOffline(int fingerId, String rfidTag) {
     return res;
   }
 
-  String content = file.readString();
-  file.close();
+  size_t fSize = file.size();
+  size_t docCap = fSize + 1024;
+  if (docCap < 2048) docCap = 2048;
+  if (docCap > 8192) docCap = 8192; // Maksimal 8KB (menghemat >24KB RAM untuk TLS)
 
-  DynamicJsonDocument doc(32768);
-  DeserializationError err = deserializeJson(doc, content);
+  DynamicJsonDocument doc(docCap);
+  DeserializationError err = deserializeJson(doc, file);
+  file.close();
   if (err) return res;
 
   auto stripZeros = [](String s) -> String {
@@ -1240,19 +1243,18 @@ void flushOfflineLogs() {
 
 void kirimPresensiFingerprint(uint8_t idFinger) {
   stopAudioPlayback();
-  CachedMember localM = findMemberOffline((int)idFinger, "");
-  String namaPreview = localM.found ? localM.nama : ("Slot #" + String(idFinger));
 
   // 1. TAMPILKAN FEEDBACK INSTAN: Beep singkat + LED Ungu + Layar "Sedang Proses..."
-  // Memberitahu user bahwa sidik jari sudah terbaca dan jari bisa langsung diangkat
   digitalWrite(BUZZ, HIGH); delay(60); digitalWrite(BUZZ, LOW);
   setFingerLED(FINGERPRINT_LED_BREATHING, 40, FINGERPRINT_LED_PURPLE, 0);
-  showScannedMessage(namaPreview, "Sedang Proses...");
+  showScannedMessage("ID Finger #" + String(idFinger), "Sedang Proses...");
 
-  // 2. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
+  // 2. JIKA OFFLINE: Cari di cache lokal & simpan ke SPIFFS
   if (WiFi.status() != WL_CONNECTED) {
     Serial.printf("[OFFLINE] WiFi offline. Data Fingerprint ID %d disimpan ke SPIFFS.\n", idFinger);
     OfflineAttendanceResult eval = evaluateAttendanceOffline();
+    CachedMember localM = findMemberOffline((int)idFinger, "");
+    String namaPreview = localM.found ? localM.nama : ("Slot #" + String(idFinger));
     saveOfflineLog((int)idFinger, "", eval.statusMasuk, eval.statusKeluar);
     if (eval.isLate) {
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
@@ -1405,18 +1407,18 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
 
 void kirimPresensiRFID(String tagId) {
   stopAudioPlayback();
-  CachedMember localM = findMemberOffline(0, tagId);
-  String namaPreview = localM.found ? localM.nama : ("RFID: " + tagId);
 
   // 1. TAMPILKAN FEEDBACK INSTAN: Beep singkat + LED Ungu + Layar "Sedang Proses..."
   digitalWrite(BUZZ, HIGH); delay(60); digitalWrite(BUZZ, LOW);
   setFingerLED(FINGERPRINT_LED_BREATHING, 40, FINGERPRINT_LED_PURPLE, 0);
-  showScannedMessage(namaPreview, "Sedang Proses...");
+  showScannedMessage("RFID: " + tagId, "Sedang Proses...");
 
-  // 2. JIKA OFFLINE: Simpan langsung ke memori lokal & tampilkan nama dari cache
+  // 2. JIKA OFFLINE: Cari di cache lokal & simpan ke SPIFFS
   if (WiFi.status() != WL_CONNECTED) {
     Serial.printf("[OFFLINE] WiFi offline. Data RFID %s disimpan ke SPIFFS.\n", tagId.c_str());
     OfflineAttendanceResult eval = evaluateAttendanceOffline();
+    CachedMember localM = findMemberOffline(0, tagId);
+    String namaPreview = localM.found ? localM.nama : ("RFID: " + tagId);
     saveOfflineLog(0, tagId, eval.statusMasuk, eval.statusKeluar);
     if (eval.isLate) {
       digitalWrite(BUZZ, HIGH); delay(80); digitalWrite(BUZZ, LOW); delay(60);
@@ -1669,7 +1671,7 @@ bool initI2S() {
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-    .dma_buf_count = 4,
+    .dma_buf_count = 2,
     .dma_buf_len = 128,
     .use_apll = false,
     .tx_desc_auto_clear = true
@@ -1718,21 +1720,21 @@ bool initSDCard() {
 
   // Percobaan 1: Frekuensi standar 4MHz via spiSD
   Serial.println("[SD CARD] Mencoba inisialisasi pada HSPI (CS:15, SCK:25, MISO:26, MOSI:32)...");
-  if (SD.begin(SD_CS_PIN, spiSD, 4000000)) {
+  if (SD.begin(SD_CS_PIN, spiSD, 4000000, "/sd", 2)) {
     success = true;
   } else {
     SD.end();
     delay(50);
     // Percobaan 2: Frekuensi rendah 1MHz
     Serial.println("[SD CARD] Percobaan 1 gagal. Mencoba frekuensi 1 MHz...");
-    if (SD.begin(SD_CS_PIN, spiSD, 1000000)) {
+    if (SD.begin(SD_CS_PIN, spiSD, 1000000, "/sd", 2)) {
       success = true;
     } else {
       SD.end();
       delay(50);
       // Percobaan 3: Frekuensi safe mode 400 kHz
       Serial.println("[SD CARD] Percobaan 2 gagal. Mencoba 400 kHz (Safe Mode)...");
-      if (SD.begin(SD_CS_PIN, spiSD, 400000)) {
+      if (SD.begin(SD_CS_PIN, spiSD, 400000, "/sd", 2)) {
         success = true;
       }
     }
@@ -2259,7 +2261,7 @@ bool startAudioPlaybackSubsystem() {
     BaseType_t taskRes = xTaskCreatePinnedToCore(
       audioTask,
       "audioTask",
-      4096, // Stack 4KB aman & cukup (rawBuf & stereoBuf sudah dibuat static)
+      2560, // Stack 2.5KB sangat cukup karena buffer audio sudah static (hemat 1.5KB RAM)
       NULL,
       1,
       &audioTaskHandle,
