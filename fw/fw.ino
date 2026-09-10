@@ -1930,23 +1930,27 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   String ttsUrl = baseUrl + "/api/tts?text=" + encodedText;
   Serial.printf("[TTS PROXY] Mengunduh via server utama: \"%s\" -> %s\n", text, filePath);
 
+  unsigned long t0 = millis();
   WiFiClientSecure clientAudio;
   clientAudio.setInsecure();
-  clientAudio.setTimeout(8); // 8 detik socket connect timeout
+  clientAudio.setHandshakeTimeout(12);
+  clientAudio.setTimeout(15); // 15 detik socket connect timeout
   HTTPClient httpAudio;
   httpAudio.begin(clientAudio, ttsUrl);
-  httpAudio.setTimeout(8000); // 8 detik HTTP read timeout
+  httpAudio.setTimeout(15000); // 15 detik HTTP read timeout
   httpAudio.addHeader("X-API-KEY", apiKey);
 
   int httpCode = httpAudio.GET();
+  unsigned long elapsed = millis() - t0;
   if (httpCode != 200) {
-    Serial.printf("[TTS] Respon server error HTTP %d\n", httpCode);
+    Serial.printf("[TTS] Respon server error HTTP %d (Waktu: %lu ms)\n", httpCode, elapsed);
     httpAudio.end();
     isDownloadingTTS = false;
     return false;
   }
 
   int totalLen = httpAudio.getSize();
+  Serial.printf("[TTS] Respon 200 OK diterima dalam %lu ms (Ukuran: %d bytes)\n", elapsed, totalLen);
   WiFiClient* stream = httpAudio.getStreamPtr();
   if (!stream) {
     Serial.println("[TTS] Stream HTTP tidak valid.");
@@ -1972,6 +1976,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
 
   uint8_t dlBuf[512];
   unsigned long startDl = millis();
+  unsigned long lastActivity = millis();
   int downloaded = 0;
 
   while (httpAudio.connected() && (downloaded < totalLen || totalLen < 0)) {
@@ -1990,13 +1995,15 @@ bool downloadTTSFile(const char* text, const char* filePath) {
           xSemaphoreGive(spiMutex);
         }
         downloaded += r;
+        lastActivity = millis();
       }
     } else {
       vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    if (millis() - startDl > 15000) {
-      Serial.println("[TTS] Timeout download stream.");
+    // Timeout jika 10 detik berturut-turut tidak ada byte baru masuk
+    if (millis() - lastActivity > 10000) {
+      Serial.println("[TTS] Timeout: Tidak ada data stream baru selama 10 detik.");
       break;
     }
   }
