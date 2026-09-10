@@ -469,7 +469,7 @@ void fetchScheduleFromServer() {
   unsigned long tStart = millis();
   WiFiClientSecure client;
   client.setInsecure();
-  client.setTimeout(5); // 5 detik socket connect & TLS handshake timeout (anti-hang)
+  client.setTimeout(8000); // 5 detik socket connect & TLS handshake timeout (anti-hang)
 
   HTTPClient http;
   http.begin(client, url);
@@ -700,7 +700,7 @@ void fetchMembersLocalCache() {
 
   WiFiClientSecure client;
   client.setInsecure();
-  client.setTimeout(6); // 6 detik socket connect timeout
+  client.setTimeout(8000); // 6 detik socket connect timeout
   HTTPClient http;
   http.begin(client, membersUrl);
   http.setTimeout(6000); // 6 detik read timeout
@@ -999,7 +999,7 @@ void syncDataFingerprint() {
 
       WiFiClientSecure client;
       client.setInsecure();
-      client.setTimeout(6);
+      client.setTimeout(8000);
       HTTPClient http;
       http.begin(client, serverUrl);
       http.setTimeout(6000);
@@ -1058,7 +1058,7 @@ void syncDataFingerprint() {
 
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(6);
+    client.setTimeout(8000);
     HTTPClient http;
     http.begin(client, serverUrl);
     http.setTimeout(6000);
@@ -1280,9 +1280,11 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
   isServerHttpActive = true;
   WiFiClientSecure client;
   client.setInsecure();
+  client.setHandshakeTimeout(10);
   HTTPClient http;
   http.begin(client, serverUrl);
-  http.setTimeout(8000); // Timeout 8 detik aman untuk TLS handshake
+  http.setConnectTimeout(8000);
+  http.setTimeout(8000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", apiKey);
 
@@ -1363,7 +1365,18 @@ void kirimPresensiFingerprint(uint8_t idFinger) {
       triggerAttendanceVoice("success", "check_in", namaPreview);
     }
   } else {
-    Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke offline buffer...\n", http.errorToString(httpCode).c_str());
+    char errBuf[128] = {0};
+    client.lastError(errBuf, sizeof(errBuf));
+    IPAddress testDns;
+    bool dnsOk = WiFi.hostByName("siakadponpes.presensirfid.web.id", testDns);
+    Serial.printf("[HTTP] Gagal kirim POST (%s). DNS: %s (%s) | SSL Detail: %s | FreeHeap: %u | MaxAlloc: %u\n",
+                  http.errorToString(httpCode).c_str(),
+                  dnsOk ? "OK" : "GAGAL/TIMEOUT",
+                  dnsOk ? testDns.toString().c_str() : "0.0.0.0",
+                  errBuf[0] ? errBuf : "None",
+                  ESP.getFreeHeap(),
+                  ESP.getMaxAllocHeap());
+    Serial.println("       Menyimpan ke offline buffer...");
     OfflineAttendanceResult eval = evaluateAttendanceOffline();
     saveOfflineLog((int)idFinger, "", eval.statusMasuk, eval.statusKeluar);
     if (eval.isLate) {
@@ -1431,9 +1444,11 @@ void kirimPresensiRFID(String tagId) {
   isServerHttpActive = true;
   WiFiClientSecure client;
   client.setInsecure();
+  client.setHandshakeTimeout(10);
   HTTPClient http;
   http.begin(client, serverUrl);
-  http.setTimeout(8000); // Timeout 8 detik aman untuk TLS handshake
+  http.setConnectTimeout(8000);
+  http.setTimeout(8000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", apiKey);
 
@@ -1519,7 +1534,18 @@ void kirimPresensiRFID(String tagId) {
       triggerAttendanceVoice("success", "check_in", namaPreview);
     }
   } else {
-    Serial.printf("[HTTP] Gagal kirim POST (%s). Menyimpan ke offline buffer...\n", http.errorToString(httpCode).c_str());
+    char errBuf[128] = {0};
+    client.lastError(errBuf, sizeof(errBuf));
+    IPAddress testDns;
+    bool dnsOk = WiFi.hostByName("siakadponpes.presensirfid.web.id", testDns);
+    Serial.printf("[HTTP] Gagal kirim POST (%s). DNS: %s (%s) | SSL Detail: %s | FreeHeap: %u | MaxAlloc: %u\n",
+                  http.errorToString(httpCode).c_str(),
+                  dnsOk ? "OK" : "GAGAL/TIMEOUT",
+                  dnsOk ? testDns.toString().c_str() : "0.0.0.0",
+                  errBuf[0] ? errBuf : "None",
+                  ESP.getFreeHeap(),
+                  ESP.getMaxAllocHeap());
+    Serial.println("       Menyimpan ke offline buffer...");
     OfflineAttendanceResult eval = evaluateAttendanceOffline();
     saveOfflineLog(0, tagId, eval.statusMasuk, eval.statusKeluar);
     if (eval.isLate) {
@@ -1939,7 +1965,7 @@ bool downloadTTSFile(const char* text, const char* filePath) {
   WiFiClientSecure clientAudio;
   clientAudio.setInsecure();
   clientAudio.setHandshakeTimeout(12);
-  clientAudio.setTimeout(15); // 15 detik socket connect timeout
+  clientAudio.setTimeout(12000); // 15 detik socket connect timeout
   HTTPClient httpAudio;
   httpAudio.begin(clientAudio, ttsUrl);
   httpAudio.setTimeout(15000); // 15 detik HTTP read timeout
@@ -2432,7 +2458,7 @@ void checkServerConnection() {
   WiFiClientSecure client;
   client.setInsecure();
   client.setHandshakeTimeout(10);
-  client.setTimeout(10);
+  client.setTimeout(8000);
   HTTPClient http;
   String testUrl = String(serverUrl) + "?action=get_schedule&device_id=" + String(deviceId);
   http.begin(client, testUrl);
