@@ -232,6 +232,7 @@ bool saveFingerprintTemplate(uint16_t id, String hexStr);
 void syncSingleEnroll(uint16_t id);
 void syncSingleDelete(uint16_t id);
 void syncDeleteAll();
+bool readNextJsonObject(File &file, String &jsonOut);
 void fetchMembersLocalCache();
 void printNetworkInfo();
 void setupWebServer();
@@ -740,7 +741,47 @@ void handleScannedUI() {
   }
 }
 
-// 1. Tarik & Simpan Cache Anggota (Santri & Guru) dari Server ke SPIFFS
+// Helper stream parser untuk membaca 1 objek JSON {...} dari file tanpa memuat seluruh file ke RAM
+bool readNextJsonObject(File &file, String &jsonOut) {
+  jsonOut = "";
+  jsonOut.reserve(512);
+
+  // Cari '{' pembuka objek atau hentikan jika ketemu ']' (akhir array)
+  while (file.available()) {
+    char c = file.read();
+    if (c == '{') {
+      jsonOut += c;
+      break;
+    } else if (c == ']') {
+      return false; // Akhir dari array data
+    }
+  }
+  if (jsonOut.length() == 0) return false;
+
+  int depth = 1;
+  bool inString = false;
+  bool escape = false;
+
+  while (file.available() && depth > 0) {
+    char c = file.read();
+    jsonOut += c;
+
+    if (escape) {
+      escape = false;
+    } else if (c == '\\') {
+      escape = true;
+    } else if (c == '"') {
+      inString = !inString;
+    } else if (!inString) {
+      if (c == '{') depth++;
+      else if (c == '}') depth--;
+    }
+  }
+
+  return (depth == 0);
+}
+
+// 1. Tarik & Simpan Cache Anggota (Santri & Guru) dari Server langsung ke Micro SD / SPIFFS
 void fetchMembersLocalCache() {
   if (WiFi.status() != WL_CONNECTED) return;
   Serial.println("\n[MEMBERS CACHE] Mengunduh data anggota (Santri & Guru) untuk validasi offline...");
@@ -755,41 +796,69 @@ void fetchMembersLocalCache() {
 
   WiFiClientSecure client;
   client.setInsecure();
-  client.setTimeout(8000); // 6 detik socket connect timeout
+  client.setHandshakeTimeout(15);
+  client.setTimeout(15000); // 15 detik socket connect timeout
   HTTPClient http;
   http.begin(client, membersUrl);
-  http.setTimeout(6000); // 6 detik read timeout
+  http.setTimeout(15000); // 15 detik read timeout
   http.addHeader("X-API-KEY", apiKey);
+  http.addHeader("Connection", "close");
 
   int httpCode = http.GET();
   unsigned long elapsed = millis() - tStart;
   Serial.printf("[MEMBERS CACHE] Respon diterima dalam %lu ms (HTTP %d)\n", elapsed, httpCode);
 
   if (httpCode == 200) {
-    String payload = http.getString();
-    bool savedToSD = false;
+    File f;
+    bool usingSD = false;
+    String targetPath = "/members_cache.json";
+    String tempPath = "/members_cache.tmp";
 
     if (isSdCardAvailable) {
-      if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-        if (SD.exists("/members_cache.json")) SD.remove("/members_cache.json");
-        File f = SD.open("/members_cache.json", FILE_WRITE);
+      if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        if (SD.exists(tempPath)) SD.remove(tempPath);
+        f = SD.open(tempPath, FILE_WRITE);
         if (f) {
-          f.print(payload);
-          f.close();
-          savedToSD = true;
-          Serial.printf("[MEMBERS CACHE] Cache anggota offline berhasil diperbarui di Micro SD (%u bytes).\n", payload.length());
+          usingSD = true;
+        } else {
+          xSemaphoreGive(spiMutex);
         }
-        xSemaphoreGive(spiMutex);
       }
     }
+    if (!usingSD) {
+      if (SPIFFS.exists(tempPath)) SPIFFS.remove(tempPath);
+      f = SPIFFS.open(tempPath, FILE_WRITE);
+    }
 
-    if (!savedToSD) {
-      File f = SPIFFS.open("/members_cache.json", FILE_WRITE);
-      if (f) {
-        f.print(payload);
-        f.close();
-        Serial.printf("[MEMBERS CACHE] Cache anggota offline berhasil diperbarui di SPIFFS (%u bytes).\n", payload.length());
+    if (f) {
+      // Unduh stream langsung dari socket HTTP ke storage (0 bytes String RAM yang terbuang)
+      int written = http.writeToStream(&f);
+      f.close();
+
+      if (written > 50) {
+        if (usingSD) {
+          if (SD.exists(targetPath)) SD.remove(targetPath);
+          SD.rename(tempPath, targetPath);
+        } else {
+          if (SPIFFS.exists(targetPath)) SPIFFS.remove(targetPath);
+          SPIFFS.rename(tempPath, targetPath);
+        }
+        Serial.printf("[MEMBERS CACHE] Cache anggota offline berhasil diperbarui di %s (%d bytes).\n",
+                      usingSD ? "Micro SD" : "SPIFFS", written);
+      } else {
+        if (usingSD) {
+          if (SD.exists(tempPath)) SD.remove(tempPath);
+        } else {
+          if (SPIFFS.exists(tempPath)) SPIFFS.remove(tempPath);
+        }
+        Serial.printf("[MEMBERS CACHE] Gagal: Unduhan tidak lengkap (%d bytes).\n", written);
       }
+
+      if (usingSD && spiMutex != NULL) {
+        xSemaphoreGive(spiMutex);
+      }
+    } else {
+      Serial.println("[MEMBERS CACHE] Gagal membuat file cache anggota di storage.");
     }
   } else {
     Serial.printf("[MEMBERS CACHE] Gagal mengunduh cache anggota (HTTP %d)\n", httpCode);
@@ -798,16 +867,25 @@ void fetchMembersLocalCache() {
   client.stop();
 }
 
-// 2. Pencarian Data Anggota di Cache Lokal SPIFFS saat Mode Offline
+// 2. Pencarian Data Anggota di Cache Lokal saat Mode Offline (Stream Scanner O(1) Memory)
 CachedMember findMemberOffline(int fingerId, String rfidTag) {
   CachedMember res;
   res.found = false;
+
+  auto stripZeros = [](String s) -> String {
+    s.trim();
+    while (s.length() > 1 && s.charAt(0) == '0') {
+      s = s.substring(1);
+    }
+    return s;
+  };
+  String cleanSearchRfid = stripZeros(rfidTag);
 
   File file;
   bool isFromSD = false;
 
   if (isSdCardAvailable) {
-    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(300)) == pdTRUE) {
+    if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
       if (SD.exists("/members_cache.json")) {
         file = SD.open("/members_cache.json", FILE_READ);
         if (file && file.size() > 0) {
@@ -831,33 +909,23 @@ CachedMember findMemberOffline(int fingerId, String rfidTag) {
     }
   }
 
-  size_t fSize = file.size();
-  size_t docCap = fSize + 1024;
-  if (docCap < 2048) docCap = 2048;
-  if (docCap > 8192) docCap = 8192; // Maksimal 8KB (menghemat >24KB RAM untuk TLS)
-
-  DynamicJsonDocument doc(docCap);
-  DeserializationError err = deserializeJson(doc, file);
-  file.close();
-  if (isFromSD && spiMutex != NULL) {
-    xSemaphoreGive(spiMutex);
+  // Lewati metadata root hingga awal array 'data' '['
+  while (file.available()) {
+    char c = file.read();
+    if (c == '[') break;
   }
-  if (err) return res;
 
-  auto stripZeros = [](String s) -> String {
-    s.trim();
-    while (s.length() > 1 && s.charAt(0) == '0') {
-      s = s.substring(1);
-    }
-    return s;
-  };
+  // Stream parse per 1 objek member (~270 bytes) tanpa batas ukuran total database
+  String memberStr;
+  StaticJsonDocument<512> itemDoc;
 
-  String cleanSearchRfid = stripZeros(rfidTag);
+  while (readNextJsonObject(file, memberStr)) {
+    itemDoc.clear();
+    DeserializationError err = deserializeJson(itemDoc, memberStr);
+    if (err || !itemDoc.containsKey("nama")) continue;
 
-  JsonArray arr = doc["data"].as<JsonArray>();
-  for (JsonObject m : arr) {
-    int fId = m["fingerprint_id"].as<int>();
-    String uId = m["uid"].as<String>();
+    int fId = itemDoc["fingerprint_id"].as<int>();
+    String uId = itemDoc["uid"].as<String>();
     String cleanUId = stripZeros(uId);
 
     bool match = false;
@@ -867,13 +935,18 @@ CachedMember findMemberOffline(int fingerId, String rfidTag) {
     if (match) {
       res.uid = uId;
       res.fingerprint_id = fId;
-      res.nama = m["nama"].as<String>();
-      res.nis_nip = m["nis_nip"].as<String>();
-      res.tipe = m["tipe"].as<String>();
-      res.kelas = m["kelas"].as<String>();
+      res.nama = itemDoc["nama"].as<String>();
+      res.nis_nip = itemDoc["nis_nip"].as<String>();
+      res.tipe = itemDoc["tipe"].as<String>();
+      res.kelas = itemDoc["kelas"].as<String>();
       res.found = true;
       break;
     }
+  }
+
+  file.close();
+  if (isFromSD && spiMutex != NULL) {
+    xSemaphoreGive(spiMutex);
   }
 
   return res;
@@ -2609,57 +2682,82 @@ void syncMemberTTSFiles() {
   // 2. Periksa cache seluruh anggota dari /members_cache.json
   bool cacheExists = false;
   File mf;
-  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(300)) == pdTRUE) {
+  bool isFromSD = false;
+
+  if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
     if (SD.exists("/members_cache.json")) {
       mf = SD.open("/members_cache.json", FILE_READ);
-      cacheExists = (mf && mf.size() > 0);
+      if (mf && mf.size() > 0) {
+        cacheExists = true;
+        isFromSD = true;
+      } else if (mf) {
+        mf.close();
+      }
     }
-    xSemaphoreGive(spiMutex);
+    if (!cacheExists) {
+      xSemaphoreGive(spiMutex);
+    }
+  }
+
+  if (!cacheExists) {
+    if (SPIFFS.exists("/members_cache.json")) {
+      mf = SPIFFS.open("/members_cache.json", FILE_READ);
+      if (mf && mf.size() > 0) {
+        cacheExists = true;
+      } else if (mf) {
+        mf.close();
+      }
+    }
   }
 
   if (cacheExists && mf) {
-    size_t fSize = mf.size();
-    size_t cap = fSize + 1024;
-    if (cap < 2048) cap = 2048;
-    if (cap > 8192) cap = 8192;
-
     std::vector<String> missingMembers;
     int totalMembers = 0;
 
-    // Lingkup lokal {} agar mDoc (8KB RAM) langsung dihancurkan & dibebaskan seketika
-    // dari heap memori SEBELUM proses unduhan HTTPS dimulai!
-    {
-      DynamicJsonDocument mDoc(cap);
-      DeserializationError err = deserializeJson(mDoc, mf);
-      mf.close();
+    // Lewati metadata JSON hingga awal array data '['
+    while (mf.available()) {
+      char c = mf.read();
+      if (c == '[') break;
+    }
 
-      if (!err && mDoc.containsKey("data")) {
-        JsonArray arr = mDoc["data"].as<JsonArray>();
-        totalMembers = arr.size();
-        Serial.printf("[TTS MEMBER SYNC] Memeriksa %d anggota dari database...\n", totalMembers);
+    String memberStr;
+    StaticJsonDocument<512> itemDoc;
 
-        for (int i = 0; i < totalMembers; i++) {
-          String mNama = arr[i]["nama"].as<String>();
-          mNama.trim();
-          if (mNama.length() == 0) continue;
+    while (readNextJsonObject(mf, memberStr)) {
+      itemDoc.clear();
+      DeserializationError err = deserializeJson(itemDoc, memberStr);
+      if (err || !itemDoc.containsKey("nama")) continue;
 
-          String safe = sanitizeFilename(mNama);
-          String targetPath = "/tts/members/" + safe + ".wav";
+      String mNama = itemDoc["nama"].as<String>();
+      mNama.trim();
+      if (mNama.length() == 0) continue;
 
-          bool exists = false;
-          if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            exists = SD.exists(targetPath.c_str());
-            xSemaphoreGive(spiMutex);
-          }
+      totalMembers++;
+      String safe = sanitizeFilename(mNama);
+      String targetPath = "/tts/members/" + safe + ".wav";
 
-          if (!exists) {
-            missingMembers.push_back(mNama);
-          } else {
-            Serial.printf("[TTS MEMBER SYNC] [%d/%d] Sudah siap: %s\n", i + 1, totalMembers, targetPath.c_str());
-          }
+      bool exists = false;
+      if (isFromSD) {
+        exists = SD.exists(targetPath.c_str());
+      } else {
+        if (spiMutex != NULL && xSemaphoreTake(spiMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+          exists = SD.exists(targetPath.c_str());
+          xSemaphoreGive(spiMutex);
         }
       }
-    } // <--- mDoc (8KB heap) otomatis musnah di sini, RAM kembali lega untuk buffer TLS SSL!
+
+      if (!exists) {
+        missingMembers.push_back(mNama);
+      } else {
+        Serial.printf("[TTS MEMBER SYNC] [%d] Sudah siap: %s\n", totalMembers, targetPath.c_str());
+      }
+    }
+    mf.close();
+    if (isFromSD && spiMutex != NULL) {
+      xSemaphoreGive(spiMutex);
+    }
+
+    Serial.printf("[TTS MEMBER SYNC] Selesai memeriksa %d anggota dari database server.\n", totalMembers);
 
     int totalMissing = missingMembers.size();
     if (totalMissing > 0) {
