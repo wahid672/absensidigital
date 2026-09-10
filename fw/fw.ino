@@ -1693,8 +1693,9 @@ bool initI2S() {
     return false;
   }
   i2s_zero_dma_buffer(I2S_NUM);
+  i2s_stop(I2S_NUM); // Matikan clock I2S saat standby agar bebas interferensi RF ke antena WiFi & hemat daya
   currentI2SSampleRate = 22050;
-  Serial.println("[I2S] Driver MAX98357A siap (BCLK:27, LRC:14, DIN:13).");
+  Serial.println("[I2S] Driver MAX98357A siap (BCLK:27, LRC:14, DIN:13). Standby: I2S Clock Off.");
   return true;
 }
 
@@ -1873,6 +1874,10 @@ bool playWavFile(const char* filePath) {
     currentI2SSampleRate = sampleRate;
   }
 
+  if (isI2sAvailable) {
+    i2s_start(I2S_NUM); // Aktifkan clock I2S hanya saat memutar audio
+  }
+
   static int16_t rawBuf[256];
   static int16_t stereoBuf[512];
   uint32_t remaining = dataSize;
@@ -1914,8 +1919,9 @@ bool playWavFile(const char* filePath) {
     xSemaphoreGive(spiMutex);
   }
 
-  if (stopAudioFlag) {
+  if (isI2sAvailable) {
     i2s_zero_dma_buffer(I2S_NUM);
+    i2s_stop(I2S_NUM); // Kembalikan ke mode hening & hemat daya setelah pemutaran selesai
   }
 
   return true;
@@ -2066,6 +2072,7 @@ void stopAudioPlayback() {
   }
   if (isI2sAvailable) {
     i2s_zero_dma_buffer(I2S_NUM);
+    i2s_stop(I2S_NUM);
   }
   // Beri jeda singkat agar socket HTTP TTS benar-benar tertutup jika ada unduhan yang sedang dibatalkan
   unsigned long t0 = millis();
